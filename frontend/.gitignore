@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Package lock files (should not be committed)
+package-lock.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
