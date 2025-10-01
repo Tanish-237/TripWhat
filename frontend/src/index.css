@@ -119,6 +119,15 @@
   }
 }
 
+@layer utilities {
+  .line-clamp-2 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+}
+
 .mouse-trail-dot {
   position: fixed;
   width: 2px; /* thin laser line */
