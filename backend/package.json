@@ -10,7 +10,8 @@
     "start": "node dist/server.js",
     "test": "vitest",
     "lint": "eslint src --ext .ts",
-    "mcp:places": "tsx src/mcp-servers/places/server.ts"
+    "mcp:places": "tsx src/mcp-servers/places/server.ts",
+    "test:agent": "tsx src/agents/test-agent.ts"
   },
   "keywords": ["travel", "ai", "mcp", "langgraph"],
   "author": "",
