@@ -11,54 +11,35 @@ const BudgetPage = () => {
   const navigate = useNavigate();
   const { tripData, updateTripData } = useTrip();
   
-  // Budget mode: 'capped' or 'flexible'
-  const [budgetMode, setBudgetMode] = useState('capped');
+  // Budget mode: 'capped' or 'flexible' - initialize from tripData
+  const [budgetMode, setBudgetMode] = useState(tripData?.budgetMode || 'capped');
   
-  const [budget, setBudget] = useState({
-    total: tripData?.budget?.total || 5000,
-    travel: tripData?.budget?.travel || 25,
-    accommodation: tripData?.budget?.accommodation || 25,
-    food: tripData?.budget?.food || 25,
-    events: tripData?.budget?.events || 25,
+  // Separate state for each mode to preserve values when switching
+  const [cappedBudget, setCappedBudget] = useState({
+    total: 5000,
+    travel: 25,
+    accommodation: 25,
+    food: 25,
+    events: 25,
   });
+  
+  const [flexibleBudget, setFlexibleBudget] = useState({
+    total: 0,
+    travel: 0,
+    accommodation: 0,
+    food: 0,
+    events: 0,
+  });
+  
+  // Current budget based on mode
+  const budget = budgetMode === 'capped' ? cappedBudget : flexibleBudget;
 
   // Handle budget mode switching
   const handleBudgetModeChange = (newMode) => {
-    if (newMode === 'capped' && budgetMode === 'flexible') {
-      // Converting from flexible (dollars) to capped (percentages)
-      const total = budget.travel + budget.accommodation + budget.food + budget.events;
-      if (total > 0) {
-        const newBudget = {
-          total: total,
-          travel: Math.round((budget.travel / total) * 100),
-          accommodation: Math.round((budget.accommodation / total) * 100),
-          food: Math.round((budget.food / total) * 100),
-          events: Math.round((budget.events / total) * 100),
-        };
-        
-        // Ensure percentages add up to 100%
-        const totalPercentage = newBudget.travel + newBudget.accommodation + newBudget.food + newBudget.events;
-        if (totalPercentage !== 100) {
-          const diff = 100 - totalPercentage;
-          newBudget.travel += diff; // Add difference to first category
-        }
-        
-        setBudget(newBudget);
-        updateTripData({ budget: newBudget });
-      }
-    } else if (newMode === 'flexible' && budgetMode === 'capped') {
-      // Converting from capped (percentages) to flexible (dollars)
-      const newBudget = {
-        total: budget.travel + budget.accommodation + budget.food + budget.events,
-        travel: Math.round((budget.travel / 100) * budget.total),
-        accommodation: Math.round((budget.accommodation / 100) * budget.total),
-        food: Math.round((budget.food / 100) * budget.total),
-        events: Math.round((budget.events / 100) * budget.total),
-      };
-      setBudget(newBudget);
-      updateTripData({ budget: newBudget });
-    }
     setBudgetMode(newMode);
+    // Update trip data with current mode's budget and save the mode preference
+    const currentBudget = newMode === 'capped' ? cappedBudget : flexibleBudget;
+    updateTripData({ budget: currentBudget, budgetMode: newMode });
   };
 
   const budgetCategories = [
@@ -92,16 +73,33 @@ const BudgetPage = () => {
     }
   ];
 
-  // Update local state when tripData changes
+  // Update local state when tripData changes - but only once on component mount
   React.useEffect(() => {
     if (tripData?.budget) {
-      setBudget(tripData.budget);
+      // Try to detect if the stored budget is in percentage format (capped) or dollar format (flexible)
+      const categories = ['travel', 'accommodation', 'food', 'events'];
+      const categoryValues = categories.map(cat => tripData.budget[cat] || 0);
+      const totalCategoryValues = categoryValues.reduce((sum, val) => sum + val, 0);
+      
+      // If all category values are <= 100 and sum to around 100, it's percentage format (capped mode)
+      const looksLikePercentages = categoryValues.every(val => val <= 100) && 
+                                  Math.abs(totalCategoryValues - 100) < 10;
+      
+      if (looksLikePercentages) {
+        // This is capped budget data (percentages)
+        setCappedBudget(tripData.budget);
+        // Don't overwrite flexible budget with percentage data
+      } else {
+        // This is flexible budget data (dollar amounts)
+        setFlexibleBudget(tripData.budget);
+        // Don't overwrite capped budget with dollar data
+      }
     }
-  }, [tripData?.budget]);
+  }, []); // Only run once on mount
 
   // Capped Budget Mode: Update percentages, auto-adjust others if needed
   const updateCappedBudget = (category, value) => {
-    const newBudget = { ...budget, [category]: value };
+    const newBudget = { ...cappedBudget, [category]: value };
     
     // Calculate total percentage
     const totalPercentage = Object.keys(newBudget)
@@ -109,18 +107,18 @@ const BudgetPage = () => {
       .reduce((sum, key) => sum + newBudget[key], 0);
     
     if (totalPercentage <= 100) {
-      setBudget(newBudget);
+      setCappedBudget(newBudget);
       updateTripData({ budget: newBudget });
     } else {
       // Auto-adjust other categories to make room
       const otherCategories = Object.keys(newBudget).filter(key => key !== 'total' && key !== category);
       const remaining = 100 - value;
-      const otherTotal = otherCategories.reduce((sum, key) => sum + budget[key], 0);
+      const otherTotal = otherCategories.reduce((sum, key) => sum + cappedBudget[key], 0);
       
       if (remaining >= 0 && otherTotal > 0) {
         const adjustedBudget = { ...newBudget };
         otherCategories.forEach(key => {
-          adjustedBudget[key] = Math.round((budget[key] / otherTotal) * remaining);
+          adjustedBudget[key] = Math.round((cappedBudget[key] / otherTotal) * remaining);
         });
         
         // Fix rounding errors
@@ -136,7 +134,7 @@ const BudgetPage = () => {
           }
         }
         
-        setBudget(adjustedBudget);
+        setCappedBudget(adjustedBudget);
         updateTripData({ budget: adjustedBudget });
       }
     }
@@ -144,7 +142,7 @@ const BudgetPage = () => {
 
   // Flexible Budget Mode: Update dollar amounts, auto-calculate total and percentages
   const updateFlexibleBudget = (category, dollarAmount) => {
-    const newBudget = { ...budget, [category]: dollarAmount };
+    const newBudget = { ...flexibleBudget, [category]: dollarAmount };
     
     // Calculate new total
     const newTotal = Object.keys(newBudget)
@@ -153,14 +151,14 @@ const BudgetPage = () => {
     
     newBudget.total = newTotal;
     
-    setBudget(newBudget);
+    setFlexibleBudget(newBudget);
     updateTripData({ budget: newBudget });
   };
 
   // Update total budget (only in capped mode)
   const updateTotalBudget = (value) => {
-    const newBudget = { ...budget, total: value };
-    setBudget(newBudget);
+    const newBudget = { ...cappedBudget, total: value };
+    setCappedBudget(newBudget);
     updateTripData({ budget: newBudget });
   };
 
@@ -181,7 +179,9 @@ const BudgetPage = () => {
   // Get total percentage
   const getTotalPercentage = () => {
     if (budgetMode === 'capped') {
-      return budget.travel + budget.accommodation + budget.food + budget.events;
+      const total = cappedBudget.travel + cappedBudget.accommodation + cappedBudget.food + cappedBudget.events;
+      // Cap the total at reasonable values to prevent display issues
+      return Math.min(Math.max(total || 0, 0), 400); // Cap at 400% to handle edge cases
     }
     return 100; // Always 100% in flexible mode
   };
@@ -190,13 +190,13 @@ const BudgetPage = () => {
   const resetToBalanced = () => {
     if (budgetMode === 'capped') {
       const balancedBudget = {
-        ...budget,
+        ...cappedBudget,
         travel: 25,
         accommodation: 25,
         food: 25,
         events: 25,
       };
-      setBudget(balancedBudget);
+      setCappedBudget(balancedBudget);
       updateTripData({ budget: balancedBudget });
     } else {
       // For flexible mode, reset everything to 0
@@ -207,7 +207,7 @@ const BudgetPage = () => {
         food: 0,
         events: 0,
       };
-      setBudget(resetBudget);
+      setFlexibleBudget(resetBudget);
       updateTripData({ budget: resetBudget });
     }
   };
@@ -448,7 +448,7 @@ const BudgetPage = () => {
                         {budgetMode === 'capped' ? (
                           <>
                             <div className={`text-2xl font-bold ${colors.accent}`}>
-                              {budget[category.id]}%
+                              {Math.min(Math.max(budget[category.id] || 0, 0), 100)}%
                             </div>
                             <div className="text-sm text-gray-600">
                               ${calculateAmount(budget[category.id]).toLocaleString()}
@@ -546,7 +546,7 @@ const BudgetPage = () => {
                           ${calculateAmount(budget[category.id]).toLocaleString()}
                         </div>
                         <div className="text-sm text-gray-600">{category.name}</div>
-                        <div className="text-xs text-gray-500">{budget[category.id]}%</div>
+                        <div className="text-xs text-gray-500">{Math.min(Math.max(budget[category.id] || 0, 0), 100)}%</div>
                       </>
                     ) : (
                       <>

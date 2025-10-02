@@ -21,54 +21,22 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
 const DatePicker = ({ selected, onSelect }) => {
-  const [isOpen, setIsOpen] = useState(false);
   const today = new Date();
 
   return (
     <div className="relative">
-      <Button
-        variant="outline"
-        className={cn(
-          "w-full justify-start text-left font-normal bg-white border-gray-200 text-gray-900 hover:bg-gray-50",
-          !selected && "text-gray-500"
-        )}
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        <CalendarIcon className="mr-2 h-4 w-4" />
-        {selected ? format(selected, "EEEE, MMMM do, yyyy") : "Pick a date"}
-      </Button>
-
-      {isOpen && (
-        <div className="absolute top-full left-0 mt-2 p-4 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[300px]">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="font-medium text-gray-900">
-                Select departure date
-              </h4>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsOpen(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <input
-              type="date"
-              value={selected ? format(selected, "yyyy-MM-dd") : ""}
-              min={format(today, "yyyy-MM-dd")}
-              onChange={(e) => {
-                if (e.target.value) {
-                  onSelect(new Date(e.target.value));
-                  setIsOpen(false);
-                }
-              }}
-              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-        </div>
-      )}
+      <input
+        type="date"
+        value={selected ? format(selected, "yyyy-MM-dd") : ""}
+        min={format(today, "yyyy-MM-dd")}
+        onChange={(e) => {
+          if (e.target.value) {
+            onSelect(new Date(e.target.value));
+          }
+        }}
+        className="w-full p-3 bg-white border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:bg-gray-50 transition-colors cursor-pointer"
+        placeholder="Select departure date"
+      />
     </div>
   );
 };
@@ -589,7 +557,7 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
                     disabled={!startDate || cities.length === 0}
                   >
                     <Plane className="h-5 w-5" />
-                    <span>Continue to Budget Planning</span>
+                    <span>Continue to Preferences</span>
                   </Button>
                 </>
               ) : (

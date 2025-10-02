@@ -15,20 +15,15 @@ export const TripProvider = ({ children }) => {
     // Destinations data
     cities: [],
     startDate: null,
-    totalDays: 0,
+    totalDays: null,
     
-    // Budget data
-    budget: {
-      total: 5000,
-      travel: 40,
-      accommodation: 30,
-      food: 20,
-      events: 10,
-    },
+    // Budget data - start with null/empty values
+    budget: null,
+    budgetMode: 'capped', // Remember budget mode preference
     
-    // Preferences data
-    people: 1,
-    travelType: '',
+    // Preferences data - start with null/empty values
+    people: null,
+    travelType: null,
     
     // Results data
     selectedTrip: null,

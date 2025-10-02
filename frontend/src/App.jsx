@@ -28,25 +28,25 @@ const AppContent = () => {
         <Route path="/" element={<LandingPage />} />
         <Route path="/plan" element={<TripPlannerPage />} />
         <Route 
-          path="/plan/budget" 
+          path="/plan/preferences" 
           element={
             <ProtectedRoute condition={tripData?.cities?.length > 0 && tripData?.startDate}>
-              <BudgetPage />
+              <PreferencesPage />
             </ProtectedRoute>
           } 
         />
         <Route 
-          path="/plan/preferences" 
+          path="/plan/budget" 
           element={
-            <ProtectedRoute condition={tripData?.budget?.total}>
-              <PreferencesPage />
+            <ProtectedRoute condition={tripData?.people && tripData?.travelType}>
+              <BudgetPage />
             </ProtectedRoute>
           } 
         />
         <Route 
           path="/plan/results" 
           element={
-            <ProtectedRoute condition={tripData?.people && tripData?.travelType}>
+            <ProtectedRoute condition={tripData?.budget?.total}>
               <ResultsPage />
             </ProtectedRoute>
           } 
