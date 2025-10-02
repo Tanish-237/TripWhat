@@ -106,6 +106,7 @@ return workflow.compile();
    * Planner Node: Analyzes user query and decides which tools to use
    */
   private async plannerNode(state: AgentState): Promise<Partial<AgentState>> {
+    console.log('\n🧠 [PLANNER] Analyzing user query:', state.userQuery);
     try {
       const messages = [
         new SystemMessage(TRAVEL_AGENT_SYSTEM_PROMPT),
@@ -129,6 +130,8 @@ return workflow.compile();
         intent = 'PLAN_TRIP';
       }
 
+      console.log('🎯 [PLANNER] Detected intent:', intent);
+
       return {
         intent,
         messages: [new AIMessage(content)],
@@ -145,6 +148,7 @@ return workflow.compile();
    * Tool Executor Node: Calls appropriate MCP tools based on intent
    */
   private async toolExecutorNode(state: AgentState): Promise<Partial<AgentState>> {
+    console.log('\n🔧 [TOOL EXECUTOR] Running tools for intent:', state.intent);
     try {
       const { intent, userQuery } = state;
 
@@ -152,9 +156,10 @@ return workflow.compile();
         case 'SEARCH_DESTINATION': {
           // Extract destination name from query
           const destination = this.extractDestination(userQuery);
-          console.log(`🔍 Searching for: ${destination}`);
+          console.log(`🔍 [TOOL] Calling OpenTripMap API for: ${destination}`);
           
           const results = await openTripMapAPI.searchPlaces(destination, 10);
+          console.log(`✅ [TOOL] Got ${results.length} results from API`);
           return { searchResults: results };
         }
 
@@ -200,6 +205,7 @@ return workflow.compile();
    * Response Formatter Node: Creates conversational response from tool results
    */
   private async responseFormatterNode(state: AgentState): Promise<Partial<AgentState>> {
+    console.log('\n✍️  [FORMATTER] Generating response...');
     try {
       const { intent, searchResults, nearbyAttractions, placeDetails, error } = state;
 
@@ -223,10 +229,12 @@ return workflow.compile();
           new SystemMessage(TRAVEL_AGENT_SYSTEM_PROMPT),
           new HumanMessage(state.userQuery),
         ];
+        console.log('🤖 [FORMATTER] Calling GPT-4o-mini for conversational response...');
         const response = await this.model.invoke(messages);
         formattedResponse = response.content as string;
       }
 
+      console.log('✅ [FORMATTER] Response generated successfully\n');
       return { response: formattedResponse };
     } catch (error) {
       console.error('Response formatter error:', error);
@@ -377,8 +385,22 @@ return workflow.compile();
   }
 }
 
-// Export singleton instance
-export const travelAgent = new TravelAgent({
-  modelName: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-  temperature: 0.7,
+// Lazy singleton instance - only created when first accessed
+let _travelAgentInstance: TravelAgent | null = null;
+
+export function getTravelAgent(): TravelAgent {
+  if (!_travelAgentInstance) {
+    _travelAgentInstance = new TravelAgent({
+      modelName: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      temperature: 0.7,
+    });
+  }
+  return _travelAgentInstance;
+}
+
+// For backward compatibility
+export const travelAgent = new Proxy({} as TravelAgent, {
+  get(target, prop) {
+    return getTravelAgent()[prop as keyof TravelAgent];
+  },
 });

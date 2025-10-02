@@ -167,5 +167,19 @@ export class OpenTripMapAPI {
   }
 }
 
-// Singleton instance
-export const openTripMapAPI = new OpenTripMapAPI();
+// Lazy singleton instance - only created when first accessed
+let _openTripMapAPIInstance: OpenTripMapAPI | null = null;
+
+export function getOpenTripMapAPI(): OpenTripMapAPI {
+  if (!_openTripMapAPIInstance) {
+    _openTripMapAPIInstance = new OpenTripMapAPI();
+  }
+  return _openTripMapAPIInstance;
+}
+
+// For backward compatibility
+export const openTripMapAPI = new Proxy({} as OpenTripMapAPI, {
+  get(target, prop) {
+    return getOpenTripMapAPI()[prop as keyof OpenTripMapAPI];
+  },
+});

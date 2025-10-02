@@ -1,6 +1,9 @@
 import { Plane, MessageCircle, Map, Sparkles } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export default function Home() {
+  const navigate = useNavigate();
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4">
       <div className="max-w-4xl w-full text-center space-y-8">
@@ -44,11 +47,14 @@ export default function Home() {
 
         {/* CTA */}
         <div className="mt-12">
-          <button className="px-8 py-4 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-lg transition-colors text-lg shadow-lg shadow-primary-500/30">
-            Start Planning Your Trip
+          <button 
+            onClick={() => navigate('/chat')}
+            className="px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-lg transition-all text-lg shadow-lg shadow-purple-500/30 hover:shadow-purple-500/50 hover:scale-105 active:scale-95"
+          >
+            Start Planning Your Trip 🚀
           </button>
           <p className="text-slate-500 text-sm mt-4">
-            Phase 0: Foundation - Server running ✓
+            Phase 1: Chat Interface - Ready! ✨
           </p>
         </div>
       </div>
