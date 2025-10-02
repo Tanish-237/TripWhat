@@ -305,13 +305,38 @@ const CityCard = ({ city, index, onRemove, onUpdate }) => {
   );
 };
 
-const TripBuilder = ({ onStartPlanning }) => {
-  const [startDate, setStartDate] = useState();
-  const [cities, setCities] = useState([]);
+const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
+  const [startDate, setStartDate] = useState(tripData?.startDate ? new Date(tripData.startDate) : null);
+  const [cities, setCities] = useState(tripData?.cities || []);
   const [newCityName, setNewCityName] = useState("");
   const [newCityDays, setNewCityDays] = useState("3");
   const [showAddForm, setShowAddForm] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState(null);
+
+  // Update local state when tripData changes
+  React.useEffect(() => {
+    if (tripData?.startDate) {
+      setStartDate(new Date(tripData.startDate));
+    }
+    if (tripData?.cities) {
+      setCities(tripData.cities);
+    }
+  }, [tripData]);
+
+  // Persist data changes to context
+  const persistData = (newStartDate = startDate, newCities = cities) => {
+    const totalDays = newCities.reduce((sum, city) => sum + city.days, 0);
+    updateTripData({
+      startDate: newStartDate,
+      cities: newCities,
+      totalDays
+    });
+  };
+
+  const handleDateChange = (date) => {
+    setStartDate(date);
+    persistData(date, cities);
+  };
 
   const addCity = () => {
     if (newCityName.trim() && newCityDays) {
@@ -320,7 +345,9 @@ const TripBuilder = ({ onStartPlanning }) => {
         name: newCityName.trim(),
         days: Number.parseInt(newCityDays) || 1,
       };
-      setCities([...cities, newCity]);
+      const newCities = [...cities, newCity];
+      setCities(newCities);
+      persistData(startDate, newCities);
       setNewCityName("");
       setNewCityDays("3");
       setShowAddForm(false);
@@ -328,13 +355,15 @@ const TripBuilder = ({ onStartPlanning }) => {
   };
 
   const removeCity = (id) => {
-    setCities(cities.filter((city) => city.id !== id));
+    const newCities = cities.filter((city) => city.id !== id);
+    setCities(newCities);
+    persistData(startDate, newCities);
   };
 
   const updateCity = (id, updates) => {
-    setCities(
-      cities.map((city) => (city.id === id ? { ...city, ...updates } : city))
-    );
+    const newCities = cities.map((city) => (city.id === id ? { ...city, ...updates } : city));
+    setCities(newCities);
+    persistData(startDate, newCities);
   };
 
   const handleDragStart = (e, index) => {
@@ -357,6 +386,7 @@ const TripBuilder = ({ onStartPlanning }) => {
     newCities.splice(dropIndex, 0, draggedCity);
 
     setCities(newCities);
+    persistData(startDate, newCities);
     setDraggedIndex(null);
   };
 
@@ -405,7 +435,7 @@ const TripBuilder = ({ onStartPlanning }) => {
                   When does your journey begin?
                 </label>
                 <div className="relative z-30">
-                  <DatePicker selected={startDate} onSelect={setStartDate} />
+                  <DatePicker selected={startDate} onSelect={handleDateChange} />
                 </div>
               </div>
             </Card>
@@ -598,13 +628,16 @@ export default function TripPlannerPage() {
 
   const handleStepClick = (step) => {
     switch (step) {
+      case "destinations":
+        // Already on destinations page
+        break;
       case "budget":
         if (tripData?.cities?.length > 0 && tripData?.startDate) {
           navigate('/plan/budget');
         }
         break;
       case "preferences":
-        if (tripData?.budget) {
+        if (tripData?.budget?.total) {
           navigate('/plan/preferences');
         }
         break;
@@ -630,7 +663,11 @@ export default function TripPlannerPage() {
         <DashboardNav />
         <main className="container mx-auto px-4 py-8 max-w-6xl">
           <QuickStats />
-          <TripBuilder onStartPlanning={handleStartPlanning} />
+          <TripBuilder 
+            onStartPlanning={handleStartPlanning} 
+            tripData={tripData}
+            updateTripData={updateTripData}
+          />
         </main>
       </div>
     </div>

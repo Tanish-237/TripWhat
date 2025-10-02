@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -26,8 +26,18 @@ const ResultsPage = () => {
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [sortBy, setSortBy] = useState("recommended");
 
-  // Mock trip plans - in real app, this would come from an API
-  const generateMockTrips = () => {
+  // Clear selected trip when tripData changes (user goes back and updates)
+  useEffect(() => {
+    setSelectedTrip(null);
+    // Also clear from context if it exists
+    if (tripData?.selectedTrip) {
+      updateTripData({ selectedTrip: null });
+    }
+  }, [tripData?.cities, tripData?.budget, tripData?.people, tripData?.travelType]);
+
+  // Mock trip plans - regenerated when tripData changes
+  const trips = useMemo(() => {
+    const generateMockTrips = () => {
     const baseTrips = [
       {
         id: 1,
@@ -186,9 +196,10 @@ const ResultsPage = () => {
     }
 
     return baseTrips;
-  };
+    };
 
-  const trips = generateMockTrips();
+    return generateMockTrips();
+  }, [tripData?.cities, tripData?.budget, tripData?.people, tripData?.travelType]);
 
   const handleSelectTrip = (trip) => {
     setSelectedTrip(trip);
@@ -202,10 +213,17 @@ const ResultsPage = () => {
         navigate("/plan");
         break;
       case "budget":
-        navigate("/plan/budget");
+        if (tripData?.cities?.length > 0 && tripData?.startDate) {
+          navigate("/plan/budget");
+        }
         break;
       case "preferences":
-        navigate("/plan/preferences");
+        if (tripData?.budget?.total) {
+          navigate("/plan/preferences");
+        }
+        break;
+      case "results":
+        // Already on results page
         break;
       default:
         break;
