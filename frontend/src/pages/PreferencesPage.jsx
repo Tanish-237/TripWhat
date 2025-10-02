@@ -81,7 +81,7 @@ const PreferencesPage = () => {
 
   const handleNext = () => {
     updateTripData({ people, travelType });
-    navigate('/plan/results');
+    navigate('/plan/budget');
   };
 
   const getColorClasses = (color) => {
@@ -153,16 +153,17 @@ const PreferencesPage = () => {
       case "destinations":
         navigate('/plan');
         break;
-      case "budget":
-        if (tripData?.cities?.length > 0 && tripData?.startDate) {
-          navigate('/plan/budget');
-        }
-        break;
       case "preferences":
         // Already on preferences page
         break;
+      case "budget":
+        if (tripData?.cities?.length > 0 && tripData?.startDate && tripData?.people && tripData?.travelType) {
+          navigate('/plan/budget');
+        }
+        break;
       case "results":
-        if (tripData?.people && tripData?.travelType) {
+        if (tripData?.cities?.length > 0 && tripData?.startDate && 
+            tripData?.people && tripData?.travelType && tripData?.budget?.total) {
           navigate('/plan/results');
         }
         break;
@@ -330,18 +331,18 @@ const PreferencesPage = () => {
           <div className="flex justify-between">
             <Button
               variant="outline"
-              onClick={() => navigate('/plan/budget')}
+              onClick={() => navigate('/plan')}
               className="px-8 py-3"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Budget
+              Back to Destinations
             </Button>
             <Button
               onClick={handleNext}
               disabled={!isComplete}
               className="px-8 py-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white disabled:opacity-50"
             >
-              Continue to Results
+              Continue to Budget
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </div>

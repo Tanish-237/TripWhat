@@ -19,16 +19,16 @@ const steps = [
     description: "Select your destinations",
   },
   {
+    id: "preferences",
+    title: "Preferences",
+    icon: Users,
+    description: "Travel style and group size",
+  },
+  {
     id: "budget",
     title: "Budget",
     icon: DollarSign,
     description: "Set your budget",
-  },
-  {
-    id: "preferences",
-    title: "Preferences",
-    icon: Users,
-    description: "Travel preferences",
   },
   {
     id: "results",
@@ -39,6 +39,35 @@ const steps = [
 ];
 
 const TripPlanningSidebar = ({ currentStep, onStepClick, tripData }) => {
+  
+  // Helper function to validate budget completion
+  const isBudgetValid = (budget) => {
+    if (!budget || !budget.total || budget.total <= 0) return false;
+    
+    // Check if all categories have valid allocations
+    const categories = ['travel', 'accommodation', 'food', 'events'];
+    const hasValidAllocations = categories.every(cat => 
+      budget[cat] !== undefined && budget[cat] >= 0
+    );
+    
+    if (!hasValidAllocations) return false;
+    
+    // For percentage-based budget (capped mode), check if total equals 100%
+    const totalAllocations = categories.reduce((sum, cat) => sum + (budget[cat] || 0), 0);
+    
+    // If values look like percentages (all ≤ 100 and budget.total > totalAllocations), 
+    // then validate they sum to 100%
+    const looksLikePercentages = categories.every(cat => budget[cat] <= 100) && 
+                                budget.total > totalAllocations;
+    
+    if (looksLikePercentages) {
+      return Math.abs(totalAllocations - 100) < 1; // Allow small rounding errors
+    }
+    
+    // For dollar-based budget (flexible mode), just ensure all categories have some allocation
+    return totalAllocations > 0;
+  };
+
   const getStepStatus = (stepId) => {
     if (currentStep === stepId) return "current";
     
@@ -47,7 +76,7 @@ const TripPlanningSidebar = ({ currentStep, onStepClick, tripData }) => {
       case "destinations":
         return tripData?.cities?.length > 0 && tripData?.startDate ? "completed" : "pending";
       case "budget":
-        return tripData?.budget?.total ? "completed" : "pending";
+        return isBudgetValid(tripData?.budget) ? "completed" : "pending";
       case "preferences":
         return tripData?.people && tripData?.travelType ? "completed" : "pending";
       case "results":
@@ -61,16 +90,16 @@ const TripPlanningSidebar = ({ currentStep, onStepClick, tripData }) => {
     switch (stepId) {
       case "destinations":
         return true; // Always accessible
-      case "budget":
-        // Can only access budget after destinations are completed
-        return tripData?.cities?.length > 0 && tripData?.startDate;
       case "preferences":
-        // Can only access preferences after budget is completed
-        return tripData?.cities?.length > 0 && tripData?.startDate && tripData?.budget?.total;
+        // Can only access preferences after destinations are completed
+        return tripData?.cities?.length > 0 && tripData?.startDate;
+      case "budget":
+        // Can only access budget after preferences are completed
+        return tripData?.cities?.length > 0 && tripData?.startDate && tripData?.people && tripData?.travelType;
       case "results":
-        // Can only access results after preferences are completed
+        // Can only access results after budget is properly completed with valid allocations
         return tripData?.cities?.length > 0 && tripData?.startDate && 
-               tripData?.budget?.total && tripData?.people && tripData?.travelType;
+               tripData?.people && tripData?.travelType && isBudgetValid(tripData?.budget);
       default:
         return false;
     }
@@ -145,80 +174,135 @@ const TripPlanningSidebar = ({ currentStep, onStepClick, tripData }) => {
         })}
       </div>
 
-      {/* Trip Summary */}
+      {/* Trip Summary - Enhanced styling */}
       {tripData && (
-        <div className="mt-8 p-4 bg-gray-50 rounded-lg">
-          <h3 className="font-semibold text-sm text-gray-900 mb-3">Trip Summary</h3>
-          <div className="space-y-2 text-xs text-gray-600">
+        <div className="mt-8 p-5 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 shadow-sm">
+          <h3 className="font-bold text-lg text-blue-900 mb-4 flex items-center">
+            <span className="mr-2">📋</span>
+            Trip Summary
+          </h3>
+          <div className="space-y-3 text-sm text-gray-700">
             {/* Always show destinations info if available */}
             {tripData.cities && tripData.cities.length > 0 && (
               <>
-                <div className="flex justify-between">
-                  <span>Destinations:</span>
-                  <span className="font-medium">{tripData.cities.length} cities</span>
+                <div className="flex justify-between items-center py-2 px-3 bg-white rounded-lg shadow-sm">
+                  <span className="font-medium text-gray-600">🌍 Destinations:</span>
+                  <span className="font-bold text-blue-600">{tripData.cities.length} cities</span>
                 </div>
-                <div className="text-xs text-gray-500 mb-2 break-words">
-                  {tripData.cities.map(city => `${city.name} (${city.days}d)`).join(', ')}
+                <div className="text-xs text-gray-600 bg-white p-2 rounded-lg shadow-sm">
+                  {tripData.cities.map(city => `${city.name} (${city.days}d)`).join(' → ')}
                 </div>
               </>
             )}
             {tripData.startDate && (
-              <div className="flex justify-between">
-                <span>Start Date:</span>
-                <span className="font-medium">
+              <div className="flex justify-between items-center py-2 px-3 bg-white rounded-lg shadow-sm">
+                <span className="font-medium text-gray-600">📅 Start Date:</span>
+                <span className="font-bold text-green-600">
                   {new Date(tripData.startDate).toLocaleDateString()}
                 </span>
               </div>
             )}
             {tripData.totalDays && (
-              <div className="flex justify-between">
-                <span>Total Days:</span>
-                <span className="font-medium">{tripData.totalDays}</span>
+              <div className="flex justify-between items-center py-2 px-3 bg-white rounded-lg shadow-sm">
+                <span className="font-medium text-gray-600">⏱️ Duration:</span>
+                <span className="font-bold text-purple-600">{tripData.totalDays} days</span>
               </div>
             )}
 
-            {/* Show budget info only if we're past destinations step */}
-            {(currentStep === "budget" || currentStep === "preferences" || currentStep === "results") && tripData.budget && (
+            {/* Show preferences info only if we're past destinations step */}
+            {(currentStep === "preferences" || currentStep === "budget" || currentStep === "results") && (
               <>
-                <div className="border-t border-gray-200 mt-3 pt-2">
-                  <div className="flex justify-between">
-                    <span>Total Budget:</span>
-                    <span className="font-medium">${tripData.budget.total?.toLocaleString()}</span>
+                {tripData.people && (
+                  <div className="flex justify-between items-center py-2 px-3 bg-white rounded-lg shadow-sm">
+                    <span className="font-medium text-gray-600">👥 Group Size:</span>
+                    <span className="font-bold text-indigo-600">{tripData.people} people</span>
                   </div>
-                  {tripData.budget.travel && (
-                    <div className="text-xs text-gray-500 mt-1">
-                      Travel: {tripData.budget.travel}% • Accommodation: {tripData.budget.accommodation}% • 
-                      Food: {tripData.budget.food}% • Events: {tripData.budget.events}%
+                )}
+                {tripData.travelType && (
+                  <div className="flex justify-between items-center py-2 px-3 bg-white rounded-lg shadow-sm">
+                    <span className="font-medium text-gray-600">🎯 Travel Style:</span>
+                    <span className="font-bold text-pink-600 capitalize">{tripData.travelType}</span>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Show budget info only if we're past preferences step */}
+            {(currentStep === "budget" || currentStep === "results") && tripData.budget && (
+              <>
+                <div className="border-t border-gray-200 mt-3 pt-3">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-gray-700">Total Budget:</span>
+                    <span className="font-bold text-green-600 text-lg">
+                      ${tripData.budget.total?.toLocaleString()}
+                    </span>
+                  </div>
+                  
+                  {/* Budget breakdown with enhanced styling */}
+                  {(tripData.budget.travel || tripData.budget.accommodation || tripData.budget.food || tripData.budget.events) && (
+                    <div className="mt-3 space-y-2">
+                      <div className="text-xs font-medium text-gray-600 mb-2">Budget Breakdown:</div>
+                      
+                      {tripData.budget.travel > 0 && (
+                        <div className="flex justify-between items-center py-1 px-2 bg-blue-50 rounded-md">
+                          <span className="text-xs text-blue-700 font-medium">✈️ Travel:</span>
+                          <span className="text-xs font-semibold text-blue-800">
+                            {/* Check if values look like percentages (≤100) or dollars (>100) */}
+                            {tripData.budget.travel <= 100 && tripData.budget.total > tripData.budget.travel ? 
+                              `${tripData.budget.travel}% ($${Math.round((tripData.budget.travel / 100) * tripData.budget.total).toLocaleString()})` :
+                              `$${tripData.budget.travel.toLocaleString()}`
+                            }
+                          </span>
+                        </div>
+                      )}
+                      
+                      {tripData.budget.accommodation > 0 && (
+                        <div className="flex justify-between items-center py-1 px-2 bg-green-50 rounded-md">
+                          <span className="text-xs text-green-700 font-medium">🏨 Stay:</span>
+                          <span className="text-xs font-semibold text-green-800">
+                            {tripData.budget.accommodation <= 100 && tripData.budget.total > tripData.budget.accommodation ? 
+                              `${tripData.budget.accommodation}% ($${Math.round((tripData.budget.accommodation / 100) * tripData.budget.total).toLocaleString()})` :
+                              `$${tripData.budget.accommodation.toLocaleString()}`
+                            }
+                          </span>
+                        </div>
+                      )}
+                      
+                      {tripData.budget.food > 0 && (
+                        <div className="flex justify-between items-center py-1 px-2 bg-orange-50 rounded-md">
+                          <span className="text-xs text-orange-700 font-medium">🍽️ Food:</span>
+                          <span className="text-xs font-semibold text-orange-800">
+                            {tripData.budget.food <= 100 && tripData.budget.total > tripData.budget.food ? 
+                              `${tripData.budget.food}% ($${Math.round((tripData.budget.food / 100) * tripData.budget.total).toLocaleString()})` :
+                              `$${tripData.budget.food.toLocaleString()}`
+                            }
+                          </span>
+                        </div>
+                      )}
+                      
+                      {tripData.budget.events > 0 && (
+                        <div className="flex justify-between items-center py-1 px-2 bg-purple-50 rounded-md">
+                          <span className="text-xs text-purple-700 font-medium">🎉 Events:</span>
+                          <span className="text-xs font-semibold text-purple-800">
+                            {tripData.budget.events <= 100 && tripData.budget.total > tripData.budget.events ? 
+                              `${tripData.budget.events}% ($${Math.round((tripData.budget.events / 100) * tripData.budget.total).toLocaleString()})` :
+                              `$${tripData.budget.events.toLocaleString()}`
+                            }
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               </>
             )}
 
-            {/* Show preferences info only if we're past budget step */}
-            {(currentStep === "preferences" || currentStep === "results") && (
-              <>
-                {tripData.people && (
-                  <div className="flex justify-between border-t border-gray-200 pt-2">
-                    <span>Travelers:</span>
-                    <span className="font-medium">{tripData.people} {tripData.people === 1 ? 'person' : 'people'}</span>
-                  </div>
-                )}
-                {tripData.travelType && (
-                  <div className="flex justify-between">
-                    <span>Travel Type:</span>
-                    <span className="font-medium capitalize">{tripData.travelType}</span>
-                  </div>
-                )}
-              </>
-            )}
-
             {/* Show results info only if we're on results step */}
             {currentStep === "results" && tripData.selectedTrip && (
-              <div className="border-t border-gray-200 mt-3 pt-2">
-                <div className="flex justify-between">
-                  <span>Selected Trip:</span>
-                  <span className="font-medium text-xs">{tripData.selectedTrip.title}</span>
+              <div className="border-t border-gray-200 mt-3 pt-3">
+                <div className="flex justify-between items-center py-2 px-3 bg-white rounded-lg shadow-sm">
+                  <span className="font-medium text-gray-600">✨ Selected Trip:</span>
+                  <span className="font-bold text-green-600 text-xs">{tripData.selectedTrip.title}</span>
                 </div>
               </div>
             )}

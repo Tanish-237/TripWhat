@@ -9,6 +9,7 @@ const Slider = ({
   step = 1,
   className,
   disabled = false,
+  color = "blue", // Add color prop for theming
   ...props
 }) => {
   // Handle both array and single value formats
@@ -22,6 +23,36 @@ const Slider = ({
     }
   };
 
+  // Color configurations to match the app theme
+  const colorConfigs = {
+    blue: {
+      track: '#3b82f6', // blue-500
+      background: '#e5e7eb', // gray-200
+      ring: '#3b82f6', // blue-500
+      thumb: '#1d4ed8', // blue-700
+    },
+    green: {
+      track: '#10b981', // green-500
+      background: '#e5e7eb', // gray-200
+      ring: '#10b981', // green-500
+      thumb: '#047857', // green-700
+    },
+    orange: {
+      track: '#f97316', // orange-500
+      background: '#e5e7eb', // gray-200
+      ring: '#f97316', // orange-500
+      thumb: '#c2410c', // orange-700
+    },
+    purple: {
+      track: '#8b5cf6', // purple-500
+      background: '#e5e7eb', // gray-200
+      ring: '#8b5cf6', // purple-500
+      thumb: '#6d28d9', // purple-700
+    }
+  };
+
+  const colors = colorConfigs[color] || colorConfigs.blue;
+
   return (
     <div className={cn("relative w-full", className)}>
       <input
@@ -33,13 +64,14 @@ const Slider = ({
         onChange={handleChange}
         disabled={disabled}
         className={cn(
-          "w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer",
-          "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50",
-          "slider-thumb",
+          "w-full h-3 rounded-lg appearance-none cursor-pointer transition-all duration-200",
+          "focus:outline-none focus:ring-2 focus:ring-opacity-50",
+          `slider-${color}`,
           disabled && "cursor-not-allowed opacity-50"
         )}
         style={{
-          background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${percentage}%, #e5e7eb ${percentage}%, #e5e7eb 100%)`,
+          background: `linear-gradient(to right, ${colors.track} 0%, ${colors.track} ${percentage}%, ${colors.background} ${percentage}%, ${colors.background} 100%)`,
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
         }}
         {...props}
       />

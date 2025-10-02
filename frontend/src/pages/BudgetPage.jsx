@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import TripPlanningSidebar from "@/components/TripPlanningSidebar";
 import { useTrip } from "@/contexts/TripContext";
-import { DollarSign, Plane, Home, Utensils, Calendar, ArrowRight } from "lucide-react";
+import { DollarSign, Plane, Home, Utensils, Calendar, ArrowRight, ArrowLeft } from "lucide-react";
 
 const BudgetPage = () => {
   const navigate = useNavigate();
@@ -21,6 +21,45 @@ const BudgetPage = () => {
     food: tripData?.budget?.food || 25,
     events: tripData?.budget?.events || 25,
   });
+
+  // Handle budget mode switching
+  const handleBudgetModeChange = (newMode) => {
+    if (newMode === 'capped' && budgetMode === 'flexible') {
+      // Converting from flexible (dollars) to capped (percentages)
+      const total = budget.travel + budget.accommodation + budget.food + budget.events;
+      if (total > 0) {
+        const newBudget = {
+          total: total,
+          travel: Math.round((budget.travel / total) * 100),
+          accommodation: Math.round((budget.accommodation / total) * 100),
+          food: Math.round((budget.food / total) * 100),
+          events: Math.round((budget.events / total) * 100),
+        };
+        
+        // Ensure percentages add up to 100%
+        const totalPercentage = newBudget.travel + newBudget.accommodation + newBudget.food + newBudget.events;
+        if (totalPercentage !== 100) {
+          const diff = 100 - totalPercentage;
+          newBudget.travel += diff; // Add difference to first category
+        }
+        
+        setBudget(newBudget);
+        updateTripData({ budget: newBudget });
+      }
+    } else if (newMode === 'flexible' && budgetMode === 'capped') {
+      // Converting from capped (percentages) to flexible (dollars)
+      const newBudget = {
+        total: budget.travel + budget.accommodation + budget.food + budget.events,
+        travel: Math.round((budget.travel / 100) * budget.total),
+        accommodation: Math.round((budget.accommodation / 100) * budget.total),
+        food: Math.round((budget.food / 100) * budget.total),
+        events: Math.round((budget.events / 100) * budget.total),
+      };
+      setBudget(newBudget);
+      updateTripData({ budget: newBudget });
+    }
+    setBudgetMode(newMode);
+  };
 
   const budgetCategories = [
     {
@@ -160,16 +199,16 @@ const BudgetPage = () => {
       setBudget(balancedBudget);
       updateTripData({ budget: balancedBudget });
     } else {
-      const quarterAmount = Math.round(budget.total / 4);
-      const balancedBudget = {
-        ...budget,
-        travel: quarterAmount,
-        accommodation: quarterAmount,
-        food: quarterAmount,
-        events: quarterAmount,
+      // For flexible mode, reset everything to 0
+      const resetBudget = {
+        total: 0,
+        travel: 0,
+        accommodation: 0,
+        food: 0,
+        events: 0,
       };
-      setBudget(balancedBudget);
-      updateTripData({ budget: balancedBudget });
+      setBudget(resetBudget);
+      updateTripData({ budget: resetBudget });
     }
   };
 
@@ -203,8 +242,33 @@ const BudgetPage = () => {
     return colors[color] || colors.blue;
   };
 
+  // Helper function to validate budget completion
+  const isBudgetValid = () => {
+    if (!budget || !budget.total || budget.total <= 0) return false;
+    
+    // Check if all categories have valid allocations
+    const categories = ['travel', 'accommodation', 'food', 'events'];
+    const hasValidAllocations = categories.every(cat => 
+      budget[cat] !== undefined && budget[cat] >= 0
+    );
+    
+    if (!hasValidAllocations) return false;
+    
+    // For percentage-based budget (capped mode), check if total equals 100%
+    const totalAllocations = categories.reduce((sum, cat) => sum + (budget[cat] || 0), 0);
+    
+    if (budgetMode === 'capped') {
+      return Math.abs(totalAllocations - 100) < 1; // Allow small rounding errors
+    }
+    
+    // For dollar-based budget (flexible mode), ensure all categories have some allocation
+    return totalAllocations > 0;
+  };
+
   const handleNext = () => {
-    navigate('/plan/preferences');
+    if (isBudgetValid()) {
+      navigate('/plan/results');
+    }
   };
 
   const handleStepClick = (step) => {
@@ -213,10 +277,15 @@ const BudgetPage = () => {
         navigate('/plan');
         break;
       case "preferences":
-        navigate('/plan/preferences');
+        if (tripData?.cities?.length > 0 && tripData?.startDate) {
+          navigate('/plan/preferences');
+        }
+        break;
+      case "budget":
+        // Already on budget page
         break;
       case "results":
-        if (tripData?.people && tripData?.travelType) {
+        if (tripData?.people && tripData?.travelType && tripData?.budget?.total) {
           navigate('/plan/results');
         }
         break;
@@ -254,7 +323,7 @@ const BudgetPage = () => {
                 <Button
                   variant={budgetMode === 'capped' ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => setBudgetMode('capped')}
+                  onClick={() => handleBudgetModeChange('capped')}
                   className="text-sm"
                 >
                   Capped Budget
@@ -262,7 +331,7 @@ const BudgetPage = () => {
                 <Button
                   variant={budgetMode === 'flexible' ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => setBudgetMode('flexible')}
+                  onClick={() => handleBudgetModeChange('flexible')}
                   className="text-sm"
                 >
                   Flexible Budget
@@ -306,8 +375,9 @@ const BudgetPage = () => {
                     value={[budget.total]}
                     onValueChange={([value]) => updateTotalBudget(value)}
                     min={1000}
-                    max={50000}
+                    max={100000}
                     step={500}
+                    color="green"
                     className="w-full"
                   />
                   <div className="flex justify-between items-center text-sm text-gray-500">
@@ -317,7 +387,7 @@ const BudgetPage = () => {
                         Set your maximum budget limit
                       </span>
                     </div>
-                    <span>$50,000</span>
+                    <span>$100,000</span>
                   </div>
                 </div>
               </>
@@ -406,6 +476,7 @@ const BudgetPage = () => {
                           min={0}
                           max={100}
                           step={1}
+                          color={category.color}
                           className="w-full"
                         />
                         <div className="flex justify-between items-center text-xs text-gray-500">
@@ -424,8 +495,9 @@ const BudgetPage = () => {
                           value={[budget[category.id]]}
                           onValueChange={([value]) => updateFlexibleBudget(category.id, value)}
                           min={0}
-                          max={10000}
+                          max={25000}
                           step={50}
+                          color={category.color}
                           className="w-full"
                         />
                         <div className="flex justify-between items-center text-xs text-gray-500">
@@ -435,7 +507,7 @@ const BudgetPage = () => {
                               {calculatePercentage(budget[category.id])}% of total
                             </span>
                           </div>
-                          <span>$10,000</span>
+                          <span>$25,000</span>
                         </div>
                       </>
                     )}
@@ -490,6 +562,25 @@ const BudgetPage = () => {
               })}
             </div>
             
+            {!isBudgetValid() && (
+              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-800 font-medium">
+                  ⚠️ Budget Incomplete
+                </p>
+                <p className="text-xs text-red-700 mt-1">
+                  {budgetMode === 'capped' ? (
+                    getTotalPercentage() !== 100 ? 
+                      `Please allocate exactly 100% across categories. Currently: ${getTotalPercentage()}%` :
+                      'Please ensure all budget categories are properly set.'
+                  ) : (
+                    budget.total <= 0 ? 
+                      'Please set budget amounts for your categories.' :
+                      'Please allocate some budget to each category to continue.'
+                  )}
+                </p>
+              </div>
+            )}
+            
             {budgetMode === 'capped' && getTotalPercentage() !== 100 && (
               <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <p className="text-sm text-yellow-800">
@@ -506,21 +597,22 @@ const BudgetPage = () => {
           <div className="flex justify-between">
             <Button
               variant="outline"
-              onClick={() => navigate('/plan')}
+              onClick={() => navigate('/plan/preferences')}
               className="px-8 py-3"
             >
-              Back to Destinations
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Preferences
             </Button>
             <Button
               onClick={handleNext}
-              disabled={budgetMode === 'capped' && getTotalPercentage() !== 100}
+              disabled={!isBudgetValid()}
               className={`px-8 py-3 ${
-                (budgetMode === 'flexible' || getTotalPercentage() === 100)
+                isBudgetValid()
                   ? 'bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white'
                   : 'bg-gray-300 text-gray-500 cursor-not-allowed'
               }`}
             >
-              Continue to Preferences
+              Continue to Results
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </div>

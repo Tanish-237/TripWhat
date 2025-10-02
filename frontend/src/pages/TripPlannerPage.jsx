@@ -623,7 +623,7 @@ export default function TripPlannerPage() {
 
   const handleStartPlanning = (data) => {
     updateTripData(data);
-    navigate('/plan/budget');
+    navigate('/plan/preferences');
   };
 
   const handleStepClick = (step) => {
