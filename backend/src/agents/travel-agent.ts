@@ -2,9 +2,11 @@ import { StateGraph, Annotation } from '@langchain/langgraph';
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, AIMessage, SystemMessage, BaseMessage } from '@langchain/core/messages';
 import { openTripMapAPI } from '../mcp-servers/places/api.js';
+import { itineraryBuilder } from '../services/itineraryBuilder.js';
 import { TRAVEL_AGENT_SYSTEM_PROMPT } from './prompts.js';
 import type { AgentConfig } from './types.js';
 import type { Destination } from '../mcp-servers/places/types.js';
+import type { Itinerary } from '../types/itinerary.js';
 
 /**
  * Define agent state using Annotation API
@@ -31,6 +33,10 @@ const AgentStateAnnotation = Annotation.Root({
     default: () => undefined,
   }),
   nearbyAttractions: Annotation<Destination[] | undefined>({
+    reducer: (left, right) => right ?? left,
+    default: () => undefined,
+  }),
+  itinerary: Annotation<Itinerary | null | undefined>({
     reducer: (left, right) => right ?? left,
     default: () => undefined,
   }),
@@ -90,7 +96,7 @@ export class TravelAgent {
   .addEdge('__start__', 'planner')
   .addConditionalEdges('planner', (state: AgentState) => {
     // If intent requires tools, go to tool executor
-    if (['SEARCH_DESTINATION', 'GET_DETAILS', 'FIND_NEARBY'].includes(state.intent || '')) {
+    if (['SEARCH_DESTINATION', 'GET_DETAILS', 'FIND_NEARBY', 'PLAN_TRIP'].includes(state.intent || '')) {
       return 'tool_executor';
     }
     // Otherwise, go directly to response formatter
@@ -120,14 +126,21 @@ return workflow.compile();
       let intent: AgentState['intent'] = 'CASUAL_CHAT';
       
       const query = state.userQuery.toLowerCase();
-      if (query.includes('find') || query.includes('search') || query.includes('show') || query.includes('attractions')) {
+      
+      // Check for location-based queries (strongest signal)
+      const locationPatterns = /\b(in|to|at|around)\s+[A-Z][a-z]+/;
+      const hasLocation = locationPatterns.test(state.userQuery);
+      
+      if (query.includes('plan') || query.includes('itinerary') || query.includes('build') && query.includes('trip')) {
+        intent = 'PLAN_TRIP';
+      } else if (query.includes('find') || query.includes('search') || query.includes('show') || query.includes('attractions') || 
+                 query.includes('what can i do') || query.includes('things to do') || query.includes('activities') || 
+                 (query.includes('see') && hasLocation) || (query.includes('visit') && hasLocation)) {
         intent = 'SEARCH_DESTINATION';
       } else if (query.includes('near') || query.includes('nearby') || query.includes('around')) {
         intent = 'FIND_NEARBY';
       } else if (query.includes('tell me about') || query.includes('details') || query.includes('information')) {
         intent = 'GET_DETAILS';
-      } else if (query.includes('plan') || query.includes('itinerary') || query.includes('trip')) {
-        intent = 'PLAN_TRIP';
       }
 
       console.log('🎯 [PLANNER] Detected intent:', intent);
@@ -154,13 +167,39 @@ return workflow.compile();
 
       switch (intent) {
         case 'SEARCH_DESTINATION': {
-          // Extract destination name from query
+          // Extract destination and category from query
           const destination = this.extractDestination(userQuery);
-          console.log(`🔍 [TOOL] Calling OpenTripMap API for: ${destination}`);
+          const category = this.extractCategory(userQuery);
           
-          const results = await openTripMapAPI.searchPlaces(destination, 10);
-          console.log(`✅ [TOOL] Got ${results.length} results from API`);
-          return { searchResults: results };
+          if (category) {
+            console.log(`🔍 [TOOL] Searching for ${category} in ${destination}`);
+            
+            // First geocode the destination to get coordinates
+            const tempResults = await openTripMapAPI.searchPlaces(destination, 1);
+            if (tempResults.length === 0) {
+              return { searchResults: [] };
+            }
+            
+            const { latitude, longitude } = tempResults[0].location;
+            
+            // Then search by category around those coordinates
+            const categoryResults = await openTripMapAPI.searchByCategory(
+              latitude,
+              longitude,
+              category,
+              10000, // 10km radius
+              10     // limit
+            );
+            
+            console.log(`✅ [TOOL] Got ${categoryResults.length} ${category} results`);
+            return { searchResults: categoryResults };
+          } else {
+            // Generic search without category filter
+            console.log(`🔍 [TOOL] Calling OpenTripMap API for: ${destination}`);
+            const results = await openTripMapAPI.searchPlaces(destination, 10);
+            console.log(`✅ [TOOL] Got ${results.length} results from API`);
+            return { searchResults: results };
+          }
         }
 
         case 'FIND_NEARBY': {
@@ -190,6 +229,22 @@ return workflow.compile();
           return { error: 'No place found to get details for.' };
         }
 
+        case 'PLAN_TRIP': {
+          // Extract trip parameters from query
+          const destination = this.extractDestination(userQuery);
+          const duration = this.extractDuration(userQuery);
+          
+          console.log(`🗓️ [TOOL] Building ${duration}-day itinerary for ${destination}`);
+          
+          const itinerary = await itineraryBuilder.buildItinerary(destination, duration);
+          
+          if (itinerary) {
+            console.log(`✅ [TOOL] Successfully built itinerary with ${itinerary.days.length} days`);
+          }
+          
+          return { itinerary };
+        }
+
         default:
           return {};
       }
@@ -207,7 +262,7 @@ return workflow.compile();
   private async responseFormatterNode(state: AgentState): Promise<Partial<AgentState>> {
     console.log('\n✍️  [FORMATTER] Generating response...');
     try {
-      const { intent, searchResults, nearbyAttractions, placeDetails, error } = state;
+      const { intent, searchResults, nearbyAttractions, placeDetails, itinerary, error } = state;
 
       // Handle errors
       if (error) {
@@ -217,7 +272,9 @@ return workflow.compile();
       // Format response based on what data we have
       let formattedResponse = '';
 
-      if (searchResults && searchResults.length > 0) {
+      if (itinerary) {
+        formattedResponse = this.formatItinerary(itinerary);
+      } else if (searchResults && searchResults.length > 0) {
         formattedResponse = this.formatSearchResults(searchResults);
       } else if (nearbyAttractions && nearbyAttractions.length > 0) {
         formattedResponse = this.formatNearbyAttractions(nearbyAttractions);
@@ -276,6 +333,97 @@ return workflow.compile();
     
     // Fallback: return last word
     return words[words.length - 1].replace(/[^a-zA-Z]/gi, '');
+  }
+
+  /**
+   * Helper: Extract trip duration from user query
+   */
+  private extractDuration(query: string): number {
+    const lowerQuery = query.toLowerCase();
+    
+    // Pattern 1: "3-day", "5 day", "7 days"
+    const dayMatch = query.match(/(\d+)[-\s]?days?/i);
+    if (dayMatch) {
+      return parseInt(dayMatch[1]);
+    }
+    
+    // Pattern 2: "three day", "five days" (word numbers)
+    const wordNumbers: Record<string, number> = {
+      'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+      'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
+    };
+    
+    for (const [word, num] of Object.entries(wordNumbers)) {
+      if (lowerQuery.includes(`${word} day`)) {
+        return num;
+      }
+    }
+    
+    // Pattern 3: "weekend" = 2-3 days
+    if (lowerQuery.includes('weekend')) {
+      return 3;
+    }
+    
+    // Pattern 4: "week" = 7 days
+    if (lowerQuery.includes('week')) {
+      return 7;
+    }
+    
+    // Default: 3 days
+    return 3;
+  }
+
+  /**
+   * Helper: Extract category/type from query
+   * Maps user-friendly terms to OpenTripMap category codes
+   */
+  private extractCategory(query: string): string | null {
+    const queryLower = query.toLowerCase();
+    
+    const categoryMap: { [key: string]: string } = {
+      'beach': 'beaches',
+      'beaches': 'beaches',
+      'restaurant': 'foods',
+      'restaurants': 'foods',
+      'food': 'foods',
+      'dining': 'foods',
+      'eat': 'foods',
+      'museum': 'museums',
+      'museums': 'museums',
+      'park': 'natural',
+      'parks': 'natural',
+      'nature': 'natural',
+      'natural': 'natural',
+      'garden': 'natural',
+      'gardens': 'natural',
+      'monument': 'monuments',
+      'monuments': 'monuments',
+      'church': 'religion',
+      'churches': 'religion',
+      'temple': 'religion',
+      'temples': 'religion',
+      'mosque': 'religion',
+      'mosques': 'religion',
+      'shopping': 'shops',
+      'shop': 'shops',
+      'mall': 'shops',
+      'hotel': 'accomodations',
+      'hotels': 'accomodations',
+      'stay': 'accomodations',
+      'nightlife': 'nightlife',
+      'bar': 'nightlife',
+      'bars': 'nightlife',
+      'club': 'nightlife',
+      'clubs': 'nightlife',
+    };
+
+    for (const [keyword, category] of Object.entries(categoryMap)) {
+      if (queryLower.includes(keyword)) {
+        return category;
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -350,7 +498,59 @@ return workflow.compile();
       response += `\n🖼️ [View Image](${details.image})\n`;
     }
     
-    response += '\n\nWould you like to find nearby attractions or plan a visit? 🎒';
+    response += '\nWould you like more details about any of these places? ✨';
+    return response;
+  }
+
+  /**
+   * Helper: Format itinerary into readable text
+   */
+  private formatItinerary(itinerary: Itinerary): string {
+    const { tripMetadata, days } = itinerary;
+    
+    let response = `# 🗺️ ${tripMetadata.duration}-Day ${tripMetadata.destination} Itinerary\n\n`;
+    response += `I've created a detailed ${tripMetadata.duration}-day itinerary for your trip to ${tripMetadata.destination}! Here's your personalized plan:\n\n`;
+    response += `---\n\n`;
+
+    days.forEach((day) => {
+      response += `## 📅 Day ${day.dayNumber}: ${day.title}\n\n`;
+
+      day.timeSlots.forEach((slot) => {
+        if (slot.activities.length === 0) return;
+
+        const emoji = slot.period === 'morning' ? '☀️' : slot.period === 'afternoon' ? '🌆' : '🌙';
+        response += `### ${emoji} ${slot.period.charAt(0).toUpperCase() + slot.period.slice(1)} (${slot.startTime}-${slot.endTime})\n\n`;
+
+        slot.activities.forEach((activity, idx) => {
+          response += `**${idx + 1}. ${activity.name}**\n`;
+          response += `   ⏱️  Duration: ${activity.duration}\n`;
+          
+          if (activity.estimatedCost) {
+            response += `   💰 Cost: ${activity.estimatedCost}\n`;
+          }
+          
+          if (activity.category) {
+            response += `   🏷️  Type: ${activity.category}\n`;
+          }
+          
+          if (activity.description) {
+            response += `   📝 ${activity.description.substring(0, 100)}${activity.description.length > 100 ? '...' : ''}\n`;
+          }
+          
+          response += `\n`;
+        });
+      });
+
+      response += `---\n\n`;
+    });
+
+    response += `\n✨ This itinerary includes ${days.reduce((sum, day) => sum + day.timeSlots.reduce((s, slot) => s + slot.activities.length, 0), 0)} activities across ${days.length} days!\n\n`;
+    response += `Would you like me to:\n`;
+    response += `- Adjust the schedule\n`;
+    response += `- Add more activities\n`;
+    response += `- Find accommodations\n`;
+    response += `- Get transportation details\n`;
+
     return response;
   }
 
@@ -370,6 +570,7 @@ return workflow.compile();
         searchResults: undefined,
         nearbyAttractions: undefined,
         placeDetails: undefined,
+        itinerary: undefined,
         response: undefined,
         error: undefined,
       };

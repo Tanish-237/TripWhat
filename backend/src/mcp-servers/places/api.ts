@@ -1,5 +1,13 @@
 import axios from 'axios';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import type {OpenTripMapPlace, PlaceDetails, Destination, GeoJSONFeatureCollection } from './types.js';
+
+// Ensure environment variables are loaded
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 // OpenTripMap API - Get free key at https://opentripmap.io/product
 const BASE_URL = 'https://api.opentripmap.com/0.1/en/places';
@@ -10,6 +18,11 @@ export class OpenTripMapAPI {
   constructor(apiKey?: string) {
     // Use provided key, environment variable, or warn
     this.apiKey = apiKey || process.env.OPENTRIPMAP_API_KEY || '';
+    
+    console.log('[OpenTripMapAPI] Constructor called');
+    console.log('[OpenTripMapAPI] Provided key:', apiKey ? `${apiKey.substring(0, 10)}...` : 'undefined');
+    console.log('[OpenTripMapAPI] Env key:', process.env.OPENTRIPMAP_API_KEY ? `${process.env.OPENTRIPMAP_API_KEY.substring(0, 10)}...` : 'undefined');
+    console.log('[OpenTripMapAPI] Final key:', this.apiKey ? `${this.apiKey.substring(0, 10)}...` : 'EMPTY!');
     
     if (!this.apiKey) {
       console.warn('⚠️  OpenTripMap API key not found. Get your free key at https://opentripmap.io/product');
@@ -59,6 +72,71 @@ export class OpenTripMapAPI {
     } catch (error) {
       console.error('OpenTripMap search error:', error);
       return [];
+    }
+  }
+
+  /**
+   * Search places by category (museums, restaurants, nature, etc.)
+   * Useful for building diverse itineraries
+   */
+  async searchByCategory(
+    lat: number,
+    lon: number,
+    category: string,
+    radius: number = 5000,
+    limit: number = 10
+  ): Promise<Destination[]> {
+    try {
+      const response = await axios.get(`${BASE_URL}/radius`, {
+        params: {
+          radius,
+          lon,
+          lat,
+          kinds: category, // e.g., 'museums', 'restaurants', 'natural'
+          limit,
+          format: 'geojson',
+          apikey: this.apiKey,
+        },
+      });
+
+      const geoData = response.data as GeoJSONFeatureCollection;
+      if (!geoData.features || !Array.isArray(geoData.features)) {
+        return [];
+      }
+
+      return this.transformGeoJSONFeatures(geoData.features);
+    } catch (error) {
+      console.error('OpenTripMap category search error:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get multiple categories of places for itinerary building
+   * Returns a diverse set of attractions, restaurants, and activities
+   */
+  async getItineraryPlaces(
+    lat: number,
+    lon: number,
+    radius: number = 5000
+  ): Promise<{
+    attractions: Destination[];
+    restaurants: Destination[];
+    nature: Destination[];
+    culture: Destination[];
+  }> {
+    try {
+      const [attractions, restaurants, nature, culture] = await Promise.all([
+        this.searchByCategory(lat, lon, 'interesting_places', radius, 10),
+        this.searchByCategory(lat, lon, 'foods', radius, 5),
+        this.searchByCategory(lat, lon, 'natural', radius, 5),
+        this.searchByCategory(lat, lon, 'cultural,museums,theatres_and_entertainments', radius, 8),
+      ]);
+
+      return { attractions, restaurants, nature, culture };
+    } catch (error) {
+      console.error('OpenTripMap itinerary places error:', error);
+      return { attractions: [], restaurants: [], nature: [], culture: [] };
     }
   }
 
@@ -172,7 +250,9 @@ let _openTripMapAPIInstance: OpenTripMapAPI | null = null;
 
 export function getOpenTripMapAPI(): OpenTripMapAPI {
   if (!_openTripMapAPIInstance) {
-    _openTripMapAPIInstance = new OpenTripMapAPI();
+    // Explicitly pass API key from environment
+    const apiKey = process.env.OPENTRIPMAP_API_KEY || '';
+    _openTripMapAPIInstance = new OpenTripMapAPI(apiKey);
   }
   return _openTripMapAPIInstance;
 }

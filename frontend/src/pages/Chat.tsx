@@ -3,6 +3,10 @@ import { useSocket } from '../hooks/useSocket';
 import { MessageBubble } from '../components/Chat/MessageBubble';
 import { TypingIndicator } from '../components/Chat/TypingIndicator';
 import { MessageInput } from '../components/Chat/MessageInput';
+import { Map } from '../components/Map';
+import { ItineraryOverlay } from '../components/ItineraryOverlay';
+import type { Itinerary, Activity } from '../types/itinerary';
+import { parseItineraryFromMarkdown } from '../utils/itineraryParser';
 import axios from 'axios';
 import { Plane, MapPin } from 'lucide-react';
 
@@ -19,6 +23,11 @@ export function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Itinerary and Map state
+  const [currentItinerary, setCurrentItinerary] = useState<Itinerary | null>(null);
+  const [isItineraryOpen, setIsItineraryOpen] = useState(false);
+  const [mapLocations, setMapLocations] = useState<Array<{lat: number; lon: number; name: string; description?: string}>>([]);
 
   const { isConnected, agentStatus, lastMessage, lastError, clearLastMessage, clearLastError } = 
     useSocket(conversationId);
@@ -94,6 +103,36 @@ export function Chat() {
     }
   }, [lastError, conversationId, clearLastError]);
 
+  // Parse itinerary when assistant message arrives
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage && lastMessage.role === 'assistant') {
+      const parsed = parseItineraryFromMarkdown(lastMessage.content);
+      if (parsed) {
+        console.log('[CHAT] Parsed itinerary:', parsed);
+        setCurrentItinerary(parsed);
+        
+        // Extract locations for map
+        const allActivities = parsed.days.flatMap(day =>
+          day.timeSlots.flatMap(slot => slot.activities)
+        );
+        
+        const locations = allActivities
+          .filter(activity => activity.location.lat !== 0 && activity.location.lon !== 0)
+          .map(activity => ({
+            lat: activity.location.lat,
+            lon: activity.location.lon,
+            name: activity.name,
+            description: activity.category
+          }));
+        
+        if (locations.length > 0) {
+          setMapLocations(locations);
+        }
+      }
+    }
+  }, [messages]);
+
   const handleSendMessage = async (message: string) => {
     // Add user message immediately
     const userMessage: Message = {
@@ -134,7 +173,7 @@ export function Chat() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-purple-50 via-white to-pink-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+    <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900">
       {/* Header */}
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
@@ -162,9 +201,11 @@ export function Chat() {
         </div>
       </header>
 
-      {/* Messages Container */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-6 py-6">
+      {/* Split View: Chat + Map */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Chat Panel - 35% */}
+        <div className="w-[35%] flex flex-col bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">
+          <div className="flex-1 overflow-y-auto px-6 py-6">
           {messages.length === 0 ? (
             // Welcome Screen
             <div className="text-center py-12">
@@ -187,6 +228,13 @@ export function Chat() {
                   role={msg.role}
                   content={msg.content}
                   timestamp={msg.timestamp}
+                  onViewItinerary={() => {
+                    const parsed = parseItineraryFromMarkdown(msg.content);
+                    if (parsed) {
+                      setCurrentItinerary(parsed);
+                      setIsItineraryOpen(true);
+                    }
+                  }}
                 />
               ))}
             </>
@@ -197,11 +245,10 @@ export function Chat() {
 
           {/* Scroll Anchor */}
           <div ref={messagesEndRef} />
-        </div>
-      </main>
+          </div>
 
-      {/* Input */}
-      <MessageInput
+          {/* Input */}
+          <MessageInput
         onSend={handleSendMessage}
         disabled={isLoading || !isConnected}
         placeholder={
@@ -209,6 +256,29 @@ export function Chat() {
             ? 'Ask me about your next trip...'
             : 'Connecting to server...'
         }
+      />
+        </div>
+
+        {/* Map Panel - 65% */}
+        <div className="w-[65%] relative bg-gray-50 dark:bg-gray-900">
+          <Map locations={mapLocations} />
+        </div>
+      </div>
+
+      {/* Itinerary Overlay */}
+      <ItineraryOverlay
+        itinerary={currentItinerary}
+        isOpen={isItineraryOpen}
+        onClose={() => setIsItineraryOpen(false)}
+        onActivityClick={(activity) => {
+          // Center map on selected activity
+          setMapLocations([{
+            lat: activity.location.lat,
+            lon: activity.location.lon,
+            name: activity.name,
+            description: activity.description
+          }]);
+        }}
       />
     </div>
   );

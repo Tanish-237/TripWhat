@@ -1,14 +1,17 @@
 import { motion } from 'framer-motion';
-import { User, Bot } from 'lucide-react';
+import { User, Bot, Calendar } from 'lucide-react';
+import { containsItinerary } from '../../utils/itineraryParser';
 
 interface MessageBubbleProps {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  onViewItinerary?: () => void;
 }
 
-export function MessageBubble({ role, content, timestamp }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, onViewItinerary }: MessageBubbleProps) {
   const isUser = role === 'user';
+  const hasItinerary = !isUser && containsItinerary(content);
 
   return (
     <motion.div
@@ -47,6 +50,17 @@ export function MessageBubble({ role, content, timestamp }: MessageBubbleProps) 
             minute: '2-digit' 
           })}
         </span>
+
+        {/* View Itinerary Button */}
+        {hasItinerary && onViewItinerary && (
+          <button
+            onClick={onViewItinerary}
+            className="mt-2 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all shadow-md hover:shadow-lg text-sm font-medium"
+          >
+            <Calendar size={16} />
+            View Itinerary
+          </button>
+        )}
       </div>
     </motion.div>
   );
