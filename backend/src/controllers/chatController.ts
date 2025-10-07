@@ -24,6 +24,7 @@ export function setSocketIO(socketIO: SocketIOServer) {
 export async function sendMessage(req: Request, res: Response) {
   try {
     const { message, conversationId } = req.body;
+    const user = req.user; // From auth middleware
 
     // Validate input
     if (!message || typeof message !== 'string') {
@@ -39,8 +40,11 @@ export async function sendMessage(req: Request, res: Response) {
     if (!conversation) {
       conversation = new Conversation({
         conversationId: convId,
+        userId: user._id, // Add user reference
         messages: [],
-        metadata: {},
+        metadata: {
+          userPreferences: user.preferences // Include user preferences
+        },
       });
     }
 

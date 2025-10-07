@@ -8,6 +8,7 @@ export interface IMessage {
 
 export interface IConversation extends Document {
   conversationId: string;
+  userId?: mongoose.Types.ObjectId;
   messages: IMessage[];
   metadata: {
     destination?: string;
@@ -17,6 +18,7 @@ export interface IConversation extends Document {
     };
     budget?: number;
     travelers?: number;
+    userPreferences?: any;
   };
   itinerary?: any; // Will be structured in Phase 2
   createdAt: Date;
@@ -47,6 +49,11 @@ const ConversationSchema = new Schema<IConversation>(
       unique: true,
       index: true,
     },
+    userId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: false,
+    },
     messages: [MessageSchema],
     metadata: {
       destination: String,
@@ -56,6 +63,7 @@ const ConversationSchema = new Schema<IConversation>(
       },
       budget: Number,
       travelers: Number,
+      userPreferences: Schema.Types.Mixed,
     },
     itinerary: {
       type: Schema.Types.Mixed,

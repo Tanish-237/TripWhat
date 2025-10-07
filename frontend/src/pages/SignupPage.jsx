@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,13 +16,13 @@ import Navbar from "@/components/Navbar";
 
 export default function SignupPage() {
   const [formData, setFormData] = useState({
-    username: "",
     email: "",
     password: "",
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const { signup } = useAuth();
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -40,7 +41,7 @@ export default function SignupPage() {
 
     try {
       // Basic validation
-      if (!formData.username || !formData.email || !formData.password) {
+      if (!formData.email || !formData.password) {
         throw new Error("All fields are required");
       }
 
@@ -54,19 +55,13 @@ export default function SignupPage() {
         throw new Error("Please enter a valid email address");
       }
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // For demo purposes, just redirect to plan page
-      // In a real app, you'd create the account and store auth token
-      console.log("Signup attempt:", {
-        username: formData.username,
-        email: formData.email,
-        password: formData.password,
-      });
-      navigate("/plan");
+      // Use auth context to signup
+      await signup(formData.email, formData.password);
+      
+      // Navigate to onboarding after successful signup
+      navigate("/onboarding");
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "Signup failed");
     } finally {
       setIsLoading(false);
     }
@@ -107,29 +102,6 @@ export default function SignupPage() {
                     {error}
                   </div>
                 )}
-
-                <div className="space-y-1">
-                  <label
-                    htmlFor="username"
-                    className="text-sm font-medium text-gray-700"
-                  >
-                    Username
-                  </label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      id="username"
-                      name="username"
-                      type="text"
-                      placeholder="Choose a username"
-                      value={formData.username}
-                      onChange={handleChange}
-                      required
-                      disabled={isLoading}
-                      className="pl-9 h-10 bg-white border-gray-200 text-gray-900 placeholder:text-gray-500 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                </div>
 
                 <div className="space-y-1">
                   <label

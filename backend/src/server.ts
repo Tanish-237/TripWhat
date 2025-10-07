@@ -7,6 +7,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { connectDB } from './config/database.js';
 import chatRoutes from './routes/chat.js';
+import authRoutes from './routes/auth.js';
+import { authenticateToken } from './middleware/auth.js';
 import { setSocketIO } from './controllers/chatController.js';
 
 // Load environment variables
@@ -46,8 +48,11 @@ app.get('/api', (req, res) => {
   res.json({ message: 'TripWhat API is running' });
 });
 
-// Chat routes
-app.use('/api/chat', chatRoutes);
+// Auth routes (public)
+app.use('/api/auth', authRoutes);
+
+// Protected routes
+app.use('/api/chat', authenticateToken, chatRoutes);
 
 // Set Socket.io instance for chat controller
 setSocketIO(io);

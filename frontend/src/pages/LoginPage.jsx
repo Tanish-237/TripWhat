@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,12 +16,13 @@ import Navbar from "@/components/Navbar";
 
 export default function LoginPage() {
   const [formData, setFormData] = useState({
-    emailOrUsername: "",
+    email: "",
     password: "",
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -39,19 +41,17 @@ export default function LoginPage() {
 
     try {
       // Basic validation
-      if (!formData.emailOrUsername || !formData.password) {
+      if (!formData.email || !formData.password) {
         throw new Error("All fields are required");
       }
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // For demo purposes, just redirect to plan page
-      // In a real app, you'd validate credentials and store auth token
-      console.log("Login attempt:", formData);
-      navigate("/plan");
+      // Use auth context to login
+      await login(formData.email, formData.password);
+      
+      // Navigate to onboarding first, then they can go to chat
+      navigate("/onboarding");
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "Login failed");
     } finally {
       setIsLoading(false);
     }
@@ -95,19 +95,19 @@ export default function LoginPage() {
 
                 <div className="space-y-2">
                   <label
-                    htmlFor="emailOrUsername"
+                    htmlFor="email"
                     className="text-sm font-medium text-gray-700"
                   >
-                    Email or Username
+                    Email
                   </label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <Input
-                      id="emailOrUsername"
-                      name="emailOrUsername"
-                      type="text"
-                      placeholder="Enter your email or username"
-                      value={formData.emailOrUsername}
+                      id="email"
+                      name="email"
+                      type="email"
+                      placeholder="Enter your email"
+                      value={formData.email}
                       onChange={handleChange}
                       required
                       disabled={isLoading}
