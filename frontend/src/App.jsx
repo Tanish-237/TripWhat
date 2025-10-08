@@ -54,7 +54,14 @@ const AppContent = () => {
         <Route
           path="/plan/results"
           element={
-            <ProtectedRoute condition={tripData?.budget?.total}>
+            <ProtectedRoute
+              condition={
+                tripData?.people &&
+                tripData?.travelType &&
+                tripData?.cities?.length > 0 &&
+                tripData?.startDate
+              }
+            >
               <ResultsPage />
             </ProtectedRoute>
           }

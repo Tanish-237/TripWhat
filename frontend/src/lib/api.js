@@ -51,3 +51,21 @@ export function getToken() {
 export function clearToken() {
   localStorage.removeItem("tripwhat_token");
 }
+
+// Trip APIs
+export async function apiCreateTrip(payload, token) {
+  return request("/api/trips", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function apiListTrips(token) {
+  return request("/api/trips", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}

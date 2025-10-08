@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import TripPlanningSidebar from "@/components/TripPlanningSidebar";
 import { useTrip } from "@/contexts/TripContext";
+import { apiCreateTrip, getToken } from "@/lib/api";
 import {
   Sparkles,
   Star,
@@ -25,181 +26,276 @@ const ResultsPage = () => {
 
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [sortBy, setSortBy] = useState("recommended");
+  const [hasProcessedData, setHasProcessedData] = useState(false);
 
-  // Clear selected trip when tripData changes (user goes back and updates)
+  // Only process and save data when we first arrive at results page with complete data
+  useEffect(() => {
+    const hasCore =
+      tripData?.startDate &&
+      Array.isArray(tripData?.cities) &&
+      tripData.cities.length > 0;
+    const hasPrefs = tripData?.people && tripData?.travelType;
+    const hasBudget =
+      tripData?.budget?.total &&
+      (tripData?.budget?.travel ?? tripData?.budget?.travel === 0) &&
+      (tripData?.budget?.accommodation ??
+        tripData?.budget?.accommodation === 0) &&
+      (tripData?.budget?.food ?? tripData?.budget?.food === 0) &&
+      (tripData?.budget?.events ?? tripData?.budget?.events === 0);
+
+    // Only process if we have all data and haven't processed it yet
+    if (!hasCore || !hasPrefs || !hasBudget || hasProcessedData) return;
+
+    const payload = {
+      startDate:
+        tripData.startDate instanceof Date
+          ? tripData.startDate.toISOString()
+          : tripData.startDate,
+      cities: (tripData.cities || []).map((c) => ({
+        name: c.name,
+        days: c.days,
+      })),
+      totalDays:
+        tripData.totalDays ||
+        (tripData.cities || []).reduce((s, c) => s + (c.days || 0), 0),
+      people: tripData.people,
+      travelType: tripData.travelType,
+      budget: {
+        total: tripData.budget.total,
+        travel: tripData.budget.travel,
+        accommodation: tripData.budget.accommodation,
+        food: tripData.budget.food,
+        events: tripData.budget.events,
+      },
+      budgetMode: tripData.budgetMode || "capped",
+    };
+
+    // Always log on results page as requested
+    console.log("=== RESULTS PAGE: Compiled trip payload ===", payload);
+
+    const token = getToken();
+    if (!token) {
+      console.log("No auth token - skipping save to database");
+      setHasProcessedData(true);
+      return;
+    }
+
+    let isCancelled = false;
+    (async () => {
+      try {
+        console.log("Saving trip to database...");
+        const saved = await apiCreateTrip(payload, token);
+        if (!isCancelled) {
+          console.log("✅ Trip saved successfully:", saved);
+          setHasProcessedData(true);
+        }
+      } catch (err) {
+        if (!isCancelled) {
+          console.error("❌ Failed to save trip:", err?.message || err);
+          console.error("Full error:", err);
+          setHasProcessedData(true); // Still mark as processed to avoid retries
+        }
+      }
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    tripData?.startDate,
+    tripData?.cities,
+    tripData?.people,
+    tripData?.travelType,
+    tripData?.budget,
+    tripData?.budgetMode,
+    hasProcessedData,
+  ]);
+
+  // Clear selected trip and reset processing flag when tripData changes (user goes back and updates)
   useEffect(() => {
     setSelectedTrip(null);
+    setHasProcessedData(false); // Reset so we can process updated data
     // Also clear from context if it exists
     if (tripData?.selectedTrip) {
       updateTripData({ selectedTrip: null });
     }
-  }, [tripData?.cities, tripData?.budget, tripData?.people, tripData?.travelType]);
+  }, [
+    tripData?.cities,
+    tripData?.budget,
+    tripData?.people,
+    tripData?.travelType,
+  ]);
 
   // Mock trip plans - regenerated when tripData changes
   const trips = useMemo(() => {
     const generateMockTrips = () => {
-    const baseTrips = [
-      {
-        id: 1,
-        title: "Ultimate City Explorer",
-        rating: 4.8,
-        reviews: 124,
-        duration:
-          tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
-        price: Math.round((tripData?.budget?.total || 5000) * 0.9),
-        originalPrice: tripData?.budget?.total || 5000,
-        description: "Perfect blend of culture, cuisine, and adventure",
-        highlights: [
-          "Premium hotels",
-          "Local experiences",
-          "Skip-the-line tickets",
-        ],
-        image:
-          "https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=400&h=300&fit=crop",
-        tags: ["Popular", "Best Value"],
-        itinerary: tripData?.cities || [
-          { name: "Paris", days: 3 },
-          { name: "Rome", days: 4 },
-        ],
-      },
-      {
-        id: 2,
-        title: "Budget Backpacker",
-        rating: 4.6,
-        reviews: 89,
-        duration:
-          tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
-        price: Math.round((tripData?.budget?.total || 5000) * 0.6),
-        originalPrice: Math.round((tripData?.budget?.total || 5000) * 0.8),
-        description:
-          "Adventure on a budget without compromising on experiences",
-        highlights: [
-          "Hostels & budget stays",
-          "Free walking tours",
-          "Local transport",
-        ],
-        image:
-          "https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=400&h=300&fit=crop",
-        tags: ["Budget", "Adventure"],
-        itinerary: tripData?.cities || [
-          { name: "Barcelona", days: 3 },
-          { name: "Amsterdam", days: 4 },
-        ],
-      },
-      {
-        id: 3,
-        title: "Luxury Getaway",
-        rating: 4.9,
-        reviews: 67,
-        duration:
-          tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
-        price: Math.round((tripData?.budget?.total || 5000) * 1.3),
-        originalPrice: Math.round((tripData?.budget?.total || 5000) * 1.5),
-        description: "Indulge in the finest experiences and accommodations",
-        highlights: ["5-star hotels", "Private tours", "Fine dining"],
-        image:
-          "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=400&h=300&fit=crop",
-        tags: ["Luxury", "Premium"],
-        itinerary: tripData?.cities || [
-          { name: "Tokyo", days: 4 },
-          { name: "Kyoto", days: 3 },
-        ],
-      },
-      {
-        id: 4,
-        title: "Family Adventure",
-        rating: 4.7,
-        reviews: 156,
-        duration:
-          tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
-        price: Math.round((tripData?.budget?.total || 5000) * 0.8),
-        originalPrice: tripData?.budget?.total || 5000,
-        description: "Perfect for families with kids of all ages",
-        highlights: [
-          "Family-friendly hotels",
-          "Kid activities",
-          "Easy transport",
-        ],
-        image:
-          "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=300&fit=crop",
-        tags: ["Family", "Kid-Friendly"],
-        itinerary: tripData?.cities || [
-          { name: "Orlando", days: 4 },
-          { name: "Miami", days: 3 },
-        ],
-      },
-      {
-        id: 5,
-        title: "Cultural Immersion",
-        rating: 4.5,
-        reviews: 93,
-        duration:
-          tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
-        price: Math.round((tripData?.budget?.total || 5000) * 0.7),
-        originalPrice: Math.round((tripData?.budget?.total || 5000) * 0.9),
-        description: "Deep dive into local culture and traditions",
-        highlights: [
-          "Local homestays",
-          "Cultural workshops",
-          "Authentic cuisine",
-        ],
-        image:
-          "https://images.unsplash.com/photo-1539650116574-75c0c6d73c0e?w=400&h=300&fit=crop",
-        tags: ["Cultural", "Authentic"],
-        itinerary: tripData?.cities || [
-          { name: "Delhi", days: 3 },
-          { name: "Jaipur", days: 4 },
-        ],
-      },
-      {
-        id: 6,
-        title: "Solo Explorer",
-        rating: 4.4,
-        reviews: 78,
-        duration:
-          tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
-        price: Math.round((tripData?.budget?.total || 5000) * 0.75),
-        originalPrice: Math.round((tripData?.budget?.total || 5000) * 0.95),
-        description:
-          "Designed for independent travelers seeking new connections",
-        highlights: [
-          "Solo-friendly accommodations",
-          "Group activities",
-          "Safety features",
-        ],
-        image:
-          "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=300&fit=crop",
-        tags: ["Solo", "Social"],
-        itinerary: tripData?.cities || [
-          { name: "Berlin", days: 3 },
-          { name: "Prague", days: 4 },
-        ],
-      },
-    ];
+      const baseTrips = [
+        {
+          id: 1,
+          title: "Ultimate City Explorer",
+          rating: 4.8,
+          reviews: 124,
+          duration:
+            tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
+          price: Math.round((tripData?.budget?.total || 5000) * 0.9),
+          originalPrice: tripData?.budget?.total || 5000,
+          description: "Perfect blend of culture, cuisine, and adventure",
+          highlights: [
+            "Premium hotels",
+            "Local experiences",
+            "Skip-the-line tickets",
+          ],
+          image:
+            "https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=400&h=300&fit=crop",
+          tags: ["Popular", "Best Value"],
+          itinerary: tripData?.cities || [
+            { name: "Paris", days: 3 },
+            { name: "Rome", days: 4 },
+          ],
+        },
+        {
+          id: 2,
+          title: "Budget Backpacker",
+          rating: 4.6,
+          reviews: 89,
+          duration:
+            tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
+          price: Math.round((tripData?.budget?.total || 5000) * 0.6),
+          originalPrice: Math.round((tripData?.budget?.total || 5000) * 0.8),
+          description:
+            "Adventure on a budget without compromising on experiences",
+          highlights: [
+            "Hostels & budget stays",
+            "Free walking tours",
+            "Local transport",
+          ],
+          image:
+            "https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=400&h=300&fit=crop",
+          tags: ["Budget", "Adventure"],
+          itinerary: tripData?.cities || [
+            { name: "Barcelona", days: 3 },
+            { name: "Amsterdam", days: 4 },
+          ],
+        },
+        {
+          id: 3,
+          title: "Luxury Getaway",
+          rating: 4.9,
+          reviews: 67,
+          duration:
+            tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
+          price: Math.round((tripData?.budget?.total || 5000) * 1.3),
+          originalPrice: Math.round((tripData?.budget?.total || 5000) * 1.5),
+          description: "Indulge in the finest experiences and accommodations",
+          highlights: ["5-star hotels", "Private tours", "Fine dining"],
+          image:
+            "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=400&h=300&fit=crop",
+          tags: ["Luxury", "Premium"],
+          itinerary: tripData?.cities || [
+            { name: "Tokyo", days: 4 },
+            { name: "Kyoto", days: 3 },
+          ],
+        },
+        {
+          id: 4,
+          title: "Family Adventure",
+          rating: 4.7,
+          reviews: 156,
+          duration:
+            tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
+          price: Math.round((tripData?.budget?.total || 5000) * 0.8),
+          originalPrice: tripData?.budget?.total || 5000,
+          description: "Perfect for families with kids of all ages",
+          highlights: [
+            "Family-friendly hotels",
+            "Kid activities",
+            "Easy transport",
+          ],
+          image:
+            "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=300&fit=crop",
+          tags: ["Family", "Kid-Friendly"],
+          itinerary: tripData?.cities || [
+            { name: "Orlando", days: 4 },
+            { name: "Miami", days: 3 },
+          ],
+        },
+        {
+          id: 5,
+          title: "Cultural Immersion",
+          rating: 4.5,
+          reviews: 93,
+          duration:
+            tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
+          price: Math.round((tripData?.budget?.total || 5000) * 0.7),
+          originalPrice: Math.round((tripData?.budget?.total || 5000) * 0.9),
+          description: "Deep dive into local culture and traditions",
+          highlights: [
+            "Local homestays",
+            "Cultural workshops",
+            "Authentic cuisine",
+          ],
+          image:
+            "https://images.unsplash.com/photo-1539650116574-75c0c6d73c0e?w=400&h=300&fit=crop",
+          tags: ["Cultural", "Authentic"],
+          itinerary: tripData?.cities || [
+            { name: "Delhi", days: 3 },
+            { name: "Jaipur", days: 4 },
+          ],
+        },
+        {
+          id: 6,
+          title: "Solo Explorer",
+          rating: 4.4,
+          reviews: 78,
+          duration:
+            tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
+          price: Math.round((tripData?.budget?.total || 5000) * 0.75),
+          originalPrice: Math.round((tripData?.budget?.total || 5000) * 0.95),
+          description:
+            "Designed for independent travelers seeking new connections",
+          highlights: [
+            "Solo-friendly accommodations",
+            "Group activities",
+            "Safety features",
+          ],
+          image:
+            "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=300&fit=crop",
+          tags: ["Solo", "Social"],
+          itinerary: tripData?.cities || [
+            { name: "Berlin", days: 3 },
+            { name: "Prague", days: 4 },
+          ],
+        },
+      ];
 
-    // Filter trips based on travel type
-    if (tripData?.travelType) {
-      return baseTrips.filter((trip) => {
-        switch (tripData.travelType) {
-          case "family":
-            return trip.tags.includes("Family");
-          case "solo":
-            return trip.tags.includes("Solo");
-          case "adventure":
-            return trip.tags.includes("Adventure");
-          case "cultural":
-            return trip.tags.includes("Cultural");
-          default:
-            return true;
-        }
-      });
-    }
+      // Filter trips based on travel type
+      if (tripData?.travelType) {
+        return baseTrips.filter((trip) => {
+          switch (tripData.travelType) {
+            case "family":
+              return trip.tags.includes("Family");
+            case "solo":
+              return trip.tags.includes("Solo");
+            case "adventure":
+              return trip.tags.includes("Adventure");
+            case "cultural":
+              return trip.tags.includes("Cultural");
+            default:
+              return true;
+          }
+        });
+      }
 
-    return baseTrips;
+      return baseTrips;
     };
 
     return generateMockTrips();
-  }, [tripData?.cities, tripData?.budget, tripData?.people, tripData?.travelType]);
+  }, [
+    tripData?.cities,
+    tripData?.budget,
+    tripData?.people,
+    tripData?.travelType,
+  ]);
 
   const handleSelectTrip = (trip) => {
     setSelectedTrip(trip);
