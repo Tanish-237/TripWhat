@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,16 +12,24 @@ import {
 } from "@/components/ui/card";
 import { User, Mail, Lock } from "lucide-react";
 import Navbar from "@/components/Navbar";
+import { apiRegister, saveToken, getToken } from "@/lib/api";
 
 export default function SignupPage() {
   const [formData, setFormData] = useState({
-    username: "",
+    name: "",
     email: "",
     password: "",
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const token = getToken();
+    if (token) {
+      navigate("/plan", { replace: true });
+    }
+  }, [navigate]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -40,7 +48,7 @@ export default function SignupPage() {
 
     try {
       // Basic validation
-      if (!formData.username || !formData.email || !formData.password) {
+      if (!formData.name || !formData.email || !formData.password) {
         throw new Error("All fields are required");
       }
 
@@ -54,16 +62,12 @@ export default function SignupPage() {
         throw new Error("Please enter a valid email address");
       }
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // For demo purposes, just redirect to plan page
-      // In a real app, you'd create the account and store auth token
-      console.log("Signup attempt:", {
-        username: formData.username,
+      const { token } = await apiRegister({
+        name: formData.name,
         email: formData.email,
         password: formData.password,
       });
+      saveToken(token);
       navigate("/plan");
     } catch (err) {
       setError(err.message);
@@ -110,19 +114,19 @@ export default function SignupPage() {
 
                 <div className="space-y-1">
                   <label
-                    htmlFor="username"
+                    htmlFor="name"
                     className="text-sm font-medium text-gray-700"
                   >
-                    Username
+                    Name
                   </label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <Input
-                      id="username"
-                      name="username"
+                      id="name"
+                      name="name"
                       type="text"
-                      placeholder="Choose a username"
-                      value={formData.username}
+                      placeholder="Your full name"
+                      value={formData.name}
                       onChange={handleChange}
                       required
                       disabled={isLoading}

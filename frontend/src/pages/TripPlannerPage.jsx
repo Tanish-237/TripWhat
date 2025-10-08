@@ -41,8 +41,15 @@ const DatePicker = ({ selected, onSelect }) => {
   );
 };
 
+import { getToken, clearToken } from "@/lib/api";
+
 const DashboardNav = () => {
   const [searchQuery, setSearchQuery] = useState("");
+  const isAuthenticated = Boolean(getToken());
+  const handleLogout = () => {
+    clearToken();
+    window.location.href = "/";
+  };
 
   return (
     <nav className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
@@ -107,16 +114,17 @@ const DashboardNav = () => {
               Saved
             </Button>
 
-            <div className="ml-4">
-              <Button
-                variant="ghost"
-                className="p-1 rounded-full hover:bg-gray-100"
-              >
-                <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center">
-                  <span className="text-white text-sm font-medium">T</span>
-                </div>
-              </Button>
-            </div>
+            {isAuthenticated && (
+              <div className="ml-4">
+                <Button
+                  variant="outline"
+                  onClick={handleLogout}
+                  className="px-4"
+                >
+                  Logout
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -274,7 +282,9 @@ const CityCard = ({ city, index, onRemove, onUpdate }) => {
 };
 
 const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
-  const [startDate, setStartDate] = useState(tripData?.startDate ? new Date(tripData.startDate) : null);
+  const [startDate, setStartDate] = useState(
+    tripData?.startDate ? new Date(tripData.startDate) : null
+  );
   const [cities, setCities] = useState(tripData?.cities || []);
   const [newCityName, setNewCityName] = useState("");
   const [newCityDays, setNewCityDays] = useState("3");
@@ -297,7 +307,7 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
     updateTripData({
       startDate: newStartDate,
       cities: newCities,
-      totalDays
+      totalDays,
     });
   };
 
@@ -329,7 +339,9 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
   };
 
   const updateCity = (id, updates) => {
-    const newCities = cities.map((city) => (city.id === id ? { ...city, ...updates } : city));
+    const newCities = cities.map((city) =>
+      city.id === id ? { ...city, ...updates } : city
+    );
     setCities(newCities);
     persistData(startDate, newCities);
   };
@@ -365,12 +377,15 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
       const tripData = {
         startDate,
         cities,
-        totalDays: cities.reduce((sum, city) => sum + city.days, 0)
+        totalDays: cities.reduce((sum, city) => sum + city.days, 0),
       };
       console.log("Starting planning with data:", tripData);
       onStartPlanning(tripData);
     } else {
-      console.log("Cannot proceed: missing startDate or cities", { startDate, cities });
+      console.log("Cannot proceed: missing startDate or cities", {
+        startDate,
+        cities,
+      });
     }
   };
 
@@ -403,7 +418,10 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
                   When does your journey begin?
                 </label>
                 <div className="relative z-30">
-                  <DatePicker selected={startDate} onSelect={handleDateChange} />
+                  <DatePicker
+                    selected={startDate}
+                    onSelect={handleDateChange}
+                  />
                 </div>
               </div>
             </Card>
@@ -591,7 +609,7 @@ export default function TripPlannerPage() {
 
   const handleStartPlanning = (data) => {
     updateTripData(data);
-    navigate('/plan/preferences');
+    navigate("/plan/preferences");
   };
 
   const handleStepClick = (step) => {
@@ -601,17 +619,17 @@ export default function TripPlannerPage() {
         break;
       case "budget":
         if (tripData?.cities?.length > 0 && tripData?.startDate) {
-          navigate('/plan/budget');
+          navigate("/plan/budget");
         }
         break;
       case "preferences":
         if (tripData?.budget?.total) {
-          navigate('/plan/preferences');
+          navigate("/plan/preferences");
         }
         break;
       case "results":
         if (tripData?.people && tripData?.travelType) {
-          navigate('/plan/results');
+          navigate("/plan/results");
         }
         break;
       default:
@@ -621,18 +639,18 @@ export default function TripPlannerPage() {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <TripPlanningSidebar 
-        currentStep="destinations" 
+      <TripPlanningSidebar
+        currentStep="destinations"
         onStepClick={handleStepClick}
         tripData={tripData}
       />
-      
+
       <div className="flex-1">
         <DashboardNav />
         <main className="container mx-auto px-4 py-8 max-w-6xl">
           <QuickStats />
-          <TripBuilder 
-            onStartPlanning={handleStartPlanning} 
+          <TripBuilder
+            onStartPlanning={handleStartPlanning}
             tripData={tripData}
             updateTripData={updateTripData}
           />
