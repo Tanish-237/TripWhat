@@ -8,7 +8,11 @@ export default function OnboardingPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [step, setStep] = useState(1);
-  const [preferences, setPreferences] = useState({
+  const [preferences, setPreferences] = useState<{
+    budget: string;
+    travelStyle: string;
+    interests: string[];
+  }>({
     budget: '',
     travelStyle: '',
     interests: []
@@ -50,11 +54,17 @@ export default function OnboardingPage() {
     { id: 'business', label: 'Business', icon: '💼', desc: 'Work & meetings' }
   ];
 
-  const interests = [
-    'Museums', 'Nightlife', 'Nature', 'Food', 'Shopping', 'History', 'Art'
+  const interestOptions = [
+    { id: 'museums', label: 'Museums' },
+    { id: 'nightlife', label: 'Nightlife' },
+    { id: 'nature', label: 'Nature' },
+    { id: 'food', label: 'Food' },
+    { id: 'shopping', label: 'Shopping' },
+    { id: 'history', label: 'History' },
+    { id: 'art', label: 'Art' }
   ];
 
-  const handleInterestToggle = (interest) => {
+  const handleInterestToggle = (interest: string) => {
     setPreferences(prev => ({
       ...prev,
       interests: prev.interests.includes(interest)
@@ -144,17 +154,17 @@ export default function OnboardingPage() {
               What interests you most?
             </h2>
             <div className="grid grid-cols-2 gap-4">
-              {interests.map((interest) => (
+              {interestOptions.map((interest) => (
                 <button
-                  key={interest}
-                  onClick={() => handleInterestToggle(interest)}
+                  key={interest.id}
+                  onClick={() => handleInterestToggle(interest.id)}
                   className={`p-4 rounded-xl border transition-colors ${
-                    preferences.interests.includes(interest)
+                    preferences.interests.includes(interest.id)
                       ? 'border-purple-500 bg-purple-500/20'
                       : 'border-slate-700 bg-slate-800/50 hover:border-slate-600'
                   }`}
                 >
-                  <span className="text-white font-medium">{interest}</span>
+                  <span className="text-white font-medium">{interest.label}</span>
                 </button>
               ))}
             </div>

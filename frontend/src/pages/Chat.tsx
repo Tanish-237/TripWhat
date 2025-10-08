@@ -144,10 +144,22 @@ export function Chat() {
     setIsLoading(true);
 
     try {
+      // Get auth token
+      const token = localStorage.getItem('token');
+      
+      if (!token) {
+        throw new Error('Not authenticated. Please log in.');
+      }
+
       // Send to backend
       const response = await axios.post(`${API_URL}/api/chat`, {
         message,
         conversationId,
+      }, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       });
 
       // Set conversation ID if this is the first message
@@ -160,11 +172,24 @@ export function Chat() {
 
     } catch (error) {
       console.error('Send message error:', error);
+      
+      let errorMessage = 'Sorry, I had trouble processing your message. Please try again.';
+      
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 401) {
+          errorMessage = 'Please log in to continue chatting.';
+        } else if (error.response?.data?.error) {
+          errorMessage = error.response.data.error;
+        }
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
-          content: 'Sorry, I had trouble processing your message. Please try again.',
+          content: errorMessage,
           timestamp: new Date(),
         },
       ]);

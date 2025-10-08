@@ -130,8 +130,28 @@ router.put('/preferences', async (req, res) => {
       return res.status(401).json({ error: 'Invalid token' });
     }
     
+    // Normalize preferences data
+    const normalizedPreferences = { ...req.body };
+    
+    // Normalize interests to lowercase
+    if (normalizedPreferences.interests && Array.isArray(normalizedPreferences.interests)) {
+      normalizedPreferences.interests = normalizedPreferences.interests.map((interest: string) => 
+        interest.toLowerCase()
+      );
+    }
+    
+    // Normalize budget to lowercase
+    if (normalizedPreferences.budget) {
+      normalizedPreferences.budget = normalizedPreferences.budget.toLowerCase();
+    }
+    
+    // Normalize travelStyle to lowercase
+    if (normalizedPreferences.travelStyle) {
+      normalizedPreferences.travelStyle = normalizedPreferences.travelStyle.toLowerCase();
+    }
+    
     // Update preferences
-    user.preferences = { ...user.preferences, ...req.body };
+    user.preferences = { ...user.preferences, ...normalizedPreferences };
     await user.save();
     
     res.json({
