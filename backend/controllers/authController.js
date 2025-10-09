@@ -3,7 +3,9 @@ import User from "../models/User.js";
 import { JWT_SECRET, JWT_EXPIRES_IN } from "../config/configenv.js";
 
 function generateToken(userId) {
-  return jwt.sign({ sub: userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  console.log('JWT_EXPIRES_IN:', JWT_EXPIRES_IN);
+  const expiresIn = JWT_EXPIRES_IN || '7d';
+  return jwt.sign({ sub: userId }, JWT_SECRET, { expiresIn });
 }
 
 export const register = async (req, res) => {

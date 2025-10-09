@@ -67,14 +67,17 @@ export async function sendMessage(req: Request, res: Response) {
     }
 
     // Get AI response with timeout
-    const timeoutPromise = new Promise<string>((_, reject) => {
+    const timeoutPromise = new Promise<any>((_, reject) => {
       setTimeout(() => reject(new Error('Agent timeout after 30 seconds')), 30000);
     });
     
-    const aiResponse = await Promise.race([
+    const agentResult = await Promise.race([
       travelAgent.chat(message, convId),
       timeoutPromise
     ]);
+
+    // Extract the response string from the agent result
+    const aiResponse = agentResult.response || 'I apologize, but I had trouble processing your request.';
 
     // Add AI response to conversation
     conversation.messages.push({
