@@ -138,7 +138,7 @@ export function Chat() {
 
     try {
       // Get auth token
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('tripwhat_token');
       
       if (!token) {
         throw new Error('Not authenticated. Please log in.');

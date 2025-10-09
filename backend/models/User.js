@@ -22,6 +22,22 @@ const userSchema = new mongoose.Schema(
       minlength: 6,
       select: false,
     },
+    preferences: {
+      budget: {
+        type: String,
+        enum: ['budget', 'mid-range', 'luxury'],
+        default: 'mid-range'
+      },
+      travelStyle: {
+        type: String,
+        enum: ['adventure', 'relaxation', 'cultural', 'business'],
+        default: 'cultural'
+      },
+      interests: {
+        type: [String],
+        default: []
+      }
+    },
   },
   { timestamps: true }
 );

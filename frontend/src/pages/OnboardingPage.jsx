@@ -18,7 +18,7 @@ export default function OnboardingPage() {
     // Update user preferences via API
     try {
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('tripwhat_token');
       
       await fetch(`${API_URL}/api/auth/preferences`, {
         method: 'PUT',

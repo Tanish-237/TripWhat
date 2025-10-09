@@ -79,3 +79,33 @@ export const me = async (req, res) => {
       .json({ message: "Failed to fetch user", error: err.message });
   }
 };
+
+export const updatePreferences = async (req, res) => {
+  try {
+    const { budget, travelStyle, interests } = req.body;
+    
+    const user = await User.findByIdAndUpdate(
+      req.userId,
+      { 
+        preferences: { budget, travelStyle, interests }
+      },
+      { new: true }
+    ).select("_id name email preferences");
+    
+    if (!user) return res.status(404).json({ message: "User not found" });
+    
+    return res.json({
+      user: { 
+        id: user._id, 
+        name: user.name, 
+        email: user.email,
+        preferences: user.preferences
+      },
+    });
+  } catch (err) {
+    console.log(err);
+    return res
+      .status(500)
+      .json({ message: "Failed to update preferences", error: err.message });
+  }
+};
