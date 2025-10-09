@@ -32,8 +32,9 @@ export class OpenTripMapAPI {
 
   /**
    * Search for places by name/query
+   * Includes rate limiting protection and retry mechanism
    */
-  async searchPlaces(query: string, limit: number = 10): Promise<Destination[]> {
+  async searchPlaces(query: string, limit: number = 10, retries = 3): Promise<Destination[]> {
     try {
       // First, geocode the query to get coordinates
       const geoResponse = await axios.get(`${BASE_URL}/geoname`, {
@@ -48,6 +49,9 @@ export class OpenTripMapAPI {
       }
 
       const { lat, lon } = geoResponse.data;
+
+      // Add a small delay between requests to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // Get places around those coordinates with GeoJSON format
       const placesResponse = await axios.get(`${BASE_URL}/radius`, {
@@ -69,8 +73,16 @@ export class OpenTripMapAPI {
       }
 
       return this.transformGeoJSONFeatures(geoData.features);
-    } catch (error) {
-      console.error('OpenTripMap search error:', error);
+    } catch (error: any) {
+      console.error(`OpenTripMap search error for "${query}":`, error.message || 'Unknown error');
+      
+      // Retry on rate limit errors (429) or network errors
+      if ((error.response?.status === 429 || !error.response) && retries > 0) {
+        console.log(`Rate limit hit or network error, retrying in ${(4 - retries) * 500}ms (${retries} retries left)`);
+        await new Promise(resolve => setTimeout(resolve, (4 - retries) * 500)); // Exponential backoff
+        return this.searchPlaces(query, limit, retries - 1);
+      }
+      
       return [];
     }
   }
@@ -78,13 +90,15 @@ export class OpenTripMapAPI {
   /**
    * Search places by category (museums, restaurants, nature, etc.)
    * Useful for building diverse itineraries
+   * Includes retry mechanism for rate limiting issues
    */
   async searchByCategory(
     lat: number,
     lon: number,
     category: string,
     radius: number = 5000,
-    limit: number = 10
+    limit: number = 10,
+    retries = 3
   ): Promise<Destination[]> {
     try {
       const response = await axios.get(`${BASE_URL}/radius`, {
@@ -105,8 +119,16 @@ export class OpenTripMapAPI {
       }
 
       return this.transformGeoJSONFeatures(geoData.features);
-    } catch (error) {
-      console.error('OpenTripMap category search error:', error);
+    } catch (error: any) {
+      console.error(`OpenTripMap category search error (${category}):`, error.message || 'Unknown error');
+      
+      // Retry on rate limit errors (429) or network errors
+      if ((error.response?.status === 429 || !error.response) && retries > 0) {
+        console.log(`Rate limit hit or network error, retrying in ${(4 - retries) * 500}ms (${retries} retries left)`);
+        await new Promise(resolve => setTimeout(resolve, (4 - retries) * 500)); // Exponential backoff
+        return this.searchByCategory(lat, lon, category, radius, limit, retries - 1);
+      }
+      
       return [];
     }
   }
@@ -114,6 +136,7 @@ export class OpenTripMapAPI {
   /**
    * Get multiple categories of places for itinerary building
    * Returns a diverse set of attractions, restaurants, and activities
+   * Uses sequential requests to avoid rate limiting issues
    */
   async getItineraryPlaces(
     lat: number,
@@ -126,12 +149,17 @@ export class OpenTripMapAPI {
     culture: Destination[];
   }> {
     try {
-      const [attractions, restaurants, nature, culture] = await Promise.all([
-        this.searchByCategory(lat, lon, 'interesting_places', radius, 10),
-        this.searchByCategory(lat, lon, 'foods', radius, 5),
-        this.searchByCategory(lat, lon, 'natural', radius, 5),
-        this.searchByCategory(lat, lon, 'cultural,museums,theatres_and_entertainments', radius, 8),
-      ]);
+      // Sequential requests with delay to avoid 429 rate limiting errors
+      const attractions = await this.searchByCategory(lat, lon, 'interesting_places', radius, 10);
+      await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay between requests
+      
+      const restaurants = await this.searchByCategory(lat, lon, 'foods', radius, 5);
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      const nature = await this.searchByCategory(lat, lon, 'natural', radius, 5);
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      const culture = await this.searchByCategory(lat, lon, 'cultural,museums,theatres_and_entertainments', radius, 8);
 
       return { attractions, restaurants, nature, culture };
     } catch (error) {
@@ -142,8 +170,9 @@ export class OpenTripMapAPI {
 
   /**
    * Get detailed information about a specific place
+   * Includes retry logic for rate limiting issues
    */
-  async getPlaceDetails(xid: string): Promise<PlaceDetails | null> {
+  async getPlaceDetails(xid: string, retries = 3): Promise<PlaceDetails | null> {
     try {
       const response = await axios.get(`${BASE_URL}/xid/${xid}`, {
         params: {
@@ -159,8 +188,16 @@ export class OpenTripMapAPI {
       }
 
       return details;
-    } catch (error) {
-      console.error('OpenTripMap details error:', error);
+    } catch (error: any) {
+      console.error(`OpenTripMap details error for ${xid}:`, error.message || 'Unknown error');
+      
+      // Retry on rate limit errors (429) or network errors
+      if ((error.response?.status === 429 || !error.response) && retries > 0) {
+        console.log(`Rate limit hit or network error, retrying in ${(4 - retries) * 500}ms (${retries} retries left)`);
+        await new Promise(resolve => setTimeout(resolve, (4 - retries) * 500)); // Exponential backoff
+        return this.getPlaceDetails(xid, retries - 1);
+      }
+      
       return null;
     }
   }
