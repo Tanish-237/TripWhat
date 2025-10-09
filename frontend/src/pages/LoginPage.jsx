@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Mail, Lock } from "lucide-react";
 import Navbar from "@/components/Navbar";
+import { apiLogin, saveToken, getToken } from "@/lib/api";
 
 export default function LoginPage() {
   const [formData, setFormData] = useState({
@@ -23,6 +24,13 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const { login } = useAuth();
+
+  useEffect(() => {
+    const token = getToken();
+    if (token) {
+      navigate("/plan", { replace: true });
+    }
+  }, [navigate]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -48,8 +56,12 @@ export default function LoginPage() {
       // Use auth context to login
       await login(formData.email, formData.password);
       
-      // Navigate to onboarding first, then they can go to chat
-      navigate("/onboarding");
+      const { token } = await apiLogin({
+        email: formData.email,
+        password: formData.password,
+      });
+      saveToken(token);
+
     } catch (err) {
       setError(err.message || "Login failed");
     } finally {
@@ -105,7 +117,7 @@ export default function LoginPage() {
                     <Input
                       id="email"
                       name="email"
-                      type="email"
+                      type="text"
                       placeholder="Enter your email"
                       value={formData.email}
                       onChange={handleChange}

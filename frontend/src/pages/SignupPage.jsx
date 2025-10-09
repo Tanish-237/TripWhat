@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -13,9 +13,11 @@ import {
 } from "@/components/ui/card";
 import { User, Mail, Lock } from "lucide-react";
 import Navbar from "@/components/Navbar";
+import { apiRegister, saveToken, getToken } from "@/lib/api";
 
 export default function SignupPage() {
   const [formData, setFormData] = useState({
+    name: "",
     email: "",
     password: "",
   });
@@ -23,6 +25,13 @@ export default function SignupPage() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const { signup } = useAuth();
+
+  useEffect(() => {
+    const token = getToken();
+    if (token) {
+      navigate("/plan", { replace: true });
+    }
+  }, [navigate]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -41,7 +50,7 @@ export default function SignupPage() {
 
     try {
       // Basic validation
-      if (!formData.email || !formData.password) {
+      if (!formData.name || !formData.email || !formData.password) {
         throw new Error("All fields are required");
       }
 
@@ -55,11 +64,13 @@ export default function SignupPage() {
         throw new Error("Please enter a valid email address");
       }
 
-      // Use auth context to signup
-      await signup(formData.email, formData.password);
-      
-      // Navigate to onboarding after successful signup
-      navigate("/onboarding");
+      const { token } = await apiRegister({
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+      });
+      saveToken(token);
+      navigate("/plan");
     } catch (err) {
       setError(err.message || "Signup failed");
     } finally {
@@ -102,6 +113,29 @@ export default function SignupPage() {
                     {error}
                   </div>
                 )}
+
+                <div className="space-y-1">
+                  <label
+                    htmlFor="name"
+                    className="text-sm font-medium text-gray-700"
+                  >
+                    Name
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="name"
+                      name="name"
+                      type="text"
+                      placeholder="Your full name"
+                      value={formData.name}
+                      onChange={handleChange}
+                      required
+                      disabled={isLoading}
+                      className="pl-9 h-10 bg-white border-gray-200 text-gray-900 placeholder:text-gray-500 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
 
                 <div className="space-y-1">
                   <label
