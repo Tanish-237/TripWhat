@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Mail, Lock } from "lucide-react";
 import Navbar from "@/components/Navbar";
-import { apiLogin, saveToken, getToken } from "@/lib/api";
+import { getToken } from "@/lib/api";
 
 export default function LoginPage() {
   const [formData, setFormData] = useState({
@@ -53,15 +53,11 @@ export default function LoginPage() {
         throw new Error("All fields are required");
       }
 
-      // Use auth context to login
+      // Use auth context to login (this handles token storage and user state)
       await login(formData.email, formData.password);
-      
-      const { token } = await apiLogin({
-        email: formData.email,
-        password: formData.password,
-      });
-      saveToken(token);
 
+      // Redirect to plan page after successful login
+      navigate("/plan", { replace: true });
     } catch (err) {
       setError(err.message || "Login failed");
     } finally {
@@ -70,7 +66,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 text-black">
       {/* Navbar */}
       <div className="fixed top-0 left-0 w-full z-50 shadow-md bg-white">
         <Navbar />
@@ -97,7 +93,7 @@ export default function LoginPage() {
               </CardDescription>
             </CardHeader>
 
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit} className="text-black">
               <CardContent className="space-y-4">
                 {error && (
                   <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">

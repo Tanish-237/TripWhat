@@ -5,22 +5,22 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import TripPlanningSidebar from "@/components/TripPlanningSidebar";
 import { useTrip } from "@/contexts/TripContext";
-import { 
-  Users, 
-  Briefcase, 
-  Heart, 
-  Camera, 
-  Mountain, 
-  Plane, 
-  ArrowRight, 
+import {
+  Users,
+  Briefcase,
+  Heart,
+  Camera,
+  Mountain,
+  Plane,
+  ArrowRight,
   ArrowLeft,
-  Check
+  Check,
 } from "lucide-react";
 
 const PreferencesPage = () => {
   const navigate = useNavigate();
   const { tripData, updateTripData } = useTrip();
-  
+
   const [people, setPeople] = useState(tripData?.people || 1);
   const [travelType, setTravelType] = useState(tripData?.travelType || "");
 
@@ -40,48 +40,48 @@ const PreferencesPage = () => {
       name: "Leisure",
       icon: Heart,
       description: "Relaxing vacation, sightseeing, entertainment",
-      color: "pink"
+      color: "pink",
     },
     {
       id: "business",
       name: "Business",
       icon: Briefcase,
       description: "Work meetings, conferences, professional",
-      color: "blue"
+      color: "blue",
     },
     {
       id: "adventure",
       name: "Adventure",
       icon: Mountain,
       description: "Outdoor activities, hiking, extreme sports",
-      color: "green"
+      color: "green",
     },
     {
       id: "cultural",
       name: "Cultural",
       icon: Camera,
       description: "Museums, historical sites, local experiences",
-      color: "purple"
+      color: "purple",
     },
     {
       id: "family",
       name: "Family",
       icon: Users,
       description: "Kid-friendly activities, family bonding",
-      color: "orange"
+      color: "orange",
     },
     {
       id: "solo",
       name: "Solo Travel",
       icon: Plane,
       description: "Independent exploration, self-discovery",
-      color: "indigo"
-    }
+      color: "indigo",
+    },
   ];
 
   const handleNext = () => {
     updateTripData({ people, travelType });
-    navigate('/plan/budget');
+    navigate("/plan/budget");
   };
 
   const getColorClasses = (color) => {
@@ -92,7 +92,7 @@ const PreferencesPage = () => {
         text: "text-pink-700",
         accent: "text-pink-600",
         ring: "ring-pink-500",
-        selected: "bg-pink-100 border-pink-300"
+        selected: "bg-pink-100 border-pink-300",
       },
       blue: {
         bg: "bg-blue-50",
@@ -100,7 +100,7 @@ const PreferencesPage = () => {
         text: "text-blue-700",
         accent: "text-blue-600",
         ring: "ring-blue-500",
-        selected: "bg-blue-100 border-blue-300"
+        selected: "bg-blue-100 border-blue-300",
       },
       green: {
         bg: "bg-green-50",
@@ -108,7 +108,7 @@ const PreferencesPage = () => {
         text: "text-green-700",
         accent: "text-green-600",
         ring: "ring-green-500",
-        selected: "bg-green-100 border-green-300"
+        selected: "bg-green-100 border-green-300",
       },
       purple: {
         bg: "bg-purple-50",
@@ -116,7 +116,7 @@ const PreferencesPage = () => {
         text: "text-purple-700",
         accent: "text-purple-600",
         ring: "ring-purple-500",
-        selected: "bg-purple-100 border-purple-300"
+        selected: "bg-purple-100 border-purple-300",
       },
       orange: {
         bg: "bg-orange-50",
@@ -124,7 +124,7 @@ const PreferencesPage = () => {
         text: "text-orange-700",
         accent: "text-orange-600",
         ring: "ring-orange-500",
-        selected: "bg-orange-100 border-orange-300"
+        selected: "bg-orange-100 border-orange-300",
       },
       indigo: {
         bg: "bg-indigo-50",
@@ -132,8 +132,8 @@ const PreferencesPage = () => {
         text: "text-indigo-700",
         accent: "text-indigo-600",
         ring: "ring-indigo-500",
-        selected: "bg-indigo-100 border-indigo-300"
-      }
+        selected: "bg-indigo-100 border-indigo-300",
+      },
     };
     return colors[color] || colors.blue;
   };
@@ -151,20 +151,30 @@ const PreferencesPage = () => {
   const handleStepClick = (step) => {
     switch (step) {
       case "destinations":
-        navigate('/plan');
+        navigate("/plan");
         break;
       case "preferences":
         // Already on preferences page
         break;
       case "budget":
-        if (tripData?.cities?.length > 0 && tripData?.startDate && tripData?.people && tripData?.travelType) {
-          navigate('/plan/budget');
+        if (
+          tripData?.cities?.length > 0 &&
+          tripData?.startDate &&
+          tripData?.people &&
+          tripData?.travelType
+        ) {
+          navigate("/plan/budget");
         }
         break;
       case "results":
-        if (tripData?.cities?.length > 0 && tripData?.startDate && 
-            tripData?.people && tripData?.travelType && tripData?.budget?.total) {
-          navigate('/plan/results');
+        if (
+          tripData?.cities?.length > 0 &&
+          tripData?.startDate &&
+          tripData?.people &&
+          tripData?.travelType &&
+          tripData?.budget?.total
+        ) {
+          navigate("/plan/results");
         }
         break;
       default:
@@ -175,13 +185,13 @@ const PreferencesPage = () => {
   const isComplete = people > 0 && travelType;
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <TripPlanningSidebar 
-        currentStep="preferences" 
+    <div className="flex min-h-screen bg-gray-50 text-black">
+      <TripPlanningSidebar
+        currentStep="preferences"
         onStepClick={handleStepClick}
         tripData={tripData}
       />
-      
+
       <div className="flex-1 p-8">
         <div className="max-w-4xl mx-auto">
           <div className="mb-8">
@@ -190,7 +200,9 @@ const PreferencesPage = () => {
                 <Users className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold text-gray-900">Travel Preferences</h1>
+                <h1 className="text-3xl font-bold text-gray-900">
+                  Travel Preferences
+                </h1>
                 <p className="text-gray-600 mt-1">
                   Tell us about your travel style and group size
                 </p>
@@ -205,11 +217,13 @@ const PreferencesPage = () => {
                 <Users className="w-5 h-5 text-blue-600" />
               </div>
               <div>
-                <h3 className="text-xl font-semibold text-gray-900">Number of Travelers</h3>
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Number of Travelers
+                </h3>
                 <p className="text-gray-600">How many people are traveling?</p>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-4">
               <Button
                 variant="outline"
@@ -220,18 +234,20 @@ const PreferencesPage = () => {
               >
                 -
               </Button>
-              
+
               <div className="flex-1 max-w-xs">
                 <Input
                   type="number"
                   min="1"
                   max="20"
                   value={people}
-                  onChange={(e) => handlePeopleChange(Math.max(1, Number(e.target.value)))}
+                  onChange={(e) =>
+                    handlePeopleChange(Math.max(1, Number(e.target.value)))
+                  }
                   className="text-center text-2xl font-bold h-12"
                 />
               </div>
-              
+
               <Button
                 variant="outline"
                 size="icon"
@@ -242,9 +258,11 @@ const PreferencesPage = () => {
                 +
               </Button>
             </div>
-            
+
             <p className="text-sm text-gray-500 mt-2">
-              {people === 1 ? "Solo traveler" : `${people} people traveling together`}
+              {people === 1
+                ? "Solo traveler"
+                : `${people} people traveling together`}
             </p>
           </Card>
 
@@ -255,11 +273,15 @@ const PreferencesPage = () => {
                 <Heart className="w-5 h-5 text-purple-600" />
               </div>
               <div>
-                <h3 className="text-xl font-semibold text-gray-900">Travel Type</h3>
-                <p className="text-gray-600">What kind of experience are you looking for?</p>
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Travel Type
+                </h3>
+                <p className="text-gray-600">
+                  What kind of experience are you looking for?
+                </p>
               </div>
             </div>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {travelTypes.map((type) => {
                 const Icon = type.icon;
@@ -270,8 +292,8 @@ const PreferencesPage = () => {
                   <Card
                     key={type.id}
                     className={`p-4 cursor-pointer transition-all duration-200 hover:shadow-md ${
-                      isSelected 
-                        ? `${colors.selected} ring-2 ${colors.ring}` 
+                      isSelected
+                        ? `${colors.selected} ring-2 ${colors.ring}`
                         : `${colors.bg} ${colors.border} hover:shadow-lg`
                     }`}
                     onClick={() => handleTravelTypeChange(type.id)}
@@ -303,7 +325,9 @@ const PreferencesPage = () => {
           {/* Summary */}
           {isComplete && (
             <Card className="p-6 mb-8 bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Travel Summary</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                Travel Summary
+              </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="flex items-center gap-3">
                   <Users className="w-5 h-5 text-blue-600" />
@@ -319,7 +343,7 @@ const PreferencesPage = () => {
                   <div>
                     <div className="text-sm text-gray-600">Travel Type</div>
                     <div className="font-semibold text-gray-900">
-                      {travelTypes.find(t => t.id === travelType)?.name}
+                      {travelTypes.find((t) => t.id === travelType)?.name}
                     </div>
                   </div>
                 </div>
@@ -331,7 +355,7 @@ const PreferencesPage = () => {
           <div className="flex justify-between">
             <Button
               variant="outline"
-              onClick={() => navigate('/plan')}
+              onClick={() => navigate("/plan")}
               className="px-8 py-3"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />

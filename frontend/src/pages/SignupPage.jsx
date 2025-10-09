@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/card";
 import { User, Mail, Lock } from "lucide-react";
 import Navbar from "@/components/Navbar";
-import { apiRegister, saveToken, getToken } from "@/lib/api";
+import { getToken } from "@/lib/api";
 
 export default function SignupPage() {
   const [formData, setFormData] = useState({
@@ -64,13 +64,11 @@ export default function SignupPage() {
         throw new Error("Please enter a valid email address");
       }
 
-      const { token } = await apiRegister({
-        name: formData.name,
-        email: formData.email,
-        password: formData.password,
-      });
-      saveToken(token);
-      navigate("/plan");
+      // Use auth context to signup (this handles token storage and user state)
+      await signup(formData.email, formData.password, { name: formData.name });
+
+      // Redirect to plan page after successful signup
+      navigate("/plan", { replace: true });
     } catch (err) {
       setError(err.message || "Signup failed");
     } finally {

@@ -9,7 +9,7 @@ export default function Navbar() {
         {/* Logo / Brand Name */}
         <Link
           to="/"
-          className="flex items-center gap-3 text-xl md:text-2xl font-bold"
+          className="flex items-center gap-3 text-xl md:text-2xl font-bold text-black"
         >
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-pink-500 shadow-md">
             <MapPin className="w-4 h-4 text-white" />
@@ -42,10 +42,14 @@ export default function Navbar() {
         {/* Auth Buttons */}
         <div className="flex items-center gap-3">
           <Button variant="outline" asChild>
-            <Link to="/login">Login</Link>
+            <Link to="/login" className="text-black">
+              Login
+            </Link>
           </Button>
-          <Button asChild>
-            <Link to="/signup">Sign Up</Link>
+          <Button asChild className="bg-black">
+            <Link className="text-white" to="/signup">
+              Sign Up
+            </Link>
           </Button>
         </div>
       </nav>
