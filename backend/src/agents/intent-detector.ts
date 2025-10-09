@@ -1,5 +1,6 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
+import { getCategoriesFromQuery } from '../config/opentripmap-categories.js';
 
 /**
  * Intent schema for structured output
@@ -37,6 +38,7 @@ export const IntentSchema = z.object({
     number_of_people: z.number().optional().describe('Number of travelers'),
     preferences: z.array(z.string()).optional().describe('User preferences like adventure, culture, food, etc.'),
     category: z.string().optional().describe('Category of interest like museums, parks, restaurants'),
+    opentripmap_kinds: z.array(z.string()).optional().describe('OpenTripMap category codes detected from query'),
     query_terms: z.array(z.string()).optional().describe('Key search terms'),
   }).describe('Extracted entities from the query'),
   
@@ -64,9 +66,9 @@ export class IntentDetector {
   }
 
   /**
-   * Detect user intent from query
+   * Detect user intent from query with category extraction
    */
-  async detectIntent(userQuery: string, conversationHistory?: string[]): Promise<DetectedIntent> {
+  async detectIntent(userQuery: string, conversationHistory?: string[], travelType?: string): Promise<DetectedIntent> {
     try {
       const systemPrompt = this.buildSystemPrompt();
       const userPrompt = this.buildUserPrompt(userQuery, conversationHistory);
@@ -87,9 +89,14 @@ export class IntentDetector {
       const parsed = JSON.parse(jsonMatch[0]);
       const validated = IntentSchema.parse(parsed);
 
+      // Extract OpenTripMap categories from the query
+      const detectedCategories = getCategoriesFromQuery(userQuery, travelType);
+      validated.entities.opentripmap_kinds = detectedCategories;
+
       console.log('🎯 [INTENT DETECTOR] Detected:', {
         intent: validated.primary_intent,
         tools: validated.tools_to_call,
+        categories: detectedCategories,
         confidence: validated.confidence,
       });
 
@@ -98,7 +105,7 @@ export class IntentDetector {
       console.error('Intent detection error:', error);
       
       // Fallback to simple keyword-based detection
-      return this.fallbackDetection(userQuery);
+      return this.fallbackDetection(userQuery, travelType);
     }
   }
 
@@ -183,10 +190,13 @@ Respond with ONLY a valid JSON object matching this schema:
   /**
    * Fallback intent detection using simple keyword matching
    */
-  private fallbackDetection(userQuery: string): DetectedIntent {
+  private fallbackDetection(userQuery: string, travelType?: string): DetectedIntent {
     const query = userQuery.toLowerCase();
     let intent: DetectedIntent['primary_intent'] = 'unknown';
     let tools: string[] = [];
+
+    // Extract categories regardless of intent
+    const detectedCategories = getCategoriesFromQuery(userQuery, travelType);
 
     // Simple keyword matching
     if (query.includes('hotel') || query.includes('accommodation') || query.includes('stay')) {
@@ -222,10 +232,11 @@ Respond with ONLY a valid JSON object matching this schema:
       primary_intent: intent,
       entities: {
         query_terms: userQuery.split(' ').filter(word => word.length > 3),
+        opentripmap_kinds: detectedCategories,
       },
       tools_to_call: tools,
       confidence: 0.6,
-      reasoning: 'Fallback keyword-based detection',
+      reasoning: 'Fallback keyword-based detection with category extraction',
     };
   }
 }

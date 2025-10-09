@@ -6,6 +6,7 @@ import { itineraryBuilder } from '../services/itineraryBuilder.js';
 import { intentDetector } from './intent-detector.js';
 import { toolRegistry } from './tool-registry.js';
 import { TRAVEL_AGENT_SYSTEM_PROMPT } from './prompts.js';
+import { formatCategoriesForAPI, getCategoryDisplayName } from '../config/opentripmap-categories.js';
 import type { AgentConfig } from './types.js';
 import type { Destination } from '../mcp-servers/places/types.js';
 import type { Itinerary } from '../types/itinerary.js';
@@ -134,24 +135,26 @@ export class TravelAgent {
 
   /**
    * Planner Node: Analyzes user query and decides which tools to use
-   * Now uses LLM-based intent detection instead of hardcoded keywords
+   * Now uses LLM-based intent detection with category extraction
    */
   private async plannerNode(state: AgentState): Promise<Partial<AgentState>> {
     console.log('\n🧠 [PLANNER] Analyzing user query:', state.userQuery);
     try {
-      // Use LLM-based intent detector
+      // Use LLM-based intent detector with category extraction
       const detectedIntent = await intentDetector.detectIntent(state.userQuery);
       
       console.log('🎯 [PLANNER] Detected intent:', detectedIntent.primary_intent);
       console.log('🔧 [PLANNER] Tools to call:', detectedIntent.tools_to_call);
+      console.log('🏷️  [PLANNER] Categories:', detectedIntent.entities.opentripmap_kinds);
       console.log('📊 [PLANNER] Confidence:', detectedIntent.confidence);
       console.log('💭 [PLANNER] Reasoning:', detectedIntent.reasoning);
 
-      // Store the detected intent as a string for the conditional edges
+      // Store the detected intent and entities for tool execution
       const intentString = detectedIntent.primary_intent;
 
       return {
         intent: intentString,
+        searchResults: detectedIntent.entities.opentripmap_kinds as any, // Store categories temporarily
         messages: [new AIMessage(`Understood: ${detectedIntent.reasoning}`)],
       };
     } catch (error) {
@@ -164,37 +167,46 @@ export class TravelAgent {
 
   /**
    * Tool Executor Node: Calls appropriate MCP tools based on intent
-   * Now uses the unified tool registry
+   * Now uses detected categories from intent detection
    */
   private async toolExecutorNode(state: AgentState): Promise<Partial<AgentState>> {
     console.log('\n🔧 [TOOL EXECUTOR] Running tools for intent:', state.intent);
     try {
       const { intent, userQuery } = state;
-
+      
+      // Extract detected categories (stored temporarily in searchResults by planner)
+      const detectedCategories = (state.searchResults as any) || [];
+      
       // Map intent to new naming convention if needed
       const normalizedIntent = intent?.toLowerCase().replace('_', '_') || 'unknown';
 
       switch (normalizedIntent) {
         case 'search_destination':
         case 'search_attractions': {
-          // Extract destination and category from query
+          // Extract destination from query
           const destination = this.extractDestination(userQuery);
-          const category = this.extractCategory(userQuery);
           
-          console.log(`🔍 [TOOL] Searching for ${category || 'attractions'} in ${destination}`);
+          // Use detected categories or fallback to extractCategory
+          const categories = detectedCategories.length > 0 
+            ? detectedCategories 
+            : [this.extractCategory(userQuery)].filter(Boolean);
           
-          if (category) {
-            // Use the search_by_category tool
+          console.log(`🔍 [TOOL] Searching for ${categories.join(', ') || 'attractions'} in ${destination}`);
+          
+          if (categories.length > 0) {
+            // Use the search_by_category tool with detected categories
+            const categoryKinds = formatCategoriesForAPI(categories);
+            
             const result = await toolRegistry.executeTool('search_by_category', {
               location: destination,
-              category,
+              category: categoryKinds,
               limit: 10,
             });
             
             const categoryResults = result.content?.[0]?.text ? 
               JSON.parse(result.content[0].text).places : [];
             
-            console.log(`✅ [TOOL] Got ${categoryResults.length} results`);
+            console.log(`✅ [TOOL] Got ${categoryResults.length} results for categories: ${categories.map(getCategoryDisplayName).join(', ')}`);
             return { searchResults: categoryResults };
           } else {
             // Generic search
