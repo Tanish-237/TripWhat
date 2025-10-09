@@ -5,6 +5,7 @@ import {
   Route,
   Navigate,
 } from "react-router-dom";
+import { AuthProvider } from "./contexts/AuthContext";
 import { TripProvider, useTrip } from "./contexts/TripContext";
 import LandingPage from "./pages/LandingPage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
@@ -13,7 +14,8 @@ import TripPlannerPage from "./pages/TripPlannerPage.jsx";
 import BudgetPage from "./pages/BudgetPage.jsx";
 import PreferencesPage from "./pages/PreferencesPage.jsx";
 import ResultsPage from "./pages/ResultsPage.jsx";
-import TripDetailsPage from "./pages/TripDetailsPage.jsx";
+import ItineraryPage from "./pages/ItineraryPage.jsx";
+import { Chat } from "./pages/Chat.tsx";
 
 // Route protection component
 const ProtectedRoute = ({ children, condition, redirectTo = "/plan" }) => {
@@ -67,13 +69,10 @@ const AppContent = () => {
           }
         />
         <Route
-          path="/plan/details"
-          element={
-            <ProtectedRoute condition={tripData?.selectedTrip}>
-              <TripDetailsPage />
-            </ProtectedRoute>
-          }
+          path="/itinerary"
+          element={<ItineraryPage />}
         />
+        <Route path="/chat" element={<Chat />} />
       </Routes>
     </Router>
   );
@@ -81,9 +80,11 @@ const AppContent = () => {
 
 function App() {
   return (
-    <TripProvider>
-      <AppContent />
-    </TripProvider>
+    <AuthProvider>
+      <TripProvider>
+        <AppContent />
+      </TripProvider>
+    </AuthProvider>
   );
 }
 

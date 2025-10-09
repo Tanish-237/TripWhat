@@ -108,7 +108,14 @@ const ResultsPage = () => {
     generateItinerary();
   }, []); // Only run once on mount
 
-  const handleGoToChat = () => {
+  const handleViewItinerary = () => {
+    console.log("🔵 VIEW ITINERARY BUTTON CLICKED - Navigating to /itinerary");
+    console.log("Current tripData:", tripData);
+    navigate("/itinerary");
+  };
+
+  const handleOpenChat = () => {
+    console.log("🟢 OPEN CHAT BUTTON CLICKED - Navigating to /chat");
     navigate("/chat");
   };
 
@@ -304,17 +311,26 @@ const ResultsPage = () => {
                 {/* Action Buttons */}
                 <div className="flex flex-col sm:flex-row gap-4">
                   <Button
-                    onClick={handleGoToChat}
+                    onClick={handleViewItinerary}
                     className="flex-1 h-14 text-lg gap-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all"
                   >
+                    <Sparkles className="w-5 h-5" />
+                    View Itinerary
+                    <ArrowRight className="w-5 h-5" />
+                  </Button>
+                  <Button
+                    onClick={handleOpenChat}
+                    variant="outline"
+                    className="flex-1 h-14 text-lg gap-3 border-2 border-blue-500 text-blue-600 hover:bg-blue-50 shadow-md hover:shadow-lg transition-all"
+                  >
                     <MessageSquare className="w-5 h-5" />
-                    Open in Chat
+                    Open Chat
                     <ArrowRight className="w-5 h-5" />
                   </Button>
                 </div>
 
                 <p className="text-center text-sm text-gray-500 mt-6">
-                  Click "Open in Chat" to view your full day-by-day itinerary and refine it with AI
+                  View your full itinerary with timeline & map, or chat with AI to refine your plan
                 </p>
               </div>
             </Card>
