@@ -6,7 +6,7 @@ import connectDB from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import tripRoutes from "./routes/tripRoutes.js";
 
-const port = process.env.PORT || 5000;
+const port = 8080;
 const mongoUri = process.env.MONGODB_URI;
 
 const app = express();

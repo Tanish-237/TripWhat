@@ -1,4 +1,4 @@
-@import 'leaflet/dist/leaflet.css';
+@import "leaflet/dist/leaflet.css";
 
 @tailwind base;
 @tailwind components;
@@ -154,4 +154,13 @@ input[type="range"]:focus::-moz-range-thumb {
   transition: all 0.1s ease-out;
   z-index: 9999;
   border-radius: 1px;
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0px 1000px #e5e7eb inset !important; /* Tailwind gray-100 */
+  -webkit-text-fill-color: black !important; /* keep your text color */
+  transition: background-color 5000s ease-in-out 0s; /* prevent flash */
 }

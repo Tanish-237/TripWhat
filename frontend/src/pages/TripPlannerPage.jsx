@@ -20,23 +20,77 @@ import {
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
+// Custom styles for date picker
+const datePickerStyles = `
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    right: 0;
+    top: 0;
+    cursor: pointer;
+  }
+  
+  input[type="date"]::-webkit-inner-spin-button,
+  input[type="date"]::-webkit-clear-button {
+    display: none;
+  }
+  
+  input[type="date"]::-webkit-datetime-edit-fields-wrapper {
+    padding: 0;
+  }
+  
+  input[type="date"]::-webkit-datetime-edit-text {
+    color: #6B7280;
+    padding: 0 2px;
+  }
+  
+  input[type="date"]::-webkit-datetime-edit-month-field,
+  input[type="date"]::-webkit-datetime-edit-day-field,
+  input[type="date"]::-webkit-datetime-edit-year-field {
+    color: #111827;
+  }
+`;
+
 const DatePicker = ({ selected, onSelect }) => {
   const today = new Date();
+  const [isOpen, setIsOpen] = useState(false);
+
+  const handleDateClick = () => {
+    setIsOpen(true);
+  };
+
+  const handleDateChange = (e) => {
+    if (e.target.value) {
+      onSelect(new Date(e.target.value));
+      setIsOpen(false);
+    }
+  };
 
   return (
     <div className="relative">
-      <input
-        type="date"
-        value={selected ? format(selected, "yyyy-MM-dd") : ""}
-        min={format(today, "yyyy-MM-dd")}
-        onChange={(e) => {
-          if (e.target.value) {
-            onSelect(new Date(e.target.value));
-          }
-        }}
-        className="w-full p-3 bg-white border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:bg-gray-50 transition-colors cursor-pointer"
-        placeholder="Select departure date"
-      />
+      <style>{datePickerStyles}</style>
+      <div className="relative cursor-pointer" onClick={handleDateClick}>
+        <div className="w-full h-12 px-4 py-3 bg-white border-2 border-gray-200 rounded-lg text-gray-900 text-base focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 hover:bg-gray-50 hover:border-blue-300 transition-all duration-200 flex items-center justify-between">
+          <span className={selected ? "text-gray-900" : "text-gray-500"}>
+            {selected
+              ? format(selected, "MMMM do, yyyy")
+              : "Select departure date"}
+          </span>
+          <CalendarIcon className="h-5 w-5 text-blue-500" />
+        </div>
+        <input
+          type="date"
+          value={selected ? format(selected, "yyyy-MM-dd") : ""}
+          min={format(today, "yyyy-MM-dd")}
+          onChange={handleDateChange}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          style={{
+            colorScheme: "light",
+          }}
+        />
+      </div>
     </div>
   );
 };
@@ -119,7 +173,7 @@ const DashboardNav = () => {
                 <Button
                   variant="outline"
                   onClick={handleLogout}
-                  className="px-4"
+                  className="px-4 text-white bg-black"
                 >
                   Logout
                 </Button>

@@ -36,13 +36,13 @@ const ResultsPage = () => {
     const hasPrefs = tripData?.people && tripData?.travelType;
     const hasBudget =
       tripData?.budget?.total &&
-      (tripData?.budget?.travel !== undefined) &&
-      (tripData?.budget?.accommodation !== undefined) &&
-      (tripData?.budget?.food !== undefined) &&
-      (tripData?.budget?.events !== undefined);
+      tripData?.budget?.travel !== undefined &&
+      tripData?.budget?.accommodation !== undefined &&
+      tripData?.budget?.food !== undefined &&
+      tripData?.budget?.events !== undefined;
 
     if (!hasCore || !hasPrefs || !hasBudget) {
-      console.log('Missing required trip data for itinerary generation');
+      console.log("Missing required trip data for itinerary generation");
       return;
     }
 
@@ -90,16 +90,19 @@ const ResultsPage = () => {
 
         console.log("✅ AI Itinerary generated:", response.data);
         setGeneratedItinerary(response.data);
-        
-        // Store in context for chat integration
-        updateTripData({ 
-          generatedItinerary: response.data,
-          itineraryMarkdown: response.data.markdown 
-        });
 
+        // Store in context for chat integration
+        updateTripData({
+          generatedItinerary: response.data,
+          itineraryMarkdown: response.data.markdown,
+        });
       } catch (err) {
         console.error("❌ Failed to generate itinerary:", err);
-        setError(err.response?.data?.error || err.message || "Failed to generate itinerary");
+        setError(
+          err.response?.data?.error ||
+            err.message ||
+            "Failed to generate itinerary"
+        );
       } finally {
         setIsLoading(false);
       }
@@ -143,8 +146,10 @@ const ResultsPage = () => {
 
   const getTotalActivities = () => {
     if (!generatedItinerary?.itinerary?.days) return 0;
-    return generatedItinerary.itinerary.days.reduce((sum, day) => 
-      sum + day.timeSlots.reduce((s, slot) => s + slot.activities.length, 0), 0
+    return generatedItinerary.itinerary.days.reduce(
+      (sum, day) =>
+        sum + day.timeSlots.reduce((s, slot) => s + slot.activities.length, 0),
+      0
     );
   };
 
@@ -153,11 +158,11 @@ const ResultsPage = () => {
   };
 
   const getCityNames = () => {
-    return tripData?.cities?.map(c => c.name).join(' → ') || '';
+    return tripData?.cities?.map((c) => c.name).join(" → ") || "";
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50 text-black">
       <TripPlanningSidebar
         currentStep="results"
         onStepClick={handleStepClick}
@@ -177,7 +182,8 @@ const ResultsPage = () => {
                   Your Personalized Itinerary
                 </h1>
                 <p className="text-gray-600 mt-1">
-                  AI-generated based on your preferences, budget, and travel style
+                  AI-generated based on your preferences, budget, and travel
+                  style
                 </p>
               </div>
             </div>
@@ -193,7 +199,8 @@ const ResultsPage = () => {
                     Creating Your Perfect Itinerary...
                   </h3>
                   <p className="text-gray-600">
-                    Our AI is analyzing your preferences and finding the best activities for your trip
+                    Our AI is analyzing your preferences and finding the best
+                    activities for your trip
                   </p>
                 </div>
               </div>
@@ -248,23 +255,33 @@ const ResultsPage = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                   <div className="text-center p-4 bg-blue-50 rounded-lg">
                     <Calendar className="w-6 h-6 text-blue-600 mx-auto mb-2" />
-                    <div className="text-2xl font-bold text-blue-900">{getTotalDays()}</div>
+                    <div className="text-2xl font-bold text-blue-900">
+                      {getTotalDays()}
+                    </div>
                     <div className="text-xs text-blue-700">Days</div>
                   </div>
                   <div className="text-center p-4 bg-green-50 rounded-lg">
                     <Sparkles className="w-6 h-6 text-green-600 mx-auto mb-2" />
-                    <div className="text-2xl font-bold text-green-900">{getTotalActivities()}</div>
+                    <div className="text-2xl font-bold text-green-900">
+                      {getTotalActivities()}
+                    </div>
                     <div className="text-xs text-green-700">Activities</div>
                   </div>
                   <div className="text-center p-4 bg-purple-50 rounded-lg">
                     <Users className="w-6 h-6 text-purple-600 mx-auto mb-2" />
-                    <div className="text-2xl font-bold text-purple-900">{tripData?.people}</div>
+                    <div className="text-2xl font-bold text-purple-900">
+                      {tripData?.people}
+                    </div>
                     <div className="text-xs text-purple-700">Travelers</div>
                   </div>
                   <div className="text-center p-4 bg-orange-50 rounded-lg">
                     <DollarSign className="w-6 h-6 text-orange-600 mx-auto mb-2" />
                     <div className="text-2xl font-bold text-orange-900">
-                      ${Math.round(generatedItinerary.itinerary?.tripMetadata?.budget?.perDay || 0)}
+                      $
+                      {Math.round(
+                        generatedItinerary.itinerary?.tripMetadata?.budget
+                          ?.perDay || 0
+                      )}
                     </div>
                     <div className="text-xs text-orange-700">Per Day</div>
                   </div>
@@ -284,9 +301,15 @@ const ResultsPage = () => {
                       </div>
                     </div>
                     <div>
-                      <div className="text-sm text-gray-600">Activities Budget/Day</div>
+                      <div className="text-sm text-gray-600">
+                        Activities Budget/Day
+                      </div>
                       <div className="text-xl font-semibold text-gray-900">
-                        ${Math.round(generatedItinerary.itinerary?.tripMetadata?.budget?.breakdown?.activities || 0)}
+                        $
+                        {Math.round(
+                          generatedItinerary.itinerary?.tripMetadata?.budget
+                            ?.breakdown?.activities || 0
+                        )}
                       </div>
                     </div>
                   </div>
@@ -300,9 +323,16 @@ const ResultsPage = () => {
                   </h3>
                   <div className="flex flex-wrap gap-3">
                     {tripData?.cities?.map((city, idx) => (
-                      <div key={idx} className="flex items-center gap-2 px-4 py-2 bg-pink-50 rounded-lg border border-pink-200">
-                        <span className="font-semibold text-pink-900">{city.name}</span>
-                        <span className="text-sm text-pink-700">• {city.days}d</span>
+                      <div
+                        key={idx}
+                        className="flex items-center gap-2 px-4 py-2 bg-pink-50 rounded-lg border border-pink-200"
+                      >
+                        <span className="font-semibold text-pink-900">
+                          {city.name}
+                        </span>
+                        <span className="text-sm text-pink-700">
+                          • {city.days}d
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -341,7 +371,7 @@ const ResultsPage = () => {
             <Button
               variant="outline"
               onClick={() => navigate("/plan/budget")}
-              className="px-8 py-3"
+              className="px-8 py-3 hover:bg-black hover:text-white transition"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Budget
