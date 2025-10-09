@@ -1,28 +1,9 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 
-interface User {
-  id: string;
-  email: string;
-  preferences?: {
-    budget: string;
-    travelStyle: string;
-    interests: string[];
-  };
-}
+const AuthContext = createContext(null);
 
-interface AuthContextType {
-  user: User | null;
-  login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, preferences?: any) => Promise<void>;
-  logout: () => void;
-  loading: boolean;
-  isAuthenticated: boolean;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -39,6 +20,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
       const token = localStorage.getItem("tripwhat_token");
+      
+      console.log("[AUTH] Fetching user with token:", token ? "Token found" : "No token");
 
       const response = await fetch(`${API_URL}/api/auth/me`, {
         headers: {
@@ -47,22 +30,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       });
 
+      console.log("[AUTH] Fetch user response:", response.status);
+
       if (response.ok) {
-        const userData = await response.json();
-        setUser(userData);
+        const data = await response.json();
+        console.log("[AUTH] User data received:", data);
+        // Backend returns { user: { id, name, email } }
+        setUser(data.user);
       } else {
+        console.log("[AUTH] Invalid token, removing from storage");
         localStorage.removeItem("tripwhat_token");
       }
     } catch (error) {
-      console.error("Failed to fetch user:", error);
+      console.error("[AUTH] Failed to fetch user:", error);
       localStorage.removeItem("tripwhat_token");
     } finally {
       setLoading(false);
     }
   };
 
-  const login = async (email: string, password: string) => {
+  const login = async (email, password) => {
     const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+    
+    console.log("[AUTH] Attempting login for email:", email);
 
     const response = await fetch(`${API_URL}/api/auth/login`, {
       method: "POST",
@@ -72,18 +62,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       body: JSON.stringify({ email, password }),
     });
 
+    console.log("[AUTH] Login response:", response.status);
+
     if (!response.ok) {
       const error = await response.json();
+      console.error("[AUTH] Login failed:", error);
       throw new Error(error.error || "Login failed");
     }
 
     const { token, user } = await response.json();
+    console.log("[AUTH] Login successful, storing token and user:", { token: !!token, user });
 
     localStorage.setItem("tripwhat_token", token);
     setUser(user);
   };
 
-  const signup = async (email: string, password: string, preferences?: any) => {
+  const signup = async (email, password, preferences) => {
     const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
     const response = await fetch(`${API_URL}/api/auth/register`, {
@@ -110,7 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   };
 
-  const value: AuthContextType = {
+  const value = {
     user,
     login,
     signup,

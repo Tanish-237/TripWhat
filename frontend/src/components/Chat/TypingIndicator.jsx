@@ -1,11 +1,7 @@
 import { motion } from 'framer-motion';
 import { Bot, Loader2 } from 'lucide-react';
 
-interface TypingIndicatorProps {
-  status?: string | null;
-}
-
-export function TypingIndicator({ status }: TypingIndicatorProps) {
+export function TypingIndicator({ status }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}

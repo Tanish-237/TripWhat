@@ -8,28 +8,15 @@ import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 
-delete (L.Icon.Default.prototype as any)._getIconUrl;
+delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconUrl: markerIcon,
   iconRetinaUrl: markerIcon2x,
   shadowUrl: markerShadow,
 });
 
-interface Location {
-  lat: number;
-  lon: number;
-  name: string;
-  description?: string;
-}
-
-interface MapProps {
-  locations: Location[];
-  center?: [number, number];
-  zoom?: number;
-}
-
 // Component to update map view when locations change
-function MapUpdater({ locations }: { locations: Location[] }) {
+function MapUpdater({ locations }) {
   const map = useMap();
 
   useEffect(() => {
@@ -43,9 +30,9 @@ function MapUpdater({ locations }: { locations: Location[] }) {
   return null;
 }
 
-export function Map({ locations, center = [48.8566, 2.3522], zoom = 13 }: MapProps) {
+export function Map({ locations, center = [48.8566, 2.3522], zoom = 13 }) {
   // Use first location as center if available
-  const mapCenter: [number, number] = locations.length > 0 
+  const mapCenter = locations.length > 0 
     ? [locations[0].lat, locations[0].lon]
     : center;
 

@@ -1,33 +1,26 @@
 import { useState, useEffect, useRef } from 'react';
-import { useSocket } from '../hooks/useSocket';
-import { MessageBubble } from '../components/Chat/MessageBubble';
-import { TypingIndicator } from '../components/Chat/TypingIndicator';
-import { MessageInput } from '../components/Chat/MessageInput';
-import { Map } from '../components/Map';
-import { ItineraryOverlay } from '../components/ItineraryOverlay';
-import type { Itinerary, Activity } from '../types/itinerary';
-import { parseItineraryFromMarkdown } from '../utils/itineraryParser';
+import { useSocket } from '../hooks/useSocket.js';
+import { MessageBubble } from '../components/Chat/MessageBubble.jsx';
+import { TypingIndicator } from '../components/Chat/TypingIndicator.jsx';
+import { MessageInput } from '../components/Chat/MessageInput.jsx';
+import { Map } from '../components/Map.jsx';
+import { ItineraryOverlay } from '../components/ItineraryOverlay.jsx';
+import { parseItineraryFromMarkdown } from '../utils/itineraryParser.js';
 import axios from 'axios';
 import { Plane, MapPin } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-}
-
 export function Chat() {
-  const [conversationId, setConversationId] = useState<string | undefined>();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [conversationId, setConversationId] = useState(undefined);
+  const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef(null);
   
   // Itinerary and Map state
-  const [currentItinerary, setCurrentItinerary] = useState<Itinerary | null>(null);
+  const [currentItinerary, setCurrentItinerary] = useState(null);
   const [isItineraryOpen, setIsItineraryOpen] = useState(false);
-  const [mapLocations, setMapLocations] = useState<Array<{lat: number; lon: number; name: string; description?: string}>>([]);
+  const [mapLocations, setMapLocations] = useState([]);
 
   const { isConnected, agentStatus, lastMessage, lastError, clearLastMessage, clearLastError } = 
     useSocket(conversationId);
@@ -133,9 +126,9 @@ export function Chat() {
     }
   }, [messages]);
 
-  const handleSendMessage = async (message: string) => {
+  const handleSendMessage = async (message) => {
     // Add user message immediately
-    const userMessage: Message = {
+    const userMessage = {
       role: 'user',
       content: message,
       timestamp: new Date(),
@@ -145,7 +138,7 @@ export function Chat() {
 
     try {
       // Get auth token
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('tripwhat_token');
       
       if (!token) {
         throw new Error('Not authenticated. Please log in.');
