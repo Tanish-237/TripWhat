@@ -685,34 +685,75 @@ export class TravelAgent {
       
       console.log('💰 Daily budget:', dailyBudget);
       console.log('🎨 Travel preferences:', travelPrefs);
+      console.log('🗓️ Total days:', totalDays);
+      console.log('🏙️ Cities:', tripContext.cities.map((c: any) => `${c.name} (${c.days} days)`));
       
-      // Build itinerary for each city
+      // Collect all places from all cities first for better distribution
+      const allCityPlaces: Map<string, any> = new Map();
+      
+      for (const city of tripContext.cities) {
+        console.log(`\n🔍 Fetching enhanced places for ${city.name}`);
+        
+        // Get city coordinates
+        const coords = await itineraryBuilder.getDestinationCoords(city.name);
+        if (coords) {
+          // Fetch enhanced places including hotels and trip-type specific activities
+          const cityPlaces = await itineraryBuilder.fetchEnhancedPlaces(
+            coords.lat,
+            coords.lon,
+            travelPrefs.categories,
+            tripContext.travelType,
+            true // Include hotels
+          );
+          
+          allCityPlaces.set(city.name, {
+            places: cityPlaces,
+            coords: coords,
+            days: city.days
+          });
+          
+          console.log(`✅ Found ${cityPlaces.total} enhanced places in ${city.name} (${cityPlaces.activities.length} activities, ${cityPlaces.restaurants.length} restaurants, ${cityPlaces.hotels.length} hotels)`);
+        }
+      }
+      
+      // Build itinerary with intelligent distribution
       const allDays: any[] = [];
       let currentDayNumber = 1;
       
+      // Global tracking to prevent repetition across all days
+      const globalUsedPlaces = new Set<string>();
+      
       for (const city of tripContext.cities) {
-        console.log(`\n🏙️  Building itinerary for ${city.name} (${city.days} days)`);
+        const cityData = allCityPlaces.get(city.name);
+        if (!cityData) continue;
         
-        // Build city-specific itinerary with context
-        const cityItinerary = await itineraryBuilder.buildItineraryWithContext(
+        console.log(`\n�️ Building ${city.days} days for ${city.name}`);
+        
+        // Build city-specific itinerary with global state tracking
+        const cityItinerary = await itineraryBuilder.buildItineraryWithContextAndState(
           city.name,
           city.days,
           {
-            dailyBudget: dailyBudget.activities, // Budget for activities per day
+            dailyBudget: dailyBudget.activities,
             preferredCategories: travelPrefs.categories,
             activityLevel: travelPrefs.activityLevel,
             pacing: travelPrefs.pacing,
             numberOfPeople: tripContext.people,
+            places: cityData.places,
+            coords: cityData.coords,
+            globalUsedPlaces: globalUsedPlaces, // Pass global state
+            startingDayNumber: currentDayNumber
           }
         );
         
         if (cityItinerary && cityItinerary.days) {
-          // Renumber days for multi-city trips
+          // Add city-specific days to all days
           cityItinerary.days.forEach((day: any) => {
-            day.dayNumber = currentDayNumber++;
             day.city = city.name;
             allDays.push(day);
           });
+          
+          currentDayNumber += city.days;
         }
       }
       
@@ -736,7 +777,9 @@ export class TravelAgent {
       // Format the response
       const formattedResponse = this.formatItineraryWithContext(completeItinerary, tripContext);
       
-      console.log('✅ [CONTEXT ITINERARY] Successfully generated itinerary');
+      console.log(`✅ [CONTEXT ITINERARY] Successfully generated ${allDays.length}-day itinerary`);
+      console.log(`📊 Total activities: ${allDays.reduce((sum, day) => 
+        sum + day.timeSlots.reduce((s: number, slot: any) => s + slot.activities.length, 0), 0)}`);
       
       return {
         response: formattedResponse,
