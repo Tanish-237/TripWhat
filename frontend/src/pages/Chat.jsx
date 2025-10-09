@@ -9,7 +9,7 @@ import { parseItineraryFromMarkdown } from '../utils/itineraryParser.js';
 import axios from 'axios';
 import { Plane, MapPin } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export function Chat() {
   const [conversationId, setConversationId] = useState(undefined);

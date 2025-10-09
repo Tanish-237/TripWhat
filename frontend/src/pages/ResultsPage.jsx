@@ -29,45 +29,28 @@ const ResultsPage = () => {
 
   // Generate AI itinerary when component mounts with complete data
   useEffect(() => {
-    console.log("ResultsPage mounted with tripData:", tripData);
-    
-    // Check if all required data is present
     const hasCore =
       tripData?.startDate &&
       Array.isArray(tripData?.cities) &&
       tripData.cities.length > 0;
     const hasPrefs = tripData?.people && tripData?.travelType;
-    const hasBudget = tripData?.budget !== undefined;
-    
-    if (!hasCore) {
-      console.log("⚠️ Missing core trip data (dates/cities)");
-      return;
-    }
-    if (!hasPrefs) {
-      console.log("⚠️ Missing preferences data");
-      return;
-    }
-    if (!hasBudget) {
-      console.log("⚠️ Missing budget data");
+    const hasBudget =
+      tripData?.budget?.total &&
+      tripData?.budget?.travel !== undefined &&
+      tripData?.budget?.accommodation !== undefined &&
+      tripData?.budget?.food !== undefined &&
+      tripData?.budget?.events !== undefined;
+
+    if (!hasCore || !hasPrefs || !hasBudget) {
+      console.log("Missing required trip data for itinerary generation");
       return;
     }
 
-    // All data is present, generate itinerary
-    console.log("✅ All trip data present, generating itinerary");
     const generateItinerary = async () => {
       setIsLoading(true);
       setError(null);
 
       try {
-        // Ensure we have the budget data
-        const budget = tripData.budget || {
-          total: 5000, // Default
-          travel: 25,
-          accommodation: 25,
-          food: 25,
-          events: 25
-        };
-        
         const payload = {
           startDate:
             tripData.startDate instanceof Date
@@ -82,23 +65,20 @@ const ResultsPage = () => {
           people: tripData.people,
           travelType: tripData.travelType,
           budget: {
-            total: budget.total || 5000,
-            travel: budget.travel || 25,
-            accommodation: budget.accommodation || 25,
-            food: budget.food || 25,
-            events: budget.events || 25,
+            total: tripData.budget.total,
+            travel: tripData.budget.travel,
+            accommodation: tripData.budget.accommodation,
+            food: tripData.budget.food,
+            events: tripData.budget.events,
           },
           budgetMode: tripData.budgetMode || "capped",
         };
-        
-        console.log("Using tripData:", tripData);
-        console.log("Using budget:", budget);
 
         console.log("🎯 Generating AI itinerary with payload:", payload);
 
         const token = getToken();
         const response = await axios.post(
-          "http://localhost:8080/api/itinerary/generate",
+          "http://localhost:5000/api/itinerary/generate",
           payload,
           {
             headers: {
@@ -118,25 +98,11 @@ const ResultsPage = () => {
         });
       } catch (err) {
         console.error("❌ Failed to generate itinerary:", err);
-        
-        // Show more detailed error for debugging
-        let errorMsg = "Failed to generate itinerary. Please try again.";
-        
-        if (err.response?.data?.message) {
-          errorMsg = err.response.data.message;
-        } else if (err.message) {
-          errorMsg = `Error: ${err.message}`;
-        }
-        
-        // Additional debug info in console
-        console.error("API Error Details:", {
-          status: err.response?.status,
-          statusText: err.response?.statusText,
-          data: err.response?.data,
-          tripData
-        });
-        
-        setError(errorMsg);
+        setError(
+          err.response?.data?.error ||
+            err.message ||
+            "Failed to generate itinerary"
+        );
       } finally {
         setIsLoading(false);
       }

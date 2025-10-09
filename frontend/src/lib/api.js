@@ -1,4 +1,5 @@
-const API_BASE_URL = import.meta.env.BACKEND_URL || "http://localhost:8080";
+// Use environment variable if available, otherwise fallback to port 5000
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 async function request(path, options = {}) {
   const res = await fetch(`${API_BASE_URL}${path}`, {
