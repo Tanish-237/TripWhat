@@ -1,3 +1,4 @@
++
 /**
  * Manual test script for Places MCP Server tools
  * Run with: tsx src/mcp-servers/places/test-manual.ts

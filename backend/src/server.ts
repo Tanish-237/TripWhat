@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import { connectDB } from './config/database.js';
 import chatRoutes from './routes/chat.js';
 import authRoutes from './routes/auth.js';
+import itineraryRoutes from './routes/itinerary.js';
 import { authenticateToken } from './middleware/auth.js';
 import { setSocketIO } from './controllers/chatController.js';
 
@@ -53,6 +54,7 @@ app.use('/api/auth', authRoutes);
 
 // Protected routes
 app.use('/api/chat', authenticateToken, chatRoutes);
+app.use('/api/itinerary', authenticateToken, itineraryRoutes);
 
 // Set Socket.io instance for chat controller
 setSocketIO(io);

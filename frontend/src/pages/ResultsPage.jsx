@@ -1,34 +1,33 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import TripPlanningSidebar from "@/components/TripPlanningSidebar";
 import { useTrip } from "@/contexts/TripContext";
-import { apiCreateTrip, getToken } from "@/lib/api";
+import { getToken } from "@/lib/api";
+import axios from "axios";
 import {
   Sparkles,
-  Star,
   MapPin,
   Calendar,
   DollarSign,
   Users,
-  Clock,
   ArrowRight,
   ArrowLeft,
-  Filter,
-  Heart,
-  Share2,
+  Loader2,
+  MessageSquare,
+  AlertCircle,
 } from "lucide-react";
 
 const ResultsPage = () => {
   const navigate = useNavigate();
   const { tripData, updateTripData } = useTrip();
 
-  const [selectedTrip, setSelectedTrip] = useState(null);
-  const [sortBy, setSortBy] = useState("recommended");
-  const [hasProcessedData, setHasProcessedData] = useState(false);
+  const [generatedItinerary, setGeneratedItinerary] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Only process and save data when we first arrive at results page with complete data
+  // Generate AI itinerary when component mounts with complete data
   useEffect(() => {
     const hasCore =
       tripData?.startDate &&
@@ -37,270 +36,80 @@ const ResultsPage = () => {
     const hasPrefs = tripData?.people && tripData?.travelType;
     const hasBudget =
       tripData?.budget?.total &&
-      (tripData?.budget?.travel ?? tripData?.budget?.travel === 0) &&
-      (tripData?.budget?.accommodation ??
-        tripData?.budget?.accommodation === 0) &&
-      (tripData?.budget?.food ?? tripData?.budget?.food === 0) &&
-      (tripData?.budget?.events ?? tripData?.budget?.events === 0);
+      (tripData?.budget?.travel !== undefined) &&
+      (tripData?.budget?.accommodation !== undefined) &&
+      (tripData?.budget?.food !== undefined) &&
+      (tripData?.budget?.events !== undefined);
 
-    // Only process if we have all data and haven't processed it yet
-    if (!hasCore || !hasPrefs || !hasBudget || hasProcessedData) return;
-
-    const payload = {
-      startDate:
-        tripData.startDate instanceof Date
-          ? tripData.startDate.toISOString()
-          : tripData.startDate,
-      cities: (tripData.cities || []).map((c) => ({
-        name: c.name,
-        days: c.days,
-      })),
-      totalDays:
-        tripData.totalDays ||
-        (tripData.cities || []).reduce((s, c) => s + (c.days || 0), 0),
-      people: tripData.people,
-      travelType: tripData.travelType,
-      budget: {
-        total: tripData.budget.total,
-        travel: tripData.budget.travel,
-        accommodation: tripData.budget.accommodation,
-        food: tripData.budget.food,
-        events: tripData.budget.events,
-      },
-      budgetMode: tripData.budgetMode || "capped",
-    };
-
-    // Always log on results page as requested
-    console.log("=== RESULTS PAGE: Compiled trip payload ===", payload);
-
-    const token = getToken();
-    if (!token) {
-      console.log("No auth token - skipping save to database");
-      setHasProcessedData(true);
+    if (!hasCore || !hasPrefs || !hasBudget) {
+      console.log('Missing required trip data for itinerary generation');
       return;
     }
 
-    let isCancelled = false;
-    (async () => {
+    const generateItinerary = async () => {
+      setIsLoading(true);
+      setError(null);
+
       try {
-        console.log("Saving trip to database...");
-        const saved = await apiCreateTrip(payload, token);
-        if (!isCancelled) {
-          console.log("✅ Trip saved successfully:", saved);
-          setHasProcessedData(true);
-        }
-      } catch (err) {
-        if (!isCancelled) {
-          console.error("❌ Failed to save trip:", err?.message || err);
-          console.error("Full error:", err);
-          setHasProcessedData(true); // Still mark as processed to avoid retries
-        }
-      }
-    })();
+        const payload = {
+          startDate:
+            tripData.startDate instanceof Date
+              ? tripData.startDate.toISOString()
+              : tripData.startDate,
+          cities: (tripData.cities || []).map((c, idx) => ({
+            id: c.id || `city-${idx}`,
+            name: c.name,
+            days: c.days,
+            order: idx + 1,
+          })),
+          people: tripData.people,
+          travelType: tripData.travelType,
+          budget: {
+            total: tripData.budget.total,
+            travel: tripData.budget.travel,
+            accommodation: tripData.budget.accommodation,
+            food: tripData.budget.food,
+            events: tripData.budget.events,
+          },
+          budgetMode: tripData.budgetMode || "capped",
+        };
 
-    return () => {
-      isCancelled = true;
-    };
-  }, [
-    tripData?.startDate,
-    tripData?.cities,
-    tripData?.people,
-    tripData?.travelType,
-    tripData?.budget,
-    tripData?.budgetMode,
-    hasProcessedData,
-  ]);
+        console.log("🎯 Generating AI itinerary with payload:", payload);
 
-  // Clear selected trip and reset processing flag when tripData changes (user goes back and updates)
-  useEffect(() => {
-    setSelectedTrip(null);
-    setHasProcessedData(false); // Reset so we can process updated data
-    // Also clear from context if it exists
-    if (tripData?.selectedTrip) {
-      updateTripData({ selectedTrip: null });
-    }
-  }, [
-    tripData?.cities,
-    tripData?.budget,
-    tripData?.people,
-    tripData?.travelType,
-  ]);
-
-  // Mock trip plans - regenerated when tripData changes
-  const trips = useMemo(() => {
-    const generateMockTrips = () => {
-      const baseTrips = [
-        {
-          id: 1,
-          title: "Ultimate City Explorer",
-          rating: 4.8,
-          reviews: 124,
-          duration:
-            tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
-          price: Math.round((tripData?.budget?.total || 5000) * 0.9),
-          originalPrice: tripData?.budget?.total || 5000,
-          description: "Perfect blend of culture, cuisine, and adventure",
-          highlights: [
-            "Premium hotels",
-            "Local experiences",
-            "Skip-the-line tickets",
-          ],
-          image:
-            "https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=400&h=300&fit=crop",
-          tags: ["Popular", "Best Value"],
-          itinerary: tripData?.cities || [
-            { name: "Paris", days: 3 },
-            { name: "Rome", days: 4 },
-          ],
-        },
-        {
-          id: 2,
-          title: "Budget Backpacker",
-          rating: 4.6,
-          reviews: 89,
-          duration:
-            tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
-          price: Math.round((tripData?.budget?.total || 5000) * 0.6),
-          originalPrice: Math.round((tripData?.budget?.total || 5000) * 0.8),
-          description:
-            "Adventure on a budget without compromising on experiences",
-          highlights: [
-            "Hostels & budget stays",
-            "Free walking tours",
-            "Local transport",
-          ],
-          image:
-            "https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=400&h=300&fit=crop",
-          tags: ["Budget", "Adventure"],
-          itinerary: tripData?.cities || [
-            { name: "Barcelona", days: 3 },
-            { name: "Amsterdam", days: 4 },
-          ],
-        },
-        {
-          id: 3,
-          title: "Luxury Getaway",
-          rating: 4.9,
-          reviews: 67,
-          duration:
-            tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
-          price: Math.round((tripData?.budget?.total || 5000) * 1.3),
-          originalPrice: Math.round((tripData?.budget?.total || 5000) * 1.5),
-          description: "Indulge in the finest experiences and accommodations",
-          highlights: ["5-star hotels", "Private tours", "Fine dining"],
-          image:
-            "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=400&h=300&fit=crop",
-          tags: ["Luxury", "Premium"],
-          itinerary: tripData?.cities || [
-            { name: "Tokyo", days: 4 },
-            { name: "Kyoto", days: 3 },
-          ],
-        },
-        {
-          id: 4,
-          title: "Family Adventure",
-          rating: 4.7,
-          reviews: 156,
-          duration:
-            tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
-          price: Math.round((tripData?.budget?.total || 5000) * 0.8),
-          originalPrice: tripData?.budget?.total || 5000,
-          description: "Perfect for families with kids of all ages",
-          highlights: [
-            "Family-friendly hotels",
-            "Kid activities",
-            "Easy transport",
-          ],
-          image:
-            "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=300&fit=crop",
-          tags: ["Family", "Kid-Friendly"],
-          itinerary: tripData?.cities || [
-            { name: "Orlando", days: 4 },
-            { name: "Miami", days: 3 },
-          ],
-        },
-        {
-          id: 5,
-          title: "Cultural Immersion",
-          rating: 4.5,
-          reviews: 93,
-          duration:
-            tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
-          price: Math.round((tripData?.budget?.total || 5000) * 0.7),
-          originalPrice: Math.round((tripData?.budget?.total || 5000) * 0.9),
-          description: "Deep dive into local culture and traditions",
-          highlights: [
-            "Local homestays",
-            "Cultural workshops",
-            "Authentic cuisine",
-          ],
-          image:
-            "https://images.unsplash.com/photo-1539650116574-75c0c6d73c0e?w=400&h=300&fit=crop",
-          tags: ["Cultural", "Authentic"],
-          itinerary: tripData?.cities || [
-            { name: "Delhi", days: 3 },
-            { name: "Jaipur", days: 4 },
-          ],
-        },
-        {
-          id: 6,
-          title: "Solo Explorer",
-          rating: 4.4,
-          reviews: 78,
-          duration:
-            tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 7,
-          price: Math.round((tripData?.budget?.total || 5000) * 0.75),
-          originalPrice: Math.round((tripData?.budget?.total || 5000) * 0.95),
-          description:
-            "Designed for independent travelers seeking new connections",
-          highlights: [
-            "Solo-friendly accommodations",
-            "Group activities",
-            "Safety features",
-          ],
-          image:
-            "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=300&fit=crop",
-          tags: ["Solo", "Social"],
-          itinerary: tripData?.cities || [
-            { name: "Berlin", days: 3 },
-            { name: "Prague", days: 4 },
-          ],
-        },
-      ];
-
-      // Filter trips based on travel type
-      if (tripData?.travelType) {
-        return baseTrips.filter((trip) => {
-          switch (tripData.travelType) {
-            case "family":
-              return trip.tags.includes("Family");
-            case "solo":
-              return trip.tags.includes("Solo");
-            case "adventure":
-              return trip.tags.includes("Adventure");
-            case "cultural":
-              return trip.tags.includes("Cultural");
-            default:
-              return true;
+        const token = getToken();
+        const response = await axios.post(
+          "http://localhost:5000/api/itinerary/generate",
+          payload,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
           }
-        });
-      }
+        );
 
-      return baseTrips;
+        console.log("✅ AI Itinerary generated:", response.data);
+        setGeneratedItinerary(response.data);
+        
+        // Store in context for chat integration
+        updateTripData({ 
+          generatedItinerary: response.data,
+          itineraryMarkdown: response.data.markdown 
+        });
+
+      } catch (err) {
+        console.error("❌ Failed to generate itinerary:", err);
+        setError(err.response?.data?.error || err.message || "Failed to generate itinerary");
+      } finally {
+        setIsLoading(false);
+      }
     };
 
-    return generateMockTrips();
-  }, [
-    tripData?.cities,
-    tripData?.budget,
-    tripData?.people,
-    tripData?.travelType,
-  ]);
+    generateItinerary();
+  }, []); // Only run once on mount
 
-  const handleSelectTrip = (trip) => {
-    setSelectedTrip(trip);
-    updateTripData({ selectedTrip: trip });
-    navigate("/plan/details");
+  const handleGoToChat = () => {
+    navigate("/chat");
   };
 
   const handleStepClick = (step) => {
@@ -319,29 +128,25 @@ const ResultsPage = () => {
         }
         break;
       case "results":
-        // Already on results page
         break;
       default:
         break;
     }
   };
 
-  const getTagColor = (tag) => {
-    const colors = {
-      Popular: "bg-blue-100 text-blue-800",
-      "Best Value": "bg-green-100 text-green-800",
-      Budget: "bg-yellow-100 text-yellow-800",
-      Adventure: "bg-orange-100 text-orange-800",
-      Luxury: "bg-purple-100 text-purple-800",
-      Premium: "bg-pink-100 text-pink-800",
-      Family: "bg-indigo-100 text-indigo-800",
-      "Kid-Friendly": "bg-teal-100 text-teal-800",
-      Cultural: "bg-red-100 text-red-800",
-      Authentic: "bg-amber-100 text-amber-800",
-      Solo: "bg-cyan-100 text-cyan-800",
-      Social: "bg-emerald-100 text-emerald-800",
-    };
-    return colors[tag] || "bg-gray-100 text-gray-800";
+  const getTotalActivities = () => {
+    if (!generatedItinerary?.itinerary?.days) return 0;
+    return generatedItinerary.itinerary.days.reduce((sum, day) => 
+      sum + day.timeSlots.reduce((s, slot) => s + slot.activities.length, 0), 0
+    );
+  };
+
+  const getTotalDays = () => {
+    return tripData?.cities?.reduce((sum, city) => sum + city.days, 0) || 0;
+  };
+
+  const getCityNames = () => {
+    return tripData?.cities?.map(c => c.name).join(' → ') || '';
   };
 
   return (
@@ -353,7 +158,8 @@ const ResultsPage = () => {
       />
 
       <div className="flex-1 p-8">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-4xl mx-auto">
+          {/* Header */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-4">
               <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-yellow-500 to-orange-500 shadow-lg">
@@ -361,187 +167,169 @@ const ResultsPage = () => {
               </div>
               <div>
                 <h1 className="text-3xl font-bold text-gray-900">
-                  Your Trip Options
+                  Your Personalized Itinerary
                 </h1>
                 <p className="text-gray-600 mt-1">
-                  We found {trips.length} perfect trips based on your
-                  preferences
+                  AI-generated based on your preferences, budget, and travel style
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Filters and Sort */}
-          <Card className="p-4 mb-8 bg-white border border-gray-200">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div className="flex items-center gap-4">
-                <Filter className="w-5 h-5 text-gray-500" />
-                <span className="text-sm text-gray-600">Sort by:</span>
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  className="px-3 py-1 border border-gray-300 rounded-md text-sm"
-                >
-                  <option value="recommended">Recommended</option>
-                  <option value="price-low">Price: Low to High</option>
-                  <option value="price-high">Price: High to Low</option>
-                  <option value="rating">Highest Rated</option>
-                </select>
+          {/* Loading State */}
+          {isLoading && (
+            <Card className="p-12 bg-white border border-gray-200">
+              <div className="flex flex-col items-center justify-center space-y-4">
+                <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
+                <div className="text-center">
+                  <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                    Creating Your Perfect Itinerary...
+                  </h3>
+                  <p className="text-gray-600">
+                    Our AI is analyzing your preferences and finding the best activities for your trip
+                  </p>
+                </div>
               </div>
-              <div className="text-sm text-gray-600">
-                Showing {trips.length} trip{trips.length !== 1 ? "s" : ""}
-              </div>
-            </div>
-          </Card>
+            </Card>
+          )}
 
-          {/* Trip Cards */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 mb-8">
-            {trips.map((trip) => (
-              <Card
-                key={trip.id}
-                className="overflow-hidden bg-white border border-gray-200 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer group"
-                onClick={() => handleSelectTrip(trip)}
-              >
-                {/* Image */}
-                <div className="relative h-48 overflow-hidden">
-                  <img
-                    src={trip.image}
-                    alt={trip.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                  <div className="absolute top-3 left-3 flex gap-2">
-                    {trip.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className={`px-2 py-1 text-xs font-medium rounded-full ${getTagColor(
-                          tag
-                        )}`}
-                      >
-                        {tag}
-                      </span>
+          {/* Error State */}
+          {error && !isLoading && (
+            <Card className="p-8 bg-red-50 border border-red-200">
+              <div className="flex items-start gap-4">
+                <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="text-lg font-semibold text-red-900 mb-2">
+                    Failed to Generate Itinerary
+                  </h3>
+                  <p className="text-red-700 mb-4">{error}</p>
+                  <Button
+                    onClick={() => window.location.reload()}
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    Try Again
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Success State - Generated Itinerary Card */}
+          {generatedItinerary && !isLoading && !error && (
+            <Card className="overflow-hidden bg-white border-2 border-blue-200 shadow-xl hover:shadow-2xl transition-all duration-300">
+              {/* Banner */}
+              <div className="h-48 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 relative">
+                <div className="absolute inset-0 bg-black/20" />
+                <div className="absolute bottom-4 left-6 right-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-3 py-1 text-xs font-bold rounded-full bg-white/90 text-blue-600">
+                      AI Generated
+                    </span>
+                    <span className="px-3 py-1 text-xs font-bold rounded-full bg-white/90 text-purple-600 capitalize">
+                      {tripData?.travelType} Travel
+                    </span>
+                  </div>
+                  <h2 className="text-3xl font-bold text-white">
+                    {getCityNames()}
+                  </h2>
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="p-8">
+                {/* Trip Stats */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                  <div className="text-center p-4 bg-blue-50 rounded-lg">
+                    <Calendar className="w-6 h-6 text-blue-600 mx-auto mb-2" />
+                    <div className="text-2xl font-bold text-blue-900">{getTotalDays()}</div>
+                    <div className="text-xs text-blue-700">Days</div>
+                  </div>
+                  <div className="text-center p-4 bg-green-50 rounded-lg">
+                    <Sparkles className="w-6 h-6 text-green-600 mx-auto mb-2" />
+                    <div className="text-2xl font-bold text-green-900">{getTotalActivities()}</div>
+                    <div className="text-xs text-green-700">Activities</div>
+                  </div>
+                  <div className="text-center p-4 bg-purple-50 rounded-lg">
+                    <Users className="w-6 h-6 text-purple-600 mx-auto mb-2" />
+                    <div className="text-2xl font-bold text-purple-900">{tripData?.people}</div>
+                    <div className="text-xs text-purple-700">Travelers</div>
+                  </div>
+                  <div className="text-center p-4 bg-orange-50 rounded-lg">
+                    <DollarSign className="w-6 h-6 text-orange-600 mx-auto mb-2" />
+                    <div className="text-2xl font-bold text-orange-900">
+                      ${Math.round(generatedItinerary.itinerary?.tripMetadata?.budget?.perDay || 0)}
+                    </div>
+                    <div className="text-xs text-orange-700">Per Day</div>
+                  </div>
+                </div>
+
+                {/* Budget Summary */}
+                <div className="mb-8 p-6 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-200">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <DollarSign className="w-5 h-5 text-green-600" />
+                    Budget Breakdown
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-sm text-gray-600">Total Budget</div>
+                      <div className="text-2xl font-bold text-gray-900">
+                        ${tripData?.budget?.total?.toLocaleString()}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-gray-600">Activities Budget/Day</div>
+                      <div className="text-xl font-semibold text-gray-900">
+                        ${Math.round(generatedItinerary.itinerary?.tripMetadata?.budget?.breakdown?.activities || 0)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cities Preview */}
+                <div className="mb-8">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-pink-600" />
+                    Your Journey
+                  </h3>
+                  <div className="flex flex-wrap gap-3">
+                    {tripData?.cities?.map((city, idx) => (
+                      <div key={idx} className="flex items-center gap-2 px-4 py-2 bg-pink-50 rounded-lg border border-pink-200">
+                        <span className="font-semibold text-pink-900">{city.name}</span>
+                        <span className="text-sm text-pink-700">• {city.days}d</span>
+                      </div>
                     ))}
                   </div>
-                  <div className="absolute top-3 right-3 flex gap-2">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="w-8 h-8 bg-white/80 hover:bg-white"
-                    >
-                      <Heart className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="w-8 h-8 bg-white/80 hover:bg-white"
-                    >
-                      <Share2 className="w-4 h-4" />
-                    </Button>
-                  </div>
                 </div>
 
-                {/* Content */}
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-3">
-                    <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
-                      {trip.title}
-                    </h3>
-                    <div className="flex items-center gap-1">
-                      <Star className="w-4 h-4 text-yellow-400 fill-current" />
-                      <span className="text-sm font-medium text-gray-700">
-                        {trip.rating}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        ({trip.reviews})
-                      </span>
-                    </div>
-                  </div>
-
-                  <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-                    {trip.description}
-                  </p>
-
-                  {/* Trip Details */}
-                  <div className="space-y-2 mb-4">
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Calendar className="w-4 h-4" />
-                      <span>{trip.duration} days</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Users className="w-4 h-4" />
-                      <span>Perfect for {tripData?.people || 2} travelers</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <MapPin className="w-4 h-4" />
-                      <span>
-                        {trip.itinerary.map((city) => city.name).join(" → ")}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Highlights */}
-                  <div className="mb-4">
-                    <div className="text-xs text-gray-500 mb-2">
-                      What's included:
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {trip.highlights.slice(0, 2).map((highlight, index) => (
-                        <span
-                          key={index}
-                          className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded"
-                        >
-                          {highlight}
-                        </span>
-                      ))}
-                      {trip.highlights.length > 2 && (
-                        <span className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded">
-                          +{trip.highlights.length - 2} more
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Price */}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-2xl font-bold text-green-600">
-                        ${trip.price.toLocaleString()}
-                      </div>
-                      {trip.originalPrice > trip.price && (
-                        <div className="text-sm text-gray-500 line-through">
-                          ${trip.originalPrice.toLocaleString()}
-                        </div>
-                      )}
-                    </div>
-                    <Button
-                      className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSelectTrip(trip);
-                      }}
-                    >
-                      View Details
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </Button>
-                  </div>
+                {/* Action Buttons */}
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <Button
+                    onClick={handleGoToChat}
+                    className="flex-1 h-14 text-lg gap-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all"
+                  >
+                    <MessageSquare className="w-5 h-5" />
+                    Open in Chat
+                    <ArrowRight className="w-5 h-5" />
+                  </Button>
                 </div>
-              </Card>
-            ))}
-          </div>
+
+                <p className="text-center text-sm text-gray-500 mt-6">
+                  Click "Open in Chat" to view your full day-by-day itinerary and refine it with AI
+                </p>
+              </div>
+            </Card>
+          )}
 
           {/* Navigation */}
-          <div className="flex justify-between">
+          <div className="flex justify-between mt-8">
             <Button
               variant="outline"
-              onClick={() => navigate("/plan/preferences")}
+              onClick={() => navigate("/plan/budget")}
               className="px-8 py-3"
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Preferences
+              Back to Budget
             </Button>
-            <div className="text-sm text-gray-500 flex items-center">
-              <Clock className="w-4 h-4 mr-2" />
-              Select a trip to see detailed itinerary
-            </div>
           </div>
         </div>
       </div>
