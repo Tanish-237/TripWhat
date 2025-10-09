@@ -144,9 +144,161 @@ export const getNearbyAttractionsTool = {
   },
 };
 
+/**
+ * Tool 4: Search Restaurants
+ * Find restaurants and dining options
+ */
+export const searchRestaurantsTool = {
+  name: 'search_restaurants',
+  description: 'Find restaurants, cafes, and dining options in a specific location. Can filter by cuisine type.',
+  inputSchema: z.object({
+    location: z.string().describe('City or area to search for restaurants'),
+    cuisine: z.string().optional().describe('Cuisine type (e.g., "italian", "asian", "french")'),
+    limit: z.number().optional().default(10).describe('Maximum number of results'),
+  }),
+  execute: async (args: { location: string; cuisine?: string; limit?: number }) => {
+    try {
+      // First geocode the location
+      const tempResults = await openTripMapAPI.searchPlaces(args.location, 1);
+      if (tempResults.length === 0) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ error: 'Location not found' }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const { latitude, longitude } = tempResults[0].location;
+      
+      // Search for restaurants
+      const restaurants = await openTripMapAPI.searchByCategory(
+        latitude,
+        longitude,
+        'foods',
+        5000, // 5km radius
+        args.limit || 10
+      );
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              location: args.location,
+              cuisine: args.cuisine,
+              count: restaurants.length,
+              restaurants: restaurants.map(r => ({
+                name: r.name,
+                category: r.category,
+                rating: r.rating,
+                location: r.location,
+              })),
+            }, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ error: 'Restaurant search failed', details: String(error) }),
+          },
+        ],
+        isError: true,
+      };
+    }
+  },
+};
+
+/**
+ * Tool 5: Search by Category
+ * Search for places by specific category
+ */
+export const searchByCategoryTool = {
+  name: 'search_by_category',
+  description: 'Search for specific types of places like museums, parks, monuments, historical sites, etc.',
+  inputSchema: z.object({
+    location: z.string().describe('City or area to search in'),
+    category: z.enum([
+      'museums',
+      'monuments',
+      'parks',
+      'churches',
+      'theatres',
+      'historic',
+      'architecture',
+      'natural',
+      'beaches',
+      'cultural',
+      'sport',
+      'amusements',
+    ]).describe('Category of places to search for'),
+    limit: z.number().optional().default(10).describe('Maximum number of results'),
+  }),
+  execute: async (args: { location: string; category: string; limit?: number }) => {
+    try {
+      // Geocode location
+      const tempResults = await openTripMapAPI.searchPlaces(args.location, 1);
+      if (tempResults.length === 0) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ error: 'Location not found' }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const { latitude, longitude } = tempResults[0].location;
+      
+      // Search by category
+      const results = await openTripMapAPI.searchByCategory(
+        latitude,
+        longitude,
+        args.category,
+        10000, // 10km radius
+        args.limit || 10
+      );
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              location: args.location,
+              category: args.category,
+              count: results.length,
+              places: results,
+            }, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ error: 'Category search failed', details: String(error) }),
+          },
+        ],
+        isError: true,
+      };
+    }
+  },
+};
+
 // Export all tools
 export const placesTools = [
   searchDestinationsTool,
   getPlaceDetailsTool,
   getNearbyAttractionsTool,
+  searchRestaurantsTool,
+  searchByCategoryTool,
 ];

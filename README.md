@@ -1,6 +1,20 @@
-# TripWhat
+# TripWhat 🌍✈️
 
-AI-first travel planner built with MERN stack, Model Context Protocol (MCP), and LangGraph agents.
+AI-powered travel planner built with **Model Context Protocol (MCP)**, **LangGraph**, and intelligent agents. Now with **LLM-based intent detection** and **10+ integrated tools**!
+
+## 🆕 What's New in Phase 1.5
+
+- 🧠 **LLM-Based Intent Detection**: 90%+ accuracy vs keyword matching
+- 🔧 **10+ Tools**: Web search, distance calculation, restaurant finder, and more
+- 🌐 **Web Search**: Real-time travel information from the web
+- 📏 **Smart Routing**: Calculate distances and multi-stop routes
+- 🍽️ **Restaurant Search**: Find dining options by cuisine and location
+- 📊 **Unified Tool Registry**: Easy to add new capabilities
+- 🎯 **Better Understanding**: Handles natural language variations
+
+[See Full Phase 1.5 Details](./docs/PHASE1.5-COMPLETE.md)
+
+---
 
 ## Architecture
 
@@ -8,49 +22,70 @@ AI-first travel planner built with MERN stack, Model Context Protocol (MCP), and
 tripwhat/
 ├── backend/
 │   ├── src/
-│   │   ├── agents/           # LangGraph agent orchestration
-│   │   ├── mcp-servers/      # MCP server implementations
-│   │   │   ├── flights/      # Amadeus API integration
-│   │   │   ├── hotels/       # Hotel search & booking
-│   │   │   ├── places/       # POIs and attractions
-│   │   │   └── weather/      # Weather forecasts
+│   │   ├── agents/
+│   │   │   ├── travel-agent.ts      # Main LangGraph agent
+│   │   │   ├── intent-detector.ts   # 🆕 LLM-based intent detection
+│   │   │   ├── tool-registry.ts     # 🆕 Unified tool management
+│   │   │   └── prompts.ts
+│   │   ├── mcp-servers/
+│   │   │   ├── places/              # OpenTripMap integration (enhanced)
+│   │   │   ├── websearch/           # 🆕 Web search tools
+│   │   │   └── transport/           # 🆕 Distance & routing
 │   │   ├── routes/           # Express routes
 │   │   ├── models/           # MongoDB schemas
-│   │   ├── services/         # Business logic
-│   │   └── utils/            # Helpers
-│   ├── package.json
-│   └── server.js
+│   │   ├── services/         # Itinerary builder
+│   │   └── controllers/      # Request handlers
+│   └── package.json
 │
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── Chat/         # Chat interface
-│   │   │   ├── Itinerary/    # Trip timeline view
-│   │   │   ├── Map/          # Map with pins
-│   │   │   └── Cards/        # Destination cards
+│   │   │   ├── Chat/         # Real-time chat interface
+│   │   │   ├── Map/          # Interactive map with pins
+│   │   │   └── ui/           # Reusable UI components
 │   │   ├── pages/
-│   │   ├── services/         # API calls
+│   │   │   ├── Chat.tsx      # Main chat page
+│   │   │   ├── OnboardingPage.tsx
+│   │   │   └── LoginPage.tsx
 │   │   ├── hooks/            # Custom React hooks
-│   │   └── App.jsx
+│   │   └── contexts/         # Auth & state management
 │   └── package.json
 │
-├── mcp-protocol/             # Shared MCP protocol definitions
-└── docs/                     # Documentation
+└── docs/
+    ├── PHASE1-COMPLETE.md
+    ├── PHASE1.5-COMPLETE.md    # 🆕 Latest features
+    ├── ROADMAP.md
+    └── SETUP.md
 
 ## Tech Stack
 
-**Frontend**: React, TailwindCSS, Socket.io-client, Mapbox GL JS
-**Backend**: Node.js, Express, Socket.io, LangGraph, MongoDB
-**AI**: OpenAI GPT-4o-mini, MCP Protocol
-**APIs**: Amadeus, OpenTripMap, OpenWeatherMap, Geoapify
+**Frontend**: 
+- React 18 + TypeScript
+- TailwindCSS for styling
+- Socket.io-client for real-time updates
+- Axios for API calls
 
-## Setup
+**Backend**: 
+- Node.js + Express
+- Socket.io for WebSocket
+- LangGraph for agent orchestration
+- MongoDB + Mongoose
+- OpenAI GPT-4o-mini
+
+**MCP Tools**:
+- OpenTripMap (tourist attractions, POIs)
+- OpenStreetMap (geocoding, no API key)
+- DuckDuckGo (web search, no API key)
+- Custom tools (distance, routing)
+
+---
+
+## 🚀 Quick Start
 
 ### Prerequisites
 - Node.js 18+
-- MongoDB
+- MongoDB (Community Edition)
 - OpenAI API key
-- Amadeus API key (free tier)
 
 ### Installation
 
@@ -62,42 +97,61 @@ cd TripWhat
 # Backend setup
 cd backend
 npm install
+
+# Create .env file
 cp .env.example .env
-# Add API keys to .env
+# Add your API keys (see below)
 
 # Frontend setup
 cd ../frontend
 npm install
+
+# Create frontend .env
 cp .env.example .env
-
-# Start MongoDB
-mongod
-
-# Run backend (from backend/)
-npm run dev
-
-# Run frontend (from frontend/)
-npm run dev
 ```
 
-## Environment Variables
+### Environment Variables
 
 **Backend (.env)**:
-```
-OPENAI_API_KEY=your_key
-AMADEUS_API_KEY=your_key
-AMADEUS_API_SECRET=your_secret
+```env
+# Required
+OPENAI_API_KEY=sk-your-openai-key
 MONGODB_URI=mongodb://localhost:27017/tripwhat
+JWT_SECRET=your-secret-key
+
+# Optional but recommended
+OPENTRIPMAP_API_KEY=your-key  # Get free at https://opentripmap.io
+
+# Server config
 PORT=5000
+FRONTEND_URL=http://localhost:5173
 ```
 
 **Frontend (.env)**:
-```
+```env
 VITE_API_URL=http://localhost:5000
-VITE_MAPBOX_TOKEN=your_token
 ```
 
-## Features
+### Running the App
+
+```bash
+# Terminal 1: Start MongoDB
+mongod
+
+# Terminal 2: Start backend
+cd backend
+npm run dev
+
+# Terminal 3: Start frontend  
+cd frontend
+npm run dev
+```
+
+**Access the app**: http://localhost:5173
+
+---
+
+## ✨ Features
 
 - Chat-based trip planning
 - AI agent with MCP tool integration

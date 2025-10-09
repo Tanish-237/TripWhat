@@ -3,10 +3,13 @@ import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, AIMessage, SystemMessage, BaseMessage } from '@langchain/core/messages';
 import { openTripMapAPI } from '../mcp-servers/places/api.js';
 import { itineraryBuilder } from '../services/itineraryBuilder.js';
+import { intentDetector } from './intent-detector.js';
+import { toolRegistry } from './tool-registry.js';
 import { TRAVEL_AGENT_SYSTEM_PROMPT } from './prompts.js';
 import type { AgentConfig } from './types.js';
 import type { Destination } from '../mcp-servers/places/types.js';
 import type { Itinerary } from '../types/itinerary.js';
+import type { DetectedIntent } from './intent-detector.js';
 
 /**
  * Define agent state using Annotation API
@@ -87,67 +90,69 @@ export class TravelAgent {
 
   /**
    * Build the LangGraph state machine
-   */private buildGraph() {
-  // Define the graph with Annotation and use method chaining
-  const workflow = new StateGraph(AgentStateAnnotation)
-  .addNode('planner', this.plannerNode.bind(this))
-  .addNode('tool_executor', this.toolExecutorNode.bind(this))
-  .addNode('response_formatter', this.responseFormatterNode.bind(this))
-  .addEdge('__start__', 'planner')
-  .addConditionalEdges('planner', (state: AgentState) => {
-    // If intent requires tools, go to tool executor
-    if (['SEARCH_DESTINATION', 'GET_DETAILS', 'FIND_NEARBY', 'PLAN_TRIP'].includes(state.intent || '')) {
-      return 'tool_executor';
-    }
-    // Otherwise, go directly to response formatter
-    return 'response_formatter';
-  })
-  .addEdge('tool_executor', 'response_formatter')
-  .addEdge('response_formatter', '__end__');
+   */
+  private buildGraph() {
+    // Define the graph with Annotation and use method chaining
+    const workflow = new StateGraph(AgentStateAnnotation)
+      .addNode('planner', this.plannerNode.bind(this))
+      .addNode('tool_executor', this.toolExecutorNode.bind(this))
+      .addNode('response_formatter', this.responseFormatterNode.bind(this))
+      .addEdge('__start__', 'planner')
+      .addConditionalEdges('planner', (state: AgentState) => {
+        // Map new intent types to appropriate actions
+        const intentsThatNeedTools = [
+          'search_destination',
+          'search_attractions',
+          'search_hotels',
+          'search_flights',
+          'search_restaurants',
+          'plan_trip',
+          'get_details',
+          'find_nearby',
+          'calculate_distance',
+          'get_directions',
+          'web_search',
+          'estimate_budget',
+          // Legacy intents for backward compatibility
+          'SEARCH_DESTINATION',
+          'GET_DETAILS',
+          'FIND_NEARBY',
+          'PLAN_TRIP',
+        ];
+        
+        if (intentsThatNeedTools.includes(state.intent || '')) {
+          return 'tool_executor';
+        }
+        // Otherwise, go directly to response formatter for casual chat
+        return 'response_formatter';
+      })
+      .addEdge('tool_executor', 'response_formatter')
+      .addEdge('response_formatter', '__end__');
 
-return workflow.compile();
-}
+    return workflow.compile();
+  }
 
   /**
    * Planner Node: Analyzes user query and decides which tools to use
+   * Now uses LLM-based intent detection instead of hardcoded keywords
    */
   private async plannerNode(state: AgentState): Promise<Partial<AgentState>> {
     console.log('\n🧠 [PLANNER] Analyzing user query:', state.userQuery);
     try {
-      const messages = [
-        new SystemMessage(TRAVEL_AGENT_SYSTEM_PROMPT),
-        new HumanMessage(state.userQuery),
-      ];
-
-      const response = await this.model.invoke(messages);
-      const content = response.content as string;
-
-      // Simple intent detection based on keywords
-      let intent: AgentState['intent'] = 'CASUAL_CHAT';
+      // Use LLM-based intent detector
+      const detectedIntent = await intentDetector.detectIntent(state.userQuery);
       
-      const query = state.userQuery.toLowerCase();
-      
-      // Check for location-based queries (strongest signal)
-      const locationPatterns = /\b(in|to|at|around)\s+[A-Z][a-z]+/;
-      const hasLocation = locationPatterns.test(state.userQuery);
-      
-      if (query.includes('plan') || query.includes('itinerary') || query.includes('build') && query.includes('trip')) {
-        intent = 'PLAN_TRIP';
-      } else if (query.includes('find') || query.includes('search') || query.includes('show') || query.includes('attractions') || 
-                 query.includes('what can i do') || query.includes('things to do') || query.includes('activities') || 
-                 (query.includes('see') && hasLocation) || (query.includes('visit') && hasLocation)) {
-        intent = 'SEARCH_DESTINATION';
-      } else if (query.includes('near') || query.includes('nearby') || query.includes('around')) {
-        intent = 'FIND_NEARBY';
-      } else if (query.includes('tell me about') || query.includes('details') || query.includes('information')) {
-        intent = 'GET_DETAILS';
-      }
+      console.log('🎯 [PLANNER] Detected intent:', detectedIntent.primary_intent);
+      console.log('🔧 [PLANNER] Tools to call:', detectedIntent.tools_to_call);
+      console.log('📊 [PLANNER] Confidence:', detectedIntent.confidence);
+      console.log('💭 [PLANNER] Reasoning:', detectedIntent.reasoning);
 
-      console.log('🎯 [PLANNER] Detected intent:', intent);
+      // Store the detected intent as a string for the conditional edges
+      const intentString = detectedIntent.primary_intent;
 
       return {
-        intent,
-        messages: [new AIMessage(content)],
+        intent: intentString,
+        messages: [new AIMessage(`Understood: ${detectedIntent.reasoning}`)],
       };
     } catch (error) {
       console.error('Planner node error:', error);
@@ -159,78 +164,128 @@ return workflow.compile();
 
   /**
    * Tool Executor Node: Calls appropriate MCP tools based on intent
+   * Now uses the unified tool registry
    */
   private async toolExecutorNode(state: AgentState): Promise<Partial<AgentState>> {
     console.log('\n🔧 [TOOL EXECUTOR] Running tools for intent:', state.intent);
     try {
       const { intent, userQuery } = state;
 
-      switch (intent) {
-        case 'SEARCH_DESTINATION': {
+      // Map intent to new naming convention if needed
+      const normalizedIntent = intent?.toLowerCase().replace('_', '_') || 'unknown';
+
+      switch (normalizedIntent) {
+        case 'search_destination':
+        case 'search_attractions': {
           // Extract destination and category from query
           const destination = this.extractDestination(userQuery);
           const category = this.extractCategory(userQuery);
           
+          console.log(`🔍 [TOOL] Searching for ${category || 'attractions'} in ${destination}`);
+          
           if (category) {
-            console.log(`🔍 [TOOL] Searching for ${category} in ${destination}`);
-            
-            // First geocode the destination to get coordinates
-            const tempResults = await openTripMapAPI.searchPlaces(destination, 1);
-            if (tempResults.length === 0) {
-              return { searchResults: [] };
-            }
-            
-            const { latitude, longitude } = tempResults[0].location;
-            
-            // Then search by category around those coordinates
-            const categoryResults = await openTripMapAPI.searchByCategory(
-              latitude,
-              longitude,
+            // Use the search_by_category tool
+            const result = await toolRegistry.executeTool('search_by_category', {
+              location: destination,
               category,
-              10000, // 10km radius
-              10     // limit
-            );
+              limit: 10,
+            });
             
-            console.log(`✅ [TOOL] Got ${categoryResults.length} ${category} results`);
+            const categoryResults = result.content?.[0]?.text ? 
+              JSON.parse(result.content[0].text).places : [];
+            
+            console.log(`✅ [TOOL] Got ${categoryResults.length} results`);
             return { searchResults: categoryResults };
           } else {
-            // Generic search without category filter
-            console.log(`🔍 [TOOL] Calling OpenTripMap API for: ${destination}`);
-            const results = await openTripMapAPI.searchPlaces(destination, 10);
-            console.log(`✅ [TOOL] Got ${results.length} results from API`);
-            return { searchResults: results };
+            // Generic search
+            const result = await toolRegistry.executeTool('search_destinations', {
+              query: destination,
+              limit: 10,
+            });
+            
+            const searchResults = result.content?.[0]?.text ? 
+              JSON.parse(result.content[0].text).destinations : [];
+            
+            console.log(`✅ [TOOL] Got ${searchResults.length} results`);
+            return { searchResults };
           }
         }
 
-        case 'FIND_NEARBY': {
-          // For demo, use Eiffel Tower coordinates
-          // In production, extract from user query or previous context
-          console.log(`📍 Finding nearby attractions...`);
+        case 'search_restaurants': {
+          const destination = this.extractDestination(userQuery);
+          console.log(`🍽️ [TOOL] Searching for restaurants in ${destination}`);
           
-          const attractions = await openTripMapAPI.getNearbyAttractions(
-            48.8584, // Eiffel Tower lat
-            2.2945,  // Eiffel Tower lon
-            5000,    // 5km radius
-            10       // limit
-          );
+          const result = await toolRegistry.executeTool('search_restaurants', {
+            location: destination,
+            limit: 10,
+          });
+          
+          const restaurants = result.content?.[0]?.text ? 
+            JSON.parse(result.content[0].text).restaurants : [];
+          
+          return { searchResults: restaurants };
+        }
+
+        case 'find_nearby': {
+          // Use coordinates from context or defaults
+          const result = await toolRegistry.executeTool('get_nearby_attractions', {
+            latitude: 48.8584,
+            longitude: 2.2945,
+            radius: 5000,
+            limit: 10,
+          });
+          
+          const attractions = result.content?.[0]?.text ? 
+            JSON.parse(result.content[0].text).attractions : [];
+          
           return { nearbyAttractions: attractions };
         }
 
-        case 'GET_DETAILS': {
-          // For demo, get details of first search result
-          // In production, extract place ID from context
+        case 'calculate_distance': {
+          // Extract origin and destination
+          const parts = userQuery.toLowerCase().split('to');
+          const origin = parts[0]?.replace(/distance|from|between/gi, '').trim() || 'Paris';
+          const destination = parts[1]?.trim() || 'London';
+          
+          console.log(`📏 [TOOL] Calculating distance from ${origin} to ${destination}`);
+          
+          const result = await toolRegistry.executeTool('calculate_distance', {
+            origin,
+            destination,
+          });
+          
+          return { placeDetails: result };
+        }
+
+        case 'web_search': {
+          console.log(`🌐 [TOOL] Web search for: ${userQuery}`);
+          
+          const result = await toolRegistry.executeTool('web_search', {
+            query: userQuery,
+            numResults: 5,
+          });
+          
+          return { placeDetails: result };
+        }
+
+        case 'get_details': {
           if (state.searchResults && state.searchResults.length > 0) {
             const placeId = state.searchResults[0].id;
             console.log(`📄 Getting details for place: ${placeId}`);
             
-            const details = await openTripMapAPI.getEnrichedPlaceDetails(placeId);
+            const result = await toolRegistry.executeTool('get_place_details', {
+              placeId,
+            });
+            
+            const details = result.content?.[0]?.text ? 
+              JSON.parse(result.content[0].text) : null;
+            
             return { placeDetails: details };
           }
           return { error: 'No place found to get details for.' };
         }
 
-        case 'PLAN_TRIP': {
-          // Extract trip parameters from query
+        case 'plan_trip': {
           const destination = this.extractDestination(userQuery);
           const duration = this.extractDuration(userQuery);
           
@@ -246,6 +301,7 @@ return workflow.compile();
         }
 
         default:
+          console.log('ℹ️  [TOOL] No specific tools needed for this intent');
           return {};
       }
     } catch (error) {
