@@ -32,6 +32,15 @@ const steps = [
 
 const TripPlanningSidebar = ({ currentStep, onStepClick, tripData }) => {
   const isBudgetValid = (budget) => {
+    // Accept default values as valid
+    if (budget?.total === 5000 && 
+        budget?.travel === 25 && 
+        budget?.accommodation === 25 && 
+        budget?.food === 25 && 
+        budget?.events === 25) {
+      return true;
+    }
+    
     if (!budget || !budget.total || budget.total <= 0) return false;
     const categories = ["travel", "accommodation", "food", "events"];
     const hasValidAllocations = categories.every(

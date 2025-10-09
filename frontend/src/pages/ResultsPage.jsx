@@ -34,13 +34,19 @@ const ResultsPage = () => {
       Array.isArray(tripData?.cities) &&
       tripData.cities.length > 0;
     const hasPrefs = tripData?.people && tripData?.travelType;
-    const hasBudget =
-      tripData?.budget?.total &&
-      tripData?.budget?.travel !== undefined &&
-      tripData?.budget?.accommodation !== undefined &&
-      tripData?.budget?.food !== undefined &&
-      tripData?.budget?.events !== undefined;
+    
+    // More lenient budget check - if we have at least a budget object
+    // we'll use default values for any missing fields
+    const hasBudget = tripData?.budget !== undefined;
 
+    // Log helpful information for debugging
+    console.log("Trip data check:", { 
+      hasCore, 
+      hasPrefs, 
+      hasBudget,
+      budget: tripData?.budget
+    });
+    
     if (!hasCore || !hasPrefs || !hasBudget) {
       console.log("Missing required trip data for itinerary generation");
       return;
@@ -51,6 +57,22 @@ const ResultsPage = () => {
       setError(null);
 
       try {
+        // Ensure we have a budget object with default values for any missing fields
+        const defaultBudget = {
+          total: 5000,
+          travel: 25,
+          accommodation: 25,
+          food: 25,
+          events: 25
+        };
+        
+        // Merge any existing budget values with defaults
+        const budget = {
+          ...defaultBudget,
+          ...(tripData.budget || {})
+        };
+        
+        // Build the payload with validated budget
         const payload = {
           startDate:
             tripData.startDate instanceof Date
@@ -65,11 +87,11 @@ const ResultsPage = () => {
           people: tripData.people,
           travelType: tripData.travelType,
           budget: {
-            total: tripData.budget.total,
-            travel: tripData.budget.travel,
-            accommodation: tripData.budget.accommodation,
-            food: tripData.budget.food,
-            events: tripData.budget.events,
+            total: budget.total,
+            travel: budget.travel,
+            accommodation: budget.accommodation,
+            food: budget.food,
+            events: budget.events,
           },
           budgetMode: tripData.budgetMode || "capped",
         };

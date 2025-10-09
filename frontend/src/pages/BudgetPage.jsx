@@ -77,7 +77,27 @@ const BudgetPage = () => {
 
   // Update local state when tripData changes - but only once on component mount
   React.useEffect(() => {
-    if (tripData?.budget) {
+    // Initialize budget with default values if not set
+    if (!tripData.budget) {
+      console.log("Budget not found in tripData, initializing with default values");
+      const defaultBudget = {
+        total: 5000,
+        travel: 25,
+        accommodation: 25,
+        food: 25,
+        events: 25
+      };
+      
+      // Save default budget to context
+      updateTripData({ 
+        budget: defaultBudget,
+        budgetMode: 'capped' 
+      });
+      
+      // Update local state
+      setCappedBudget(defaultBudget);
+    }
+    else if (tripData?.budget) {
       // Try to detect if the stored budget is in percentage format (capped) or dollar format (flexible)
       const categories = ['travel', 'accommodation', 'food', 'events'];
       const categoryValues = categories.map(cat => tripData.budget[cat] || 0);
@@ -246,6 +266,16 @@ const BudgetPage = () => {
 
   // Helper function to validate budget completion
   const isBudgetValid = () => {
+    // For default values, always consider budget valid
+    if (budgetMode === 'capped' && 
+        budget.total === 5000 && 
+        budget.travel === 25 && 
+        budget.accommodation === 25 && 
+        budget.food === 25 && 
+        budget.events === 25) {
+      return true;
+    }
+    
     if (!budget || !budget.total || budget.total <= 0) return false;
 
     // Check if all categories have valid allocations
@@ -269,6 +299,14 @@ const BudgetPage = () => {
 
   const handleNext = () => {
     if (isBudgetValid()) {
+      // Ensure the latest budget data is saved before navigating
+      // This ensures default values are properly saved if user didn't change anything
+      updateTripData({ 
+        budget: budget,
+        budgetMode: budgetMode
+      });
+      
+      console.log("Navigating to results with budget:", budget);
       navigate('/plan/results');
     }
   };
