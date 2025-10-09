@@ -1,28 +1,9 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 
-interface User {
-  id: string;
-  email: string;
-  preferences?: {
-    budget: string;
-    travelStyle: string;
-    interests: string[];
-  };
-}
+const AuthContext = createContext(undefined);
 
-interface AuthContextType {
-  user: User | null;
-  login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, preferences?: any) => Promise<void>;
-  logout: () => void;
-  loading: boolean;
-  isAuthenticated: boolean;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -61,7 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const login = async (email: string, password: string) => {
+  const login = async (email, password) => {
     const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
     const response = await fetch(`${API_URL}/api/auth/login`, {
@@ -83,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(user);
   };
 
-  const signup = async (email: string, password: string, preferences?: any) => {
+  const signup = async (email, password, preferences) => {
     const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
     const response = await fetch(`${API_URL}/api/auth/register`, {
@@ -110,7 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   };
 
-  const value: AuthContextType = {
+  const value = {
     user,
     login,
     signup,

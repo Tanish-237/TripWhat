@@ -1,20 +1,14 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { io, Socket } from 'socket.io-client';
+import { io } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-interface SocketEvents {
-  'agent:thinking': (data: { status: string; conversationId: string }) => void;
-  'agent:response': (data: { message: string; conversationId: string }) => void;
-  'agent:error': (data: { error: string }) => void;
-}
-
-export function useSocket(conversationId?: string) {
+export function useSocket(conversationId) {
   const [isConnected, setIsConnected] = useState(false);
-  const [agentStatus, setAgentStatus] = useState<string | null>(null);
-  const [lastMessage, setLastMessage] = useState<string | null>(null);
-  const [lastError, setLastError] = useState<string | null>(null);
-  const socketRef = useRef<Socket | null>(null);
+  const [agentStatus, setAgentStatus] = useState(null);
+  const [lastMessage, setLastMessage] = useState(null);
+  const [lastError, setLastError] = useState(null);
+  const socketRef = useRef(null);
 
   // Initialize socket connection once on mount
   useEffect(() => {

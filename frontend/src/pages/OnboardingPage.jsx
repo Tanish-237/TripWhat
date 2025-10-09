@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/AuthContext.jsx';
 import { motion } from 'framer-motion';
 import { DollarSign, MapPin, Heart, ArrowRight } from 'lucide-react';
 
@@ -8,11 +8,7 @@ export default function OnboardingPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [step, setStep] = useState(1);
-  const [preferences, setPreferences] = useState<{
-    budget: string;
-    travelStyle: string;
-    interests: string[];
-  }>({
+  const [preferences, setPreferences] = useState({
     budget: '',
     travelStyle: '',
     interests: []
@@ -64,7 +60,7 @@ export default function OnboardingPage() {
     { id: 'art', label: 'Art' }
   ];
 
-  const handleInterestToggle = (interest: string) => {
+  const handleInterestToggle = (interest) => {
     setPreferences(prev => ({
       ...prev,
       interests: prev.interests.includes(interest)

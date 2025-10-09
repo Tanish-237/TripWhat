@@ -1,12 +1,6 @@
-import { useState, KeyboardEvent } from 'react';
+import { useState } from 'react';
 import { Send, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
-
-interface MessageInputProps {
-  onSend: (message: string) => void;
-  disabled?: boolean;
-  placeholder?: string;
-}
 
 const SUGGESTED_PROMPTS = [
   'Plan a 3-day trip to Paris',
@@ -15,7 +9,7 @@ const SUGGESTED_PROMPTS = [
   'What can I do in Barcelona?',
 ];
 
-export function MessageInput({ onSend, disabled, placeholder }: MessageInputProps) {
+export function MessageInput({ onSend, disabled, placeholder }) {
   const [message, setMessage] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(true);
 
@@ -27,14 +21,14 @@ export function MessageInput({ onSend, disabled, placeholder }: MessageInputProp
     }
   };
 
-  const handleKeyPress = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
   };
 
-  const handleSuggestionClick = (suggestion: string) => {
+  const handleSuggestionClick = (suggestion) => {
     setMessage(suggestion);
     setShowSuggestions(false);
   };
