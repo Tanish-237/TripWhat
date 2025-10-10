@@ -10,6 +10,10 @@ import {
   markTripAsUpcoming,
   removeTripFromUpcoming,
   getUpcomingTrips,
+  toggleActivityCompletion,
+  setDayCompletion,
+  setTripCompletion,
+  getCompletedTrips,
 } from "../controllers/savedTripController.js";
 
 const router = Router();
@@ -26,6 +30,9 @@ router.get("/", getSavedTrips);
 // Get upcoming trips for the user
 router.get("/upcoming", getUpcomingTrips);
 
+// Get completed trips (any% by default)
+router.get("/completed", getCompletedTrips);
+
 // Check if a trip is already saved
 router.get("/check", checkTripSaved);
 
@@ -41,7 +48,41 @@ router.put("/:id/upcoming", markTripAsUpcoming);
 // Remove trip from upcoming
 router.delete("/:id/upcoming", removeTripFromUpcoming);
 
+// Completion endpoints
+router.put("/:id/activities/toggle", toggleActivityCompletion);
+router.put("/:id/days/complete", setDayCompletion);
+router.put("/:id/complete", setTripCompletion);
+
 // Delete a saved trip
 router.delete("/:id", deleteSavedTrip);
+
+// Auto-completion service routes (admin only)
+router.post("/admin/auto-complete/run", async (req, res) => {
+  try {
+    const { default: tripAutoCompletionService } = await import(
+      "../services/tripAutoCompletionService.js"
+    );
+    await tripAutoCompletionService.runManualCheck();
+    res.json({ message: "Manual auto-completion check completed" });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ error: "Failed to run manual check", details: error.message });
+  }
+});
+
+router.get("/admin/auto-complete/status", async (req, res) => {
+  try {
+    const { default: tripAutoCompletionService } = await import(
+      "../services/tripAutoCompletionService.js"
+    );
+    const status = tripAutoCompletionService.getStatus();
+    res.json(status);
+  } catch (error) {
+    res
+      .status(500)
+      .json({ error: "Failed to get service status", details: error.message });
+  }
+});
 
 export default router;

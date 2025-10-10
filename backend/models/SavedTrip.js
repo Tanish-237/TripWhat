@@ -30,6 +30,8 @@ const activitySchema = new mongoose.Schema(
     location: { type: mongoose.Schema.Types.Mixed }, // Allow both string and object coordinates
     rating: { type: Number },
     imageUrl: { type: String },
+    // Completion tracking for this activity
+    isCompleted: { type: Boolean, default: false },
   },
   { _id: false }
 );
@@ -123,6 +125,13 @@ const savedTripSchema = new mongoose.Schema(
     isUpcoming: { type: Boolean, default: false },
     tripStartDate: { type: Date }, // When the actual trip starts
     tripEndDate: { type: Date }, // When the actual trip ends
+    // Completion tracking
+    isCompleted: { type: Boolean, default: false },
+    // percentage from 0-100 rounded integer
+    completionPercent: { type: Number, default: 0, min: 0, max: 100 },
+    // Flat list of activity identifiers like "dayIndex-timeSlotIndex-activityIndex"
+    completedActivities: { type: [String], default: [] },
+    completedAt: { type: Date },
   },
   { timestamps: true }
 );
@@ -131,6 +140,7 @@ const savedTripSchema = new mongoose.Schema(
 savedTripSchema.index({ user: 1, createdAt: -1 });
 savedTripSchema.index({ title: "text", description: "text" });
 savedTripSchema.index({ user: 1, isUpcoming: 1, tripStartDate: 1 });
+savedTripSchema.index({ user: 1, isCompleted: 1, completionPercent: 1 });
 
 const SavedTrip = mongoose.model("SavedTrip", savedTripSchema);
 export default SavedTrip;

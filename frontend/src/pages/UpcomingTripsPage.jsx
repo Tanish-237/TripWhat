@@ -9,6 +9,7 @@ import {
   getToken,
   apiGoogleOauthUrl,
   apiGoogleCreateEvent,
+  apiGoogleCalendarStatus,
 } from "@/lib/api";
 import { toast } from "react-toastify";
 import {
@@ -39,26 +40,22 @@ const UpcomingTripsPage = () => {
   const [addingTripId, setAddingTripId] = useState(null);
   const [addingAll, setAddingAll] = useState(false);
   const [removingId, setRemovingId] = useState(null);
-  const [isGoogleConnected, setIsGoogleConnected] = useState(
-    typeof window !== "undefined" &&
-      localStorage.getItem("gcal_connected") === "1"
-  );
+  const [isGoogleConnected, setIsGoogleConnected] = useState(false);
 
   useEffect(() => {
     fetchUpcomingTrips();
+    checkGoogleCalendarStatus();
   }, []);
 
-  // On return from Google OAuth, show toast only
+  // On return from Google OAuth, show toast and recheck status
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const gcal = params.get("gcal");
     const reason = params.get("reason");
     if (gcal === "connected") {
       toast.success("Google Calendar connected! 🎉 You can now add trips.");
-      try {
-        localStorage.setItem("gcal_connected", "1");
-      } catch {}
-      setIsGoogleConnected(true);
+      // Recheck the actual connection status from server
+      checkGoogleCalendarStatus();
       // clean query params without reload
       const url = new URL(window.location.href);
       url.searchParams.delete("gcal");
@@ -66,10 +63,8 @@ const UpcomingTripsPage = () => {
       window.history.replaceState({}, "", url.toString());
     } else if (gcal === "error") {
       toast.error(`Google Calendar connection failed: ${reason || "Unknown"}`);
-      try {
-        localStorage.removeItem("gcal_connected");
-      } catch {}
       setIsGoogleConnected(false);
+      localStorage.removeItem("gcal_connected");
       const url = new URL(window.location.href);
       url.searchParams.delete("gcal");
       url.searchParams.delete("reason");
@@ -259,6 +254,32 @@ const UpcomingTripsPage = () => {
       toast.error(errorMessage);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const checkGoogleCalendarStatus = async () => {
+    try {
+      const token = getToken();
+      if (!token) {
+        setIsGoogleConnected(false);
+        localStorage.removeItem("gcal_connected");
+        return;
+      }
+
+      const response = await apiGoogleCalendarStatus(token);
+      console.log("📊 Google Calendar Status:", response);
+
+      setIsGoogleConnected(response.connected);
+
+      if (response.connected) {
+        localStorage.setItem("gcal_connected", "1");
+      } else {
+        localStorage.removeItem("gcal_connected");
+      }
+    } catch (err) {
+      console.error("Error checking Google Calendar status:", err);
+      setIsGoogleConnected(false);
+      localStorage.removeItem("gcal_connected");
     }
   };
 

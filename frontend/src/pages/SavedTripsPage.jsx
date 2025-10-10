@@ -224,6 +224,8 @@ const SavedTripsPage = () => {
         budgetMode: savedTrip.budgetMode,
         generatedItinerary: savedTrip.generatedItinerary,
         itineraryMarkdown: savedTrip.generatedItinerary?.markdown,
+        savedTripId: savedTrip._id,
+        _id: savedTrip._id,
       });
 
       // Navigate to itinerary page
@@ -306,7 +308,7 @@ const SavedTripsPage = () => {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30">
       {/* Navbar */}
       <Navbar />
-      
+
       {/* Filter Bar */}
       <div className="bg-white/80 backdrop-blur-xl border-b border-gray-200/50 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-4">

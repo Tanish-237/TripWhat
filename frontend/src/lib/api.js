@@ -1,10 +1,10 @@
 // Use environment variable if available, otherwise fallback to port 8080
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
+const API_BASE_URL = "http://localhost:8080";
 
 async function request(path, options = {}) {
   const fullUrl = `${API_BASE_URL}${path}`;
   console.log(`[API] Making request to: ${fullUrl}`);
-  
+
   try {
     const res = await fetch(fullUrl, {
       headers: {
@@ -18,15 +18,23 @@ async function request(path, options = {}) {
 
     const data = await res.json().catch(() => null);
     if (!res.ok) {
-      const message = data?.message || `Request failed with status ${res.status}`;
-      console.error(`[API] Error response:`, { status: res.status, message, data });
+      const message =
+        data?.message || `Request failed with status ${res.status}`;
+      console.error(`[API] Error response:`, {
+        status: res.status,
+        message,
+        data,
+      });
       const error = new Error(message);
       error.status = res.status;
       error.data = data;
       throw error;
     }
-    
-    console.log(`[API] Success response for ${path}:`, data?.length ? `${data.length} items` : 'data received');
+
+    console.log(
+      `[API] Success response for ${path}:`,
+      data?.length ? `${data.length} items` : "data received"
+    );
     return data;
   } catch (error) {
     console.error(`[API] Network error for ${fullUrl}:`, error);
@@ -75,6 +83,12 @@ export async function apiGoogleOauthUrl(token) {
 
 export async function apiGoogleUpcoming(token) {
   return request("/api/google/calendar/upcoming", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function apiGoogleCalendarStatus(token) {
+  return request("/api/google/calendar/status", {
     headers: { Authorization: `Bearer ${token}` },
   });
 }
@@ -138,11 +152,15 @@ export async function apiGetSavedTrip(id, token) {
 }
 
 export async function apiSearchPlaces(query, limit = 5) {
-  return request(`/api/places/search?query=${encodeURIComponent(query)}&limit=${limit}`);
+  return request(
+    `/api/places/search?query=${encodeURIComponent(query)}&limit=${limit}`
+  );
 }
 
 export async function apiGetLocationSuggestions(query, limit = 8) {
-  return request(`/api/places/autocomplete?query=${encodeURIComponent(query)}&limit=${limit}`);
+  return request(
+    `/api/places/autocomplete?query=${encodeURIComponent(query)}&limit=${limit}`
+  );
 }
 
 export async function apiUpdateSavedTrip(id, payload, token) {
@@ -197,5 +215,71 @@ export async function apiRemoveTripFromUpcoming(id, token) {
   return request(`/api/saved-trips/${id}/upcoming`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// Completed Trips APIs
+export async function apiGetCompletedTrips(token, params = {}) {
+  const queryParams = new URLSearchParams(params).toString();
+  const url = queryParams
+    ? `/api/saved-trips/completed?${queryParams}`
+    : "/api/saved-trips/completed";
+  return request(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function apiToggleActivityCompletion(
+  id,
+  { dayIndex, timeSlotIndex, activityIndex, completed },
+  token
+) {
+  return request(`/api/saved-trips/${id}/activities/toggle`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ dayIndex, timeSlotIndex, activityIndex, completed }),
+  });
+}
+
+export async function apiSetDayCompletion(id, { dayIndex, completed }, token) {
+  return request(`/api/saved-trips/${id}/days/complete`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ dayIndex, completed }),
+  });
+}
+
+export async function apiSetTripCompletion(id, { completed }, token) {
+  return request(`/api/saved-trips/${id}/complete`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ completed }),
+  });
+}
+
+// Auto-completion service APIs (admin)
+export async function apiTriggerAutoCompletion(token) {
+  return request("/api/saved-trips/admin/auto-complete/run", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
+export async function apiGetAutoCompletionStatus(token) {
+  return request("/api/saved-trips/admin/auto-complete/status", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
   });
 }

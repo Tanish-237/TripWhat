@@ -9,6 +9,10 @@ import {
   apiSaveTrip,
   apiCheckTripSaved,
   apiMarkTripAsUpcoming,
+  apiToggleActivityCompletion,
+  apiSetDayCompletion,
+  apiSetTripCompletion,
+  apiGetSavedTrip,
   getToken,
 } from "@/lib/api";
 import { toast } from "react-toastify";
@@ -59,6 +63,9 @@ const ItineraryPage = () => {
   const [isMarkingUpcoming, setIsMarkingUpcoming] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [savedTripId, setSavedTripId] = useState(
+    tripData?._id || tripData?.savedTripId || null
+  );
 
   // Handle different data structures for itinerary
   const itinerary =
@@ -83,6 +90,61 @@ const ItineraryPage = () => {
       console.log("✅ Itinerary data exists!");
     }
   }, [itinerary]);
+
+  // Persist completedActivities per trip locally so refresh keeps progress until saved
+  useEffect(() => {
+    const key = `tripwhat_completed_${savedTripId || "current"}`;
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        setCompletedActivities(new Set(arr));
+      }
+    } catch {}
+    return () => {};
+  }, [savedTripId]);
+
+  useEffect(() => {
+    const key = `tripwhat_completed_${savedTripId || "current"}`;
+    try {
+      localStorage.setItem(
+        key,
+        JSON.stringify(Array.from(completedActivities))
+      );
+    } catch {}
+  }, [completedActivities, savedTripId]);
+
+  // If we have a savedTripId, hydrate completion state from backend on mount
+  useEffect(() => {
+    const fetchCompletion = async () => {
+      try {
+        const token = getToken();
+        if (!token || !savedTripId) return;
+        const saved = await apiGetSavedTrip(savedTripId, token);
+        const arr = saved?.completedActivities || [];
+        // Map backend keys (0-based) to UI keys (dayNumber is 1-based)
+        const uiKeys = new Set(
+          arr
+            .map((k) => {
+              const [d, t, a] = (k || "")
+                .split("-")
+                .map((x) => parseInt(x, 10));
+              if (
+                Number.isInteger(d) &&
+                Number.isInteger(t) &&
+                Number.isInteger(a)
+              ) {
+                return `${d + 1}-${t}-${a}`;
+              }
+              return null;
+            })
+            .filter(Boolean)
+        );
+        setCompletedActivities(uiKeys);
+      } catch {}
+    };
+    fetchCompletion();
+  }, [savedTripId]);
 
   // Check if trip is already saved
   useEffect(() => {
@@ -223,8 +285,20 @@ const ItineraryPage = () => {
         ],
       };
 
-      await apiSaveTrip(payload, token);
+      const resp = await apiSaveTrip(payload, token);
       setIsSaved(true);
+      const newId = resp?.savedTrip?._id;
+      if (newId) {
+        setSavedTripId(newId);
+      }
+      // remember in TripContext for later pages
+      if (newId) {
+        try {
+          // store into tripData so other pages can persist
+          // eslint-disable-next-line no-unused-expressions
+          updateTripData && updateTripData({ savedTripId: newId, _id: newId });
+        } catch {}
+      }
       toast.success("Trip saved successfully! 🎉");
     } catch (error) {
       console.error("Error saving trip:", error);
@@ -390,11 +464,11 @@ const ItineraryPage = () => {
   const getActivityImage = (activity) => {
     // Only return Google Places image URL
     if (activity.imageUrl && activity.imageUrl.trim() !== "") {
-      console.log('✅ Using Google Places image for:', activity.name);
+      console.log("✅ Using Google Places image for:", activity.name);
       return activity.imageUrl;
     }
-    
-    console.log('❌ No image available for:', activity.name);
+
+    console.log("❌ No image available for:", activity.name);
     return null; // Return null if no Google image
   };
 
@@ -412,7 +486,7 @@ const ItineraryPage = () => {
     );
   };
 
-  const toggleActivityComplete = (dayNum, slotIndex, actIndex) => {
+  const toggleActivityComplete = async (dayNum, slotIndex, actIndex) => {
     const activityId = `${dayNum}-${slotIndex}-${actIndex}`;
     const newCompleted = new Set(completedActivities);
 
@@ -422,7 +496,41 @@ const ItineraryPage = () => {
       newCompleted.add(activityId);
     }
 
-    setCompletedActivities(newCompleted);
+    setCompletedActivities(new Set(newCompleted));
+
+    try {
+      const token = getToken();
+      let savedId = tripData?.savedTripId || tripData?._id || savedTripId;
+
+      // If trip isn't saved yet, save it first
+      if (!savedId) {
+        console.log("🔄 Trip not saved yet, saving automatically...");
+        savedId = await quickEnsureSaved();
+        if (savedId) {
+          setSavedTripId(savedId);
+          setIsSaved(true);
+          toast.success("Trip saved automatically to track your progress! 🎉");
+        }
+      }
+
+      if (token && savedId) {
+        await apiToggleActivityCompletion(
+          savedId,
+          {
+            dayIndex: dayNum - 1,
+            timeSlotIndex: slotIndex,
+            activityIndex: actIndex,
+            completed: newCompleted.has(activityId),
+          },
+          token
+        );
+        console.log(
+          `✅ Activity completion synced to database for trip ${savedId}`
+        );
+      }
+    } catch (e) {
+      console.error("❌ Error toggling activity completion:", e);
+    }
   };
 
   const getDayProgress = (day) => {
@@ -444,11 +552,85 @@ const ItineraryPage = () => {
     return totalActivities > 0 ? (completedCount / totalActivities) * 100 : 0;
   };
 
-  const resetProgress = () => {
-    setCompletedActivities(new Set());
+  const isDayComplete = (dayNum) => {
+    const day = days.find((d) => d.dayNumber === dayNum);
+    if (!day) return false;
+    return getDayProgress(day) === 100;
   };
 
-  const markDayComplete = (dayNum) => {
+  const resetProgress = async () => {
+    try {
+      setCompletedActivities(new Set());
+
+      const token = getToken();
+      let savedId = tripData?.savedTripId || tripData?._id || savedTripId;
+
+      // If trip isn't saved yet, save it first
+      if (!savedId) {
+        console.log("🔄 Trip not saved yet, saving automatically...");
+        savedId = await quickEnsureSaved();
+        if (savedId) {
+          setSavedTripId(savedId);
+          setIsSaved(true);
+        }
+      }
+
+      if (token && savedId) {
+        await apiSetTripCompletion(savedId, { completed: false }, token);
+        console.log(
+          `✅ Trip progress reset and synced to database for trip ${savedId}`
+        );
+        toast.success("Trip progress reset successfully! 🔄");
+      } else {
+        toast.success("Trip progress reset! 🔄");
+      }
+    } catch (error) {
+      console.error("❌ Error resetting trip progress:", error);
+      toast.error("Failed to reset progress in database");
+    }
+  };
+
+  const markAllComplete = async () => {
+    try {
+      const newCompleted = new Set();
+      days.forEach((day) => {
+        day.timeSlots?.forEach((slot, slotIndex) => {
+          slot.activities?.forEach((_, actIndex) => {
+            newCompleted.add(`${day.dayNumber}-${slotIndex}-${actIndex}`);
+          });
+        });
+      });
+      setCompletedActivities(newCompleted);
+
+      const token = getToken();
+      let savedId = tripData?.savedTripId || tripData?._id || savedTripId;
+
+      // If trip isn't saved yet, save it first
+      if (!savedId) {
+        console.log("🔄 Trip not saved yet, saving automatically...");
+        savedId = await quickEnsureSaved();
+        if (savedId) {
+          setSavedTripId(savedId);
+          setIsSaved(true);
+        }
+      }
+
+      if (token && savedId) {
+        await apiSetTripCompletion(savedId, { completed: true }, token);
+        console.log(
+          `✅ All activities marked complete and synced to database for trip ${savedId}`
+        );
+        toast.success("All activities marked as complete! 🎉");
+      } else {
+        toast.success("All activities marked as complete! 🎉");
+      }
+    } catch (error) {
+      console.error("❌ Error marking all activities as complete:", error);
+      toast.error("Failed to save completion status to database");
+    }
+  };
+
+  const markDayComplete = async (dayNum) => {
     const day = days.find((d) => d.dayNumber === dayNum);
     if (!day) return;
 
@@ -458,7 +640,84 @@ const ItineraryPage = () => {
         newCompleted.add(`${dayNum}-${slotIndex}-${actIndex}`);
       });
     });
+    setCompletedActivities(new Set(newCompleted));
+
+    try {
+      const token = getToken();
+      let savedId = tripData?.savedTripId || tripData?._id || savedTripId;
+
+      // If trip isn't saved yet, save it first
+      if (!savedId) {
+        console.log("🔄 Trip not saved yet, saving automatically...");
+        savedId = await quickEnsureSaved();
+        if (savedId) {
+          setSavedTripId(savedId);
+          setIsSaved(true);
+        }
+      }
+
+      if (token && savedId) {
+        await apiSetDayCompletion(
+          savedId,
+          { dayIndex: dayNum - 1, completed: true },
+          token
+        );
+        console.log(
+          `✅ Day ${dayNum} completion synced to database for trip ${savedId}`
+        );
+        toast.success(`Day ${dayNum} marked as complete! ✅`);
+      } else {
+        toast.success(`Day ${dayNum} marked as complete! ✅`);
+      }
+    } catch (error) {
+      console.error("❌ Error marking day as complete:", error);
+      toast.error("Failed to save day completion to database");
+    }
+  };
+
+  const markDayIncomplete = async (dayNum) => {
+    const day = days.find((d) => d.dayNumber === dayNum);
+    if (!day) return;
+
+    const newCompleted = new Set(completedActivities);
+    day.timeSlots?.forEach((slot, slotIndex) => {
+      slot.activities?.forEach((_, actIndex) => {
+        newCompleted.delete(`${dayNum}-${slotIndex}-${actIndex}`);
+      });
+    });
     setCompletedActivities(newCompleted);
+
+    try {
+      const token = getToken();
+      let savedId = tripData?.savedTripId || tripData?._id || savedTripId;
+
+      // If trip isn't saved yet, save it first
+      if (!savedId) {
+        console.log("🔄 Trip not saved yet, saving automatically...");
+        savedId = await quickEnsureSaved();
+        if (savedId) {
+          setSavedTripId(savedId);
+          setIsSaved(true);
+        }
+      }
+
+      if (token && savedId) {
+        await apiSetDayCompletion(
+          savedId,
+          { dayIndex: dayNum - 1, completed: false },
+          token
+        );
+        console.log(
+          `✅ Day ${dayNum} marked incomplete and synced to database for trip ${savedId}`
+        );
+        toast.success(`Day ${dayNum} marked as incomplete! ↩️`);
+      } else {
+        toast.success(`Day ${dayNum} marked as incomplete! ↩️`);
+      }
+    } catch (error) {
+      console.error("❌ Error marking day as incomplete:", error);
+      toast.error("Failed to save day status to database");
+    }
   };
 
   return (
@@ -474,7 +733,7 @@ const ItineraryPage = () => {
 
       {/* Navbar */}
       <Navbar />
-      
+
       {/* Page Header */}
       <div className="bg-white/80 backdrop-blur-xl border-b border-gray-200/50 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-4">
@@ -518,11 +777,31 @@ const ItineraryPage = () => {
                       {getTotalActivities()} Activities
                     </span>
                   </div>
+                  {(savedTripId || isSaved) && (
+                    <>
+                      <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                        <span className="font-medium text-green-600 text-xs">
+                          Progress Tracked
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={markAllComplete}
+                className="border-green-300/50 text-green-700 hover:bg-green-50/50 backdrop-blur-sm hover:border-green-400 transition-all duration-300"
+              >
+                <CheckCircle2 className="w-4 h-4 mr-2" />
+                Complete All
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -741,15 +1020,27 @@ const ItineraryPage = () => {
                     </p>
                   </div>
                   <div className="flex items-center gap-4">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => markDayComplete(selectedDay)}
-                      className="bg-white border-green-300 text-green-700 hover:bg-green-100"
-                    >
-                      <CheckCircle2 className="w-4 h-4 mr-2" />
-                      Complete Day
-                    </Button>
+                    {isDayComplete(selectedDay) ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => markDayIncomplete(selectedDay)}
+                        className="bg-white border-orange-300 text-orange-700 hover:bg-orange-100"
+                      >
+                        <RotateCcw className="w-4 h-4 mr-2" />
+                        Mark Incomplete
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => markDayComplete(selectedDay)}
+                        className="bg-white border-green-300 text-green-700 hover:bg-green-100"
+                      >
+                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                        Complete Day
+                      </Button>
+                    )}
                     <div className="flex items-center gap-2">
                       <Button
                         variant="outline"
@@ -829,14 +1120,16 @@ const ItineraryPage = () => {
                                       loading="lazy"
                                       onError={(e) => {
                                         // Hide image on error
-                                        e.target.style.display = 'none';
+                                        e.target.style.display = "none";
                                       }}
                                     />
                                   ) : (
                                     <div className="w-full h-full flex items-center justify-center">
                                       <div className="text-center p-6">
                                         <MapPin className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                                        <p className="text-xs text-gray-500">No photo available</p>
+                                        <p className="text-xs text-gray-500">
+                                          No photo available
+                                        </p>
                                       </div>
                                     </div>
                                   )}
@@ -892,19 +1185,28 @@ const ItineraryPage = () => {
                                           </span>
                                         )}
                                         {activity.isOpen !== undefined && (
-                                          <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${
-                                            activity.isOpen 
-                                              ? 'bg-green-50 text-green-700 border border-green-200' 
-                                              : 'bg-red-50 text-red-700 border border-red-200'
-                                          }`}>
-                                            {activity.isOpen ? '🟢 Open Now' : '🔴 Closed'}
+                                          <span
+                                            className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${
+                                              activity.isOpen
+                                                ? "bg-green-50 text-green-700 border border-green-200"
+                                                : "bg-red-50 text-red-700 border border-red-200"
+                                            }`}
+                                          >
+                                            {activity.isOpen
+                                              ? "🟢 Open Now"
+                                              : "🔴 Closed"}
                                           </span>
                                         )}
-                                        {activity.tags?.slice(0, 3).map((tag, idx) => (
-                                          <span key={idx} className="inline-block px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">
-                                            {tag}
-                                          </span>
-                                        ))}
+                                        {activity.tags
+                                          ?.slice(0, 3)
+                                          .map((tag, idx) => (
+                                            <span
+                                              key={idx}
+                                              className="inline-block px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600"
+                                            >
+                                              {tag}
+                                            </span>
+                                          ))}
                                       </div>
                                     </div>
                                   </div>
@@ -919,7 +1221,9 @@ const ItineraryPage = () => {
                                   <div className="grid grid-cols-2 gap-3 mb-4">
                                     <div className="flex items-center gap-2 text-sm text-gray-600">
                                       <Clock className="w-4 h-4 text-blue-500" />
-                                      <span>{activity.duration || "2 hours"}</span>
+                                      <span>
+                                        {activity.duration || "2 hours"}
+                                      </span>
                                     </div>
                                     {activity.estimatedCost && (
                                       <div className="flex items-center gap-2 text-sm text-green-600 font-medium">
@@ -930,13 +1234,17 @@ const ItineraryPage = () => {
                                     {activity.bestTimeToVisit && (
                                       <div className="flex items-center gap-2 text-sm text-purple-600">
                                         <Sun className="w-4 h-4" />
-                                        <span className="truncate">{activity.bestTimeToVisit}</span>
+                                        <span className="truncate">
+                                          {activity.bestTimeToVisit}
+                                        </span>
                                       </div>
                                     )}
                                     {activity.distanceToNext && (
                                       <div className="flex items-center gap-2 text-sm text-orange-600">
                                         <Navigation className="w-4 h-4" />
-                                        <span className="truncate">{activity.distanceToNext}</span>
+                                        <span className="truncate">
+                                          {activity.distanceToNext}
+                                        </span>
                                       </div>
                                     )}
                                   </div>
@@ -947,7 +1255,12 @@ const ItineraryPage = () => {
                                       <Button
                                         variant="outline"
                                         size="sm"
-                                        onClick={() => window.open(activity.websiteUrl, '_blank')}
+                                        onClick={() =>
+                                          window.open(
+                                            activity.websiteUrl,
+                                            "_blank"
+                                          )
+                                        }
                                         className="border-gray-300 text-gray-700 hover:bg-gray-50"
                                       >
                                         <ExternalLink className="w-3 h-3 mr-1" />
@@ -958,7 +1271,12 @@ const ItineraryPage = () => {
                                       <Button
                                         variant="outline"
                                         size="sm"
-                                        onClick={() => window.open(`tel:${activity.phoneNumber}`, '_blank')}
+                                        onClick={() =>
+                                          window.open(
+                                            `tel:${activity.phoneNumber}`,
+                                            "_blank"
+                                          )
+                                        }
                                         className="border-gray-300 text-gray-700 hover:bg-gray-50"
                                       >
                                         📞 Call
@@ -968,10 +1286,12 @@ const ItineraryPage = () => {
                                       <Button
                                         variant="outline"
                                         size="sm"
-                                        onClick={() => window.open(
-                                          `https://www.google.com/maps/dir/?api=1&destination=${activity.location.latitude},${activity.location.longitude}`,
-                                          '_blank'
-                                        )}
+                                        onClick={() =>
+                                          window.open(
+                                            `https://www.google.com/maps/dir/?api=1&destination=${activity.location.latitude},${activity.location.longitude}`,
+                                            "_blank"
+                                          )
+                                        }
                                         className="border-blue-300 text-blue-700 hover:bg-blue-50"
                                       >
                                         <MapPin className="w-3 h-3 mr-1" />
@@ -981,21 +1301,26 @@ const ItineraryPage = () => {
                                   </div>
 
                                   {/* Opening Hours Preview */}
-                                  {activity.openingHours && activity.openingHours.length > 0 && (
-                                    <div className="mt-4 pt-4 border-t border-gray-100">
-                                      <details className="group">
-                                        <summary className="text-xs font-medium text-gray-600 cursor-pointer hover:text-gray-900 flex items-center gap-2">
-                                          <Clock className="w-3 h-3" />
-                                          View Opening Hours
-                                        </summary>
-                                        <div className="mt-2 space-y-1 text-xs text-gray-600">
-                                          {activity.openingHours.slice(0, 7).map((hours, idx) => (
-                                            <div key={idx} className="pl-5">{hours}</div>
-                                          ))}
-                                        </div>
-                                      </details>
-                                    </div>
-                                  )}
+                                  {activity.openingHours &&
+                                    activity.openingHours.length > 0 && (
+                                      <div className="mt-4 pt-4 border-t border-gray-100">
+                                        <details className="group">
+                                          <summary className="text-xs font-medium text-gray-600 cursor-pointer hover:text-gray-900 flex items-center gap-2">
+                                            <Clock className="w-3 h-3" />
+                                            View Opening Hours
+                                          </summary>
+                                          <div className="mt-2 space-y-1 text-xs text-gray-600">
+                                            {activity.openingHours
+                                              .slice(0, 7)
+                                              .map((hours, idx) => (
+                                                <div key={idx} className="pl-5">
+                                                  {hours}
+                                                </div>
+                                              ))}
+                                          </div>
+                                        </details>
+                                      </div>
+                                    )}
                                 </div>
                               </div>
                             </Card>
@@ -1168,17 +1493,31 @@ const ItineraryPage = () => {
                             >
                               View Details
                             </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                markDayComplete(day.dayNumber);
-                              }}
-                              className="border-green-300 text-green-700 hover:bg-green-50"
-                            >
-                              Mark Complete
-                            </Button>
+                            {isDayComplete(day.dayNumber) ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  markDayIncomplete(day.dayNumber);
+                                }}
+                                className="border-orange-300 text-orange-700 hover:bg-orange-50"
+                              >
+                                Mark Incomplete
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  markDayComplete(day.dayNumber);
+                                }}
+                                className="border-green-300 text-green-700 hover:bg-green-50"
+                              >
+                                Mark Complete
+                              </Button>
+                            )}
                           </div>
                         </div>
                       </Card>

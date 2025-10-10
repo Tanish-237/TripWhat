@@ -10,6 +10,7 @@ import placesRoutes from "./routes/placesRoutes.js";
 import auth from "./middleware/auth.js";
 import { google } from "googleapis";
 import jwt from "jsonwebtoken";
+import tripAutoCompletionService from "./services/tripAutoCompletionService.js";
 
 const port = 8080;
 const mongoUri = process.env.MONGODB_URI;
@@ -123,6 +124,33 @@ function getAuthorizedOAuthClient(userId) {
   return client;
 }
 
+// Check Google Calendar connection status
+app.get("/api/google/calendar/status", auth, async (req, res) => {
+  try {
+    const authClient = getAuthorizedOAuthClient(req.userId);
+    if (!authClient) {
+      return res.json({ connected: false, message: "Google not connected" });
+    }
+
+    // Try to make a simple API call to verify the tokens are still valid
+    const calendar = google.calendar({ version: "v3", auth: authClient });
+    await calendar.calendarList.list({ maxResults: 1 });
+
+    return res.json({ connected: true, message: "Google Calendar connected" });
+  } catch (err) {
+    // If the API call fails, the tokens are likely expired or invalid
+    console.error("Google Calendar status check failed:", err);
+
+    // Remove invalid tokens from memory
+    userGoogleTokens.delete(req.userId);
+
+    return res.json({
+      connected: false,
+      message: "Google Calendar connection expired or invalid",
+    });
+  }
+});
+
 // List upcoming events from the user's Google Calendar
 app.get("/api/google/calendar/upcoming", auth, async (req, res) => {
   try {
@@ -186,4 +214,7 @@ app.get("/", (req, res) => {
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
+
+  // Start the trip auto-completion service
+  tripAutoCompletionService.start();
 });

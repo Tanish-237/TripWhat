@@ -26,7 +26,7 @@ export default function Navbar({ showSearch = false }) {
         setShowSuggestions(false);
       }
     };
-    
+
     // Use mousedown instead of click for better UX
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
@@ -52,15 +52,15 @@ export default function Navbar({ showSearch = false }) {
       try {
         setLoading(true);
         setSearchError(null);
-        console.log('[SEARCH] Searching for:', searchQuery.trim());
-        
+        console.log("[SEARCH] Searching for:", searchQuery.trim());
+
         // Use autocomplete API for suggestions
         const results = await apiGetLocationSuggestions(searchQuery.trim(), 8);
-        console.log('[SEARCH] Autocomplete results:', results);
-        
+        console.log("[SEARCH] Autocomplete results:", results);
+
         // Ensure results is an array
         const validResults = Array.isArray(results) ? results : [];
-        
+
         // Only update suggestions and show them if we still have a valid query
         if (searchQuery.trim().length >= 2) {
           setSuggestions(validResults);
@@ -68,7 +68,7 @@ export default function Navbar({ showSearch = false }) {
         }
       } catch (error) {
         console.error("[SEARCH] Error fetching search suggestions:", error);
-        setSearchError(error.message || 'Search failed');
+        setSearchError(error.message || "Search failed");
         setSuggestions([]);
         setShowSuggestions(true); // Show dropdown with error
       } finally {
@@ -91,7 +91,7 @@ export default function Navbar({ showSearch = false }) {
       setShowSuggestions(false);
     }
   };
-  
+
   const handleSelectSuggestion = (suggestion) => {
     setSearchQuery(suggestion.name);
     setShowSuggestions(false);
@@ -100,7 +100,7 @@ export default function Navbar({ showSearch = false }) {
       navigate(`/search?q=${encodeURIComponent(suggestion.name)}`);
     }, 100);
   };
-  
+
   const clearSearch = () => {
     setSearchQuery("");
     setSuggestions([]);
@@ -117,7 +117,7 @@ export default function Navbar({ showSearch = false }) {
   const handleInputChange = (e) => {
     const value = e.target.value;
     setSearchQuery(value);
-    
+
     // Show suggestions immediately if we have cached results and valid query
     if (value.trim().length >= 2 && suggestions.length > 0) {
       setShowSuggestions(true);
@@ -130,7 +130,7 @@ export default function Navbar({ showSearch = false }) {
     logout();
     navigate("/");
   };
-  
+
   return (
     <header className="w-full border-b bg-background sticky top-0 z-50 shadow-sm">
       <nav className="max-w-7xl mx-auto flex items-center justify-between px-6 md:px-10 py-4">
@@ -171,7 +171,7 @@ export default function Navbar({ showSearch = false }) {
                   </button>
                 )}
               </form>
-              
+
               <SearchSuggestions
                 suggestions={suggestions}
                 loading={loading}
@@ -187,13 +187,30 @@ export default function Navbar({ showSearch = false }) {
         <div className="flex items-center gap-3">
           {isAuthenticated ? (
             <>
-              <Button 
+              <Button
                 variant="ghost"
                 asChild
                 className="text-gray-600 hover:text-blue-600 transition-colors"
               >
                 <Link to="/saved-trips">Saved Trips</Link>
               </Button>
+
+              <Button
+                variant="ghost"
+                asChild
+                className="text-gray-600 hover:text-blue-600 transition-colors"
+              >
+                <Link to="/upcoming-trips">Upcoming Trips</Link>
+              </Button>
+
+              <Button
+                variant="ghost"
+                asChild
+                className="text-gray-600 hover:text-blue-600 transition-colors"
+              >
+                <Link to="/completed-trips">Completed Trips</Link>
+              </Button>
+
               <Button
                 variant="ghost"
                 asChild
