@@ -53,6 +53,30 @@ export function clearToken() {
   localStorage.removeItem("tripwhat_token");
 }
 
+// Google Calendar APIs
+export async function apiGoogleOauthUrl(token) {
+  return request("/api/google/oauth/url", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function apiGoogleUpcoming(token) {
+  return request("/api/google/calendar/upcoming", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function apiGoogleCreateEvent(payload, token) {
+  return request("/api/google/calendar/events", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
 // Trip APIs
 export async function apiCreateTrip(payload, token) {
   return request("/api/trips", {

@@ -3,7 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useTrip } from "@/contexts/TripContext";
-import { apiGetUpcomingTrips, apiRemoveTripFromUpcoming, getToken } from "@/lib/api";
+import {
+  apiGetUpcomingTrips,
+  apiRemoveTripFromUpcoming,
+  getToken,
+  apiGoogleOauthUrl,
+  apiGoogleCreateEvent,
+} from "@/lib/api";
 import { toast } from "react-toastify";
 import {
   Calendar,
@@ -19,6 +25,7 @@ import {
   Plane,
   Heart,
   Eye,
+  CheckCircle2,
 } from "lucide-react";
 
 const UpcomingTripsPage = () => {
@@ -28,11 +35,205 @@ const UpcomingTripsPage = () => {
   const [upcomingTrips, setUpcomingTrips] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+  const [addingTripId, setAddingTripId] = useState(null);
+  const [addingAll, setAddingAll] = useState(false);
   const [removingId, setRemovingId] = useState(null);
+  const [isGoogleConnected, setIsGoogleConnected] = useState(
+    typeof window !== "undefined" &&
+      localStorage.getItem("gcal_connected") === "1"
+  );
 
   useEffect(() => {
     fetchUpcomingTrips();
   }, []);
+
+  // On return from Google OAuth, show toast only
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const gcal = params.get("gcal");
+    const reason = params.get("reason");
+    if (gcal === "connected") {
+      toast.success("Google Calendar connected! 🎉 You can now add trips.");
+      try {
+        localStorage.setItem("gcal_connected", "1");
+      } catch {}
+      setIsGoogleConnected(true);
+      // clean query params without reload
+      const url = new URL(window.location.href);
+      url.searchParams.delete("gcal");
+      url.searchParams.delete("reason");
+      window.history.replaceState({}, "", url.toString());
+    } else if (gcal === "error") {
+      toast.error(`Google Calendar connection failed: ${reason || "Unknown"}`);
+      try {
+        localStorage.removeItem("gcal_connected");
+      } catch {}
+      setIsGoogleConnected(false);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("gcal");
+      url.searchParams.delete("reason");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
+  const connectGoogle = async () => {
+    try {
+      setIsConnectingGoogle(true);
+      const token = getToken();
+      if (!token) {
+        setError("Please log in first");
+        return;
+      }
+      const { url } = await apiGoogleOauthUrl(token);
+      window.location.href = url; // redirect to Google consent
+    } catch (err) {
+      console.error("Error starting Google OAuth:", err);
+      setError(err.message || "Failed to connect Google");
+    } finally {
+      setIsConnectingGoogle(false);
+    }
+  };
+
+  const addTripToCalendar = async (trip) => {
+    try {
+      setAddingTripId(trip._id);
+      const token = getToken();
+      if (!token) {
+        setError("Please log in first");
+        return;
+      }
+
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const destinationLine = trip.cities?.map((c) => c.name).join(" → ") || "";
+      const totalDaysCount = getTotalDays(trip);
+      const appBaseUrl = window.location.origin;
+      const viewLink = `${appBaseUrl}/upcoming-trips`;
+
+      const days = trip.generatedItinerary?.days || [];
+      const baseDate = new Date(trip.tripStartDate);
+
+      const parseTimeToHours = (hhmm) => {
+        if (!hhmm || typeof hhmm !== "string") return null;
+        const [h, m] = hhmm.split(":").map((n) => parseInt(n, 10));
+        if (Number.isNaN(h)) return null;
+        return { h, m: Number.isNaN(m) ? 0 : m };
+      };
+
+      if (days.length === 0) {
+        // fallback: single event
+        const startDate = new Date(baseDate);
+        const endDate = trip.tripEndDate
+          ? new Date(trip.tripEndDate)
+          : new Date(startDate);
+        if (!trip.tripEndDate) {
+          startDate.setHours(9, 0, 0, 0);
+          endDate.setHours(17, 0, 0, 0);
+        }
+        await apiGoogleCreateEvent(
+          {
+            summary: trip.title || "Upcoming Trip",
+            description: `Trip planned via TripWhat\nDestination: ${destinationLine}\nDuration: ${totalDaysCount} day(s)\n\nManage trip: ${viewLink}`,
+            location: destinationLine || undefined,
+            start: startDate.toISOString(),
+            end: endDate.toISOString(),
+            timeZone,
+          },
+          token
+        );
+      } else {
+        for (const day of days) {
+          const eventDateStart = new Date(baseDate);
+          eventDateStart.setDate(
+            baseDate.getDate() + ((day.dayNumber || 1) - 1)
+          );
+          const eventDateEnd = new Date(eventDateStart);
+
+          // derive time window from first and last timeSlot
+          const firstSlot = day.timeSlots?.[0];
+          const lastSlot = day.timeSlots?.[day.timeSlots.length - 1];
+          const startParsed = parseTimeToHours(firstSlot?.startTime) || {
+            h: 9,
+            m: 0,
+          };
+          const endParsed = parseTimeToHours(lastSlot?.endTime) || {
+            h: 17,
+            m: 0,
+          };
+          eventDateStart.setHours(startParsed.h, startParsed.m || 0, 0, 0);
+          eventDateEnd.setHours(endParsed.h, endParsed.m || 0, 0, 0);
+
+          // Build per-day activity list
+          const activities = [];
+          try {
+            day.timeSlots?.forEach((slot) => {
+              slot.activities?.forEach((act) => {
+                const timeWindow =
+                  slot.startTime && slot.endTime
+                    ? `${slot.startTime}-${slot.endTime}`
+                    : "";
+                const locationStr =
+                  typeof act.location === "string"
+                    ? act.location
+                    : act.location?.name || act.location?.address || "";
+                activities.push(
+                  `${timeWindow ? `[${timeWindow}] ` : ""}${
+                    act.name || "Activity"
+                  }${locationStr ? ` @ ${locationStr}` : ""}`
+                );
+              });
+            });
+          } catch {}
+
+          const dayTitle = day.title || `Day ${day.dayNumber}`;
+          const itineraryBlock = activities.length
+            ? `\nActivities:\n- ${activities.slice(0, 12).join("\n- ")}`
+            : "";
+
+          const description =
+            `Trip planned via TripWhat\nDestination: ${destinationLine}\nDay ${day.dayNumber} of ${totalDaysCount}: ${dayTitle}${itineraryBlock}\n\nManage trip: ${viewLink}`.trim();
+
+          // Create event for this day
+          // eslint-disable-next-line no-await-in-loop
+          await apiGoogleCreateEvent(
+            {
+              summary: `${trip.title || "Trip"} - Day ${day.dayNumber}${
+                day.title ? `: ${day.title}` : ""
+              }`,
+              description,
+              location: destinationLine || undefined,
+              start: eventDateStart.toISOString(),
+              end: eventDateEnd.toISOString(),
+              timeZone,
+            },
+            token
+          );
+        }
+      }
+
+      toast.success("Added itinerary days to Google Calendar");
+    } catch (err) {
+      console.error("Error adding trip to calendar:", err);
+      toast.error(err.message || "Failed to add to Google Calendar");
+    } finally {
+      setAddingTripId(null);
+    }
+  };
+
+  const addAllUpcomingToCalendar = async () => {
+    try {
+      setAddingAll(true);
+      for (const trip of upcomingTrips) {
+        // Sequentially add to avoid rate limiting and provide clear UX
+        // eslint-disable-next-line no-await-in-loop
+        await addTripToCalendar(trip);
+      }
+      toast.success("All upcoming trips added to Google Calendar");
+    } catch (err) {
+      console.error("Error adding all trips:", err);
+    } finally {
+      setAddingAll(false);
+    }
+  };
 
   const fetchUpcomingTrips = async () => {
     try {
@@ -46,7 +247,10 @@ const UpcomingTripsPage = () => {
       }
 
       const response = await apiGetUpcomingTrips(token);
-      console.log("📊 UpcomingTripsPage - Fetched upcoming trips:", response.upcomingTrips);
+      console.log(
+        "📊 UpcomingTripsPage - Fetched upcoming trips:",
+        response.upcomingTrips
+      );
       setUpcomingTrips(response.upcomingTrips || []);
     } catch (err) {
       console.error("Error fetching upcoming trips:", err);
@@ -77,7 +281,10 @@ const UpcomingTripsPage = () => {
 
   const handleViewTrip = async (savedTrip) => {
     try {
-      console.log("📊 UpcomingTripsPage - Loading trip with full itinerary:", savedTrip);
+      console.log(
+        "📊 UpcomingTripsPage - Loading trip with full itinerary:",
+        savedTrip
+      );
 
       // Update trip context with saved trip data
       updateTripData({
@@ -135,10 +342,21 @@ const UpcomingTripsPage = () => {
 
   const getTripStatus = (tripStartDate) => {
     const daysUntil = getDaysUntilTrip(tripStartDate);
-    if (daysUntil < 0) return { text: "Past Due", color: "text-red-600", bg: "bg-red-100" };
-    if (daysUntil === 0) return { text: "Today!", color: "text-orange-600", bg: "bg-orange-100" };
-    if (daysUntil <= 7) return { text: `${daysUntil} days`, color: "text-yellow-600", bg: "bg-yellow-100" };
-    return { text: `${daysUntil} days`, color: "text-green-600", bg: "bg-green-100" };
+    if (daysUntil < 0)
+      return { text: "Past Due", color: "text-red-600", bg: "bg-red-100" };
+    if (daysUntil === 0)
+      return { text: "Today!", color: "text-orange-600", bg: "bg-orange-100" };
+    if (daysUntil <= 7)
+      return {
+        text: `${daysUntil} days`,
+        color: "text-yellow-600",
+        bg: "bg-yellow-100",
+      };
+    return {
+      text: `${daysUntil} days`,
+      color: "text-green-600",
+      bg: "bg-green-100",
+    };
   };
 
   if (isLoading) {
@@ -219,6 +437,41 @@ const UpcomingTripsPage = () => {
                 <Heart className="w-4 h-4 mr-2" />
                 All Saved Trips
               </Button>
+              <Button
+                onClick={connectGoogle}
+                disabled={isConnectingGoogle || isGoogleConnected}
+                className={`text-white ${
+                  isGoogleConnected
+                    ? "bg-green-600 hover:bg-green-600 cursor-not-allowed"
+                    : "bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700"
+                }`}
+              >
+                {isGoogleConnected ? (
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                ) : isConnectingGoogle ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Calendar className="w-4 h-4 mr-2" />
+                )}
+                {isGoogleConnected
+                  ? "Connected"
+                  : isConnectingGoogle
+                  ? "Connecting..."
+                  : "Connect Google Calendar"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={addAllUpcomingToCalendar}
+                disabled={addingAll || upcomingTrips.length === 0}
+                className="border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                {addingAll ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Calendar className="w-4 h-4 mr-2" />
+                )}
+                {addingAll ? "Adding All..." : "Add All to Google Calendar"}
+              </Button>
             </div>
           </div>
         </div>
@@ -235,7 +488,8 @@ const UpcomingTripsPage = () => {
               No upcoming trips yet
             </h3>
             <p className="text-gray-600 mb-6 max-w-md mx-auto">
-              Mark your saved trips as upcoming to see them here and track your travel plans!
+              Mark your saved trips as upcoming to see them here and track your
+              travel plans!
             </p>
             <Button
               onClick={() => navigate("/saved-trips")}
@@ -250,7 +504,7 @@ const UpcomingTripsPage = () => {
             {upcomingTrips.map((trip) => {
               const status = getTripStatus(trip.tripStartDate);
               const daysUntil = getDaysUntilTrip(trip.tripStartDate);
-              
+
               return (
                 <Card
                   key={trip._id}
@@ -265,7 +519,9 @@ const UpcomingTripsPage = () => {
                           <Clock className="w-3 h-3" />
                           Upcoming
                         </span>
-                        <span className={`px-3 py-1 text-xs font-bold rounded-full bg-white/90 ${status.color} ${status.bg}`}>
+                        <span
+                          className={`px-3 py-1 text-xs font-bold rounded-full bg-white/90 ${status.color} ${status.bg}`}
+                        >
                           {status.text}
                         </span>
                         <span className="px-3 py-1 text-xs font-bold rounded-full bg-white/90 text-purple-600 capitalize">
@@ -277,7 +533,8 @@ const UpcomingTripsPage = () => {
                       </h2>
                       <p className="text-white/90 text-sm">
                         Trip: {formatDate(trip.tripStartDate)}
-                        {trip.tripEndDate && ` - ${formatDate(trip.tripEndDate)}`}
+                        {trip.tripEndDate &&
+                          ` - ${formatDate(trip.tripEndDate)}`}
                       </p>
                     </div>
 
@@ -342,12 +599,11 @@ const UpcomingTripsPage = () => {
                         <div className="flex items-center gap-2 text-sm">
                           <Clock className="w-4 h-4 text-blue-600" />
                           <span className="font-medium text-blue-800">
-                            {daysUntil === 0 
-                              ? "Your trip is today! 🎉" 
-                              : daysUntil === 1 
-                                ? "Your trip is tomorrow! 🚀"
-                                : `${daysUntil} days until your trip`
-                            }
+                            {daysUntil === 0
+                              ? "Your trip is today! 🎉"
+                              : daysUntil === 1
+                              ? "Your trip is tomorrow! 🚀"
+                              : `${daysUntil} days until your trip`}
                           </span>
                         </div>
                       </div>
@@ -374,15 +630,32 @@ const UpcomingTripsPage = () => {
                       </div>
                     )}
 
-                    {/* Action Button */}
-                    <Button
-                      onClick={() => handleViewTrip(trip)}
-                      className="w-full bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white"
-                    >
-                      <Eye className="w-4 h-4 mr-2" />
-                      View Itinerary
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </Button>
+                    {/* Action Buttons */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <Button
+                        onClick={() => handleViewTrip(trip)}
+                        className="bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white"
+                      >
+                        <Eye className="w-4 h-4 mr-2" />
+                        View Itinerary
+                        <ArrowRight className="w-4 h-4 ml-2" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => addTripToCalendar(trip)}
+                        disabled={addingTripId === trip._id}
+                        className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                      >
+                        {addingTripId === trip._id ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Calendar className="w-4 h-4 mr-2" />
+                        )}
+                        {addingTripId === trip._id
+                          ? "Adding..."
+                          : "Add to Google Calendar"}
+                      </Button>
+                    </div>
                   </div>
                 </Card>
               );
