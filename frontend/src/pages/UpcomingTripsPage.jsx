@@ -2,10 +2,12 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import Navbar from "@/components/Navbar";
 import { useTrip } from "@/contexts/TripContext";
 import {
   apiGetUpcomingTrips,
   apiRemoveTripFromUpcoming,
+  apiMarkTripAsCompleted,
   getToken,
   apiGoogleOauthUrl,
   apiGoogleCreateEvent,
@@ -29,6 +31,25 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
+// Add custom CSS for floating animation
+const floatingAnimation = `
+  @keyframes float {
+    0%, 100% { transform: translateY(0px) rotate(0deg); }
+    33% { transform: translateY(-10px) rotate(3deg); }
+    66% { transform: translateY(5px) rotate(-2deg); }
+  }
+  .animate-float {
+    animation: float 3s ease-in-out infinite;
+  }
+`;
+
+// Inject CSS
+if (typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.textContent = floatingAnimation;
+  document.head.appendChild(style);
+}
+
 const UpcomingTripsPage = () => {
   const navigate = useNavigate();
   const { updateTripData } = useTrip();
@@ -40,7 +61,15 @@ const UpcomingTripsPage = () => {
   const [addingTripId, setAddingTripId] = useState(null);
   const [addingAll, setAddingAll] = useState(false);
   const [removingId, setRemovingId] = useState(null);
+<<<<<<< HEAD
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
+=======
+  const [completingId, setCompletingId] = useState(null);
+  const [isGoogleConnected, setIsGoogleConnected] = useState(
+    typeof window !== "undefined" &&
+      localStorage.getItem("gcal_connected") === "1"
+  );
+>>>>>>> origin/master
 
   useEffect(() => {
     fetchUpcomingTrips();
@@ -300,6 +329,25 @@ const UpcomingTripsPage = () => {
     }
   };
 
+  const handleMarkAsCompleted = async (trip) => {
+    try {
+      setCompletingId(trip._id);
+      const token = getToken();
+      
+      // Mark the trip as completed using the new API
+      await apiMarkTripAsCompleted(trip._id, token);
+
+      // Remove from local state (it will now appear in completed)
+      setUpcomingTrips((prev) => prev.filter((t) => t._id !== trip._id));
+      toast.success("Trip marked as completed! 🎉");
+    } catch (err) {
+      console.error("Error marking trip as completed:", err);
+      toast.error("Failed to mark trip as completed");
+    } finally {
+      setCompletingId(null);
+    }
+  };
+
   const handleViewTrip = async (savedTrip) => {
     try {
       console.log(
@@ -382,8 +430,8 @@ const UpcomingTripsPage = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30 flex items-center justify-center">
-        <Card className="p-12 bg-white/80 backdrop-blur-sm border border-white/20 shadow-2xl rounded-3xl">
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <Card className="p-12 bg-white border border-gray-200 shadow-lg rounded-xl">
           <div className="flex flex-col items-center justify-center space-y-4">
             <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
             <div className="text-center">
@@ -400,7 +448,7 @@ const UpcomingTripsPage = () => {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30 flex items-center justify-center">
+      <div className="min-h-screen bg-white flex items-center justify-center">
         <Card className="p-8 bg-red-50 border border-red-200 max-w-md">
           <div className="flex items-start gap-4">
             <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0 mt-1" />
@@ -423,24 +471,29 @@ const UpcomingTripsPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30">
-      {/* Header */}
-      <div className="bg-white/80 backdrop-blur-xl border-b border-gray-200/50 sticky top-0 z-50 shadow-lg">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate("/saved-trips")}
-                className="text-gray-600 hover:text-gray-900 hover:bg-white/50 backdrop-blur-sm transition-all duration-300 group"
-              >
+    <div className="min-h-screen bg-white">
+      {/* Navbar */}
+      <Navbar />
+      
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-6 py-6">
+        {/* Page Header */}
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm mb-6">
+          <div className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-6">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate("/saved-trips")}
+                  className="text-gray-600 hover:text-gray-900 border-gray-300 hover:bg-gray-50 transition-all duration-300 group"
+                >
                 <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform duration-300" />
                 Back to Saved Trips
               </Button>
-              <div className="h-6 w-px bg-gradient-to-b from-transparent via-gray-300 to-transparent" />
+                <div className="h-6 w-px bg-gray-300" />
               <div className="space-y-1">
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-green-600 via-blue-600 to-purple-600 bg-clip-text text-transparent">
+                <h1 className="text-2xl font-bold text-gray-900">
                   My Upcoming Trips
                 </h1>
                 <p className="text-sm text-gray-600">
@@ -453,7 +506,7 @@ const UpcomingTripsPage = () => {
             <div className="flex items-center gap-3">
               <Button
                 onClick={() => navigate("/saved-trips")}
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+                className="bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg transition-all duration-300"
               >
                 <Heart className="w-4 h-4 mr-2" />
                 All Saved Trips
@@ -464,7 +517,7 @@ const UpcomingTripsPage = () => {
                 className={`text-white ${
                   isGoogleConnected
                     ? "bg-green-600 hover:bg-green-600 cursor-not-allowed"
-                    : "bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700"
+                    : "bg-pink-600 hover:bg-pink-700"
                 }`}
               >
                 {isGoogleConnected ? (
@@ -475,34 +528,33 @@ const UpcomingTripsPage = () => {
                   <Calendar className="w-4 h-4 mr-2" />
                 )}
                 {isGoogleConnected
-                  ? "Connected"
+                  ? "Google Calendar Connected"
                   : isConnectingGoogle
                   ? "Connecting..."
                   : "Connect Google Calendar"}
               </Button>
-              <Button
-                variant="outline"
-                onClick={addAllUpcomingToCalendar}
-                disabled={addingAll || upcomingTrips.length === 0}
-                className="border-gray-300 text-gray-700 hover:bg-gray-50"
-              >
-                {addingAll ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Calendar className="w-4 h-4 mr-2" />
-                )}
-                {addingAll ? "Adding All..." : "Add All to Google Calendar"}
-              </Button>
+              {upcomingTrips.length > 0 && isGoogleConnected && (
+                <Button
+                  onClick={addAllUpcomingToCalendar}
+                  disabled={addingAll}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  {addingAll ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-4 h-4 mr-2" />
+                  )}
+                  {addingAll ? "Adding All..." : "Add All to Google Calendar"}
+                </Button>
+              )}
+            </div>
             </div>
           </div>
         </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Upcoming Trips Grid */}
         {upcomingTrips.length === 0 ? (
-          <Card className="p-12 text-center bg-white/80 backdrop-blur-sm border border-white/20 shadow-2xl rounded-3xl">
-            <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-r from-green-600 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg">
+          <Card className="p-12 text-center bg-white border border-gray-200 shadow-lg rounded-xl">
+            <div className="w-20 h-20 mx-auto mb-6 bg-blue-600 rounded-2xl flex items-center justify-center shadow-md">
               <Plane className="w-10 h-10 text-white" />
             </div>
             <h3 className="text-2xl font-semibold text-gray-900 mb-4">
@@ -514,59 +566,40 @@ const UpcomingTripsPage = () => {
             </p>
             <Button
               onClick={() => navigate("/saved-trips")}
-              className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white shadow-lg hover:shadow-xl transition-all duration-300"
+              className="bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg transition-all duration-300"
             >
               <Heart className="w-4 h-4 mr-2" />
               View Saved Trips
             </Button>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-8 justify-items-center">
             {upcomingTrips.map((trip) => {
               const status = getTripStatus(trip.tripStartDate);
               const daysUntil = getDaysUntilTrip(trip.tripStartDate);
 
               return (
-                <Card
+                <div
                   key={trip._id}
-                  className="group relative overflow-hidden bg-white border border-gray-200 shadow-lg hover:shadow-2xl transition-all duration-500 cursor-pointer transform hover:-translate-y-2 hover:scale-[1.02]"
+                  className="group bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 border border-gray-100 flex flex-col h-full w-full max-w-sm"
                 >
-                  {/* Banner */}
-                  <div className="h-48 bg-gradient-to-r from-green-500 via-blue-500 to-purple-500 relative">
-                    <div className="absolute inset-0 bg-black/20" />
-                    <div className="absolute bottom-4 left-6 right-6">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="px-3 py-1 text-xs font-bold rounded-full bg-white/90 text-green-600 flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          Upcoming
-                        </span>
-                        <span
-                          className={`px-3 py-1 text-xs font-bold rounded-full bg-white/90 ${status.color} ${status.bg}`}
-                        >
-                          {status.text}
-                        </span>
-                        <span className="px-3 py-1 text-xs font-bold rounded-full bg-white/90 text-purple-600 capitalize">
-                          {trip.travelType} Travel
-                        </span>
-                      </div>
-                      <h2 className="text-2xl font-bold text-white mb-1">
-                        {trip.title}
-                      </h2>
-                      <p className="text-white/90 text-sm">
-                        Trip: {formatDate(trip.tripStartDate)}
-                        {trip.tripEndDate &&
-                          ` - ${formatDate(trip.tripEndDate)}`}
-                      </p>
-                    </div>
-
-                    {/* Remove from Upcoming Button */}
+                  {/* Header Banner */}
+                  <div className="relative h-28 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 p-4">
+                    <h3 className="text-xl font-bold text-white mb-1">
+                      {getCityNames(trip)}
+                    </h3>
+                    <p className="text-white/90 text-sm">
+                      Trip: {formatDate(trip.tripStartDate)}
+                    </p>
+                    
+                    {/* Remove Button */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleRemoveFromUpcoming(trip._id);
                       }}
                       disabled={removingId === trip._id}
-                      className="absolute top-3 right-3 p-2 bg-orange-500/90 hover:bg-orange-600 text-white rounded-full transition-all duration-300 opacity-0 group-hover:opacity-100"
+                      className="absolute top-3 right-3 p-2 bg-white/20 hover:bg-red-500 text-white rounded-full transition-colors duration-200"
                     >
                       {removingId === trip._id ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -576,109 +609,150 @@ const UpcomingTripsPage = () => {
                     </button>
                   </div>
 
-                  {/* Content */}
-                  <div className="p-6">
-                    {/* Trip Stats */}
-                    <div className="grid grid-cols-2 gap-4 mb-6">
-                      <div className="text-center p-3 bg-blue-50 rounded-lg">
-                        <Calendar className="w-5 h-5 text-blue-600 mx-auto mb-1" />
-                        <div className="text-lg font-bold text-blue-900">
-                          {getTotalDays(trip)}
+                  {/* Card Content */}
+                  <div className="p-4 flex flex-col flex-grow">
+                    {/* Status Badges */}
+                    <div className="flex items-center gap-2 mb-3 flex-wrap">
+                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-50 text-green-600 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        Upcoming
+                      </span>
+                      <span
+                        className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                          daysUntil === 0 ? 'bg-orange-50 text-orange-600' : 
+                          daysUntil <= 7 ? 'bg-yellow-50 text-yellow-600' : 'bg-green-50 text-green-600'
+                        }`}
+                      >
+                        {status.text}
+                      </span>
+                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-purple-50 text-purple-600 capitalize">
+                        {trip.travelType}
+                      </span>
+                    </div>
+
+                    {/* Stats */}
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                      <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg">
+                        <Calendar className="w-4 h-4 text-blue-600" />
+                        <div>
+                          <div className="text-lg font-bold text-blue-900">{getTotalDays(trip)}</div>
+                          <div className="text-xs text-blue-600">Days</div>
                         </div>
-                        <div className="text-xs text-blue-700">Days</div>
                       </div>
-                      <div className="text-center p-3 bg-green-50 rounded-lg">
-                        <Sparkles className="w-5 h-5 text-green-600 mx-auto mb-1" />
-                        <div className="text-lg font-bold text-green-900">
-                          {getTotalActivities(trip)}
+                      <div className="flex items-center gap-2 p-2 bg-green-50 rounded-lg">
+                        <Sparkles className="w-4 h-4 text-green-600" />
+                        <div>
+                          <div className="text-lg font-bold text-green-900">{getTotalActivities(trip)}</div>
+                          <div className="text-xs text-green-600">Activities</div>
                         </div>
-                        <div className="text-xs text-green-700">Activities</div>
                       </div>
                     </div>
 
                     {/* Description */}
                     {trip.description && (
-                      <p className="text-sm text-gray-600 mb-4 line-clamp-2">
-                        {trip.description}
-                      </p>
+                      <div className="mb-3 p-3 bg-gray-50 rounded-lg">
+                        <p className="text-sm text-gray-700 line-clamp-2">
+                          {trip.description}
+                        </p>
+                      </div>
                     )}
 
-                    {/* Cities */}
-                    <div className="mb-4">
-                      <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
-                        <MapPin className="w-4 h-4 text-pink-600" />
-                        <span className="font-medium">Destinations</span>
+                    {/* Destinations */}
+                    <div className="mb-3">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <MapPin className="w-3.5 h-3.5 text-pink-600" />
+                        <span className="text-xs font-semibold text-gray-700">Destinations</span>
                       </div>
-                      <div className="text-sm text-gray-800 font-medium">
-                        {getCityNames(trip)}
+                      <div className="flex flex-wrap gap-1.5">
+                        {trip.cities?.map((city, index) => (
+                          <span 
+                            key={index} 
+                            className="px-2.5 py-1 bg-gradient-to-r from-pink-50 to-purple-50 text-pink-700 text-xs font-medium rounded-full border border-pink-200"
+                          >
+                            {city.name}
+                          </span>
+                        ))}
                       </div>
                     </div>
 
                     {/* Countdown */}
                     {daysUntil >= 0 && (
-                      <div className="mb-4 p-3 bg-gradient-to-r from-blue-50 to-green-50 rounded-lg border border-blue-200">
-                        <div className="flex items-center gap-2 text-sm">
+                      <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
+                        <div className="flex items-center gap-2">
                           <Clock className="w-4 h-4 text-blue-600" />
-                          <span className="font-medium text-blue-800">
-                            {daysUntil === 0
-                              ? "Your trip is today! 🎉"
-                              : daysUntil === 1
-                              ? "Your trip is tomorrow! 🚀"
-                              : `${daysUntil} days until your trip`}
-                          </span>
+                          <div>
+                            <div className="font-bold text-blue-900 text-sm">
+                              {daysUntil === 0 ? "🎉 Today!" : daysUntil === 1 ? "🚀 Tomorrow!" : `${daysUntil} days`}
+                            </div>
+                            <div className="text-xs text-blue-700">
+                              {daysUntil === 0 ? "Your trip starts today!" : daysUntil === 1 ? "Your trip starts tomorrow!" : "until your trip"}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     )}
 
-                    {/* Tags */}
-                    {trip.tags && trip.tags.length > 0 && (
-                      <div className="mb-4">
-                        <div className="flex flex-wrap gap-1">
-                          {trip.tags.slice(0, 3).map((tag, index) => (
-                            <span
-                              key={index}
-                              className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-full"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                          {trip.tags.length > 3 && (
-                            <span className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-full">
-                              +{trip.tags.length - 3}
-                            </span>
-                          )}
-                        </div>
+                    {/* Trip Details */}
+                    <div className="mb-4 flex items-center gap-4 text-xs text-gray-600">
+                      <div className="flex items-center gap-1">
+                        <Users className="w-3.5 h-3.5" />
+                        <span>{trip.people} {trip.people === 1 ? 'person' : 'people'}</span>
                       </div>
-                    )}
+                    </div>
 
                     {/* Action Buttons */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="space-y-2 mt-auto">
                       <Button
                         onClick={() => handleViewTrip(trip)}
-                        className="bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white"
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white h-9"
                       >
                         <Eye className="w-4 h-4 mr-2" />
                         View Itinerary
-                        <ArrowRight className="w-4 h-4 ml-2" />
+                      </Button>
+                      {isGoogleConnected && (
+                        <Button
+                          variant="outline"
+                          onClick={() => addTripToCalendar(trip)}
+                          disabled={addingTripId === trip._id}
+                          className="w-full border-pink-300 text-pink-700 hover:bg-pink-50 h-9"
+                        >
+                          {addingTripId === trip._id ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <Calendar className="w-4 h-4 mr-2" />
+                          )}
+                          {addingTripId === trip._id ? "Adding..." : "Add to Calendar"}
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        onClick={() => handleMarkAsCompleted(trip)}
+                        disabled={completingId === trip._id}
+                        className="w-full border-green-300 text-green-700 hover:bg-green-50 h-9"
+                      >
+                        {completingId === trip._id ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4 mr-2" />
+                        )}
+                        {completingId === trip._id ? "Marking..." : "Mark as Completed"}
                       </Button>
                       <Button
                         variant="outline"
-                        onClick={() => addTripToCalendar(trip)}
-                        disabled={addingTripId === trip._id}
-                        className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                        onClick={() => handleRemoveFromUpcoming(trip._id)}
+                        disabled={removingId === trip._id}
+                        className="w-full border-orange-300 text-orange-700 hover:bg-orange-50 h-9"
                       >
-                        {addingTripId === trip._id ? (
+                        {removingId === trip._id ? (
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                         ) : (
-                          <Calendar className="w-4 h-4 mr-2" />
+                          <ArrowLeft className="w-4 h-4 mr-2" />
                         )}
-                        {addingTripId === trip._id
-                          ? "Adding..."
-                          : "Add to Google Calendar"}
+                        {removingId === trip._id ? "Removing..." : "Move to Saved"}
                       </Button>
                     </div>
                   </div>
-                </Card>
+                </div>
               );
             })}
           </div>

@@ -721,18 +721,10 @@ const ItineraryPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30 relative">
-      {/* Animated Background */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-1/2 -right-1/2 w-96 h-96 bg-gradient-to-br from-blue-400/5 to-purple-400/5 rounded-full blur-3xl animate-pulse"></div>
-        <div
-          className="absolute -bottom-1/2 -left-1/2 w-96 h-96 bg-gradient-to-br from-purple-400/5 to-pink-400/5 rounded-full blur-3xl animate-pulse"
-          style={{ animationDelay: "2s" }}
-        ></div>
-      </div>
-
+    <div className="min-h-screen bg-white">
       {/* Navbar */}
       <Navbar />
+<<<<<<< HEAD
 
       {/* Page Header */}
       <div className="bg-white/80 backdrop-blur-xl border-b border-gray-200/50 z-40 shadow-sm">
@@ -776,6 +768,54 @@ const ItineraryPage = () => {
                     <span className="font-medium">
                       {getTotalActivities()} Activities
                     </span>
+=======
+      
+      {/* Main Content Container */}
+      <div className="max-w-7xl mx-auto px-6 py-6">
+        {/* Page Header with Trip Info and Actions */}
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm mb-6">
+          <div className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-6">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate("/plan/results")}
+                  className="text-gray-600 hover:text-gray-900 border-gray-300 hover:bg-gray-50 transition-all duration-300 group"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform duration-300" />
+                  Back to Results
+                </Button>
+                <div className="h-6 w-px bg-gray-300" />
+                <div className="space-y-1">
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    {tripMetadata?.destination || "Your Journey"}
+                  </h1>
+                  <div className="flex items-center gap-3 text-sm text-gray-600">
+                    <div className="flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4 text-blue-500" />
+                      <span className="font-medium">
+                        {days?.length || 0} Days
+                      </span>
+                    </div>
+                    <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+                    <div className="flex items-center gap-1.5">
+                      <Users className="w-4 h-4 text-purple-500" />
+                      <span className="font-medium">
+                        {tripMetadata?.numberOfPeople ||
+                          tripMetadata?.travelers ||
+                          1}{" "}
+                        Travelers
+                      </span>
+                    </div>
+                    <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-pink-500" />
+                      <span className="font-medium">
+                        {getTotalActivities()} Activities
+                      </span>
+                    </div>
+>>>>>>> origin/master
                   </div>
                   {(savedTripId || isSaved) && (
                     <>
@@ -790,8 +830,8 @@ const ItineraryPage = () => {
                   )}
                 </div>
               </div>
-            </div>
 
+<<<<<<< HEAD
             <div className="flex items-center gap-3">
               <Button
                 variant="outline"
@@ -869,47 +909,121 @@ const ItineraryPage = () => {
                   </>
                 )}
               </Button>
+=======
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={resetProgress}
+                  className="border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all duration-300"
+                >
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Reset
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowOnlyIncomplete(!showOnlyIncomplete)}
+                  className="border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all duration-300"
+                >
+                  {showOnlyIncomplete ? (
+                    <Eye className="w-4 h-4 mr-2" />
+                  ) : (
+                    <EyeOff className="w-4 h-4 mr-2" />
+                  )}
+                  {showOnlyIncomplete ? "Show All" : "Hide Complete"}
+                </Button>
+                <Button
+                  onClick={handleSaveTrip}
+                  disabled={isSaving || isSaved}
+                  size="sm"
+                  className={`${
+                    isSaved
+                      ? "bg-green-600 hover:bg-green-700"
+                      : "bg-blue-600 hover:bg-blue-700"
+                  } text-white shadow-md hover:shadow-lg transition-all duration-300`}
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : isSaved ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 mr-2" />
+                      Saved
+                    </>
+                  ) : (
+                    <>
+                      <Heart className="w-4 h-4 mr-2" />
+                      Save Trip
+                    </>
+                  )}
+                </Button>
+                <Button
+                  onClick={handleMarkAsUpcoming}
+                  disabled={isMarkingUpcoming}
+                  size="sm"
+                  className="bg-pink-600 hover:bg-pink-700 text-white shadow-md hover:shadow-lg transition-all duration-300"
+                >
+                  {isMarkingUpcoming ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Clock className="w-4 h-4 mr-2" />
+                      Mark as Upcoming
+                    </>
+                  )}
+                </Button>
+              </div>
+>>>>>>> origin/master
             </div>
           </div>
         </div>
-      </div>
 
-      <div className="flex h-[calc(100vh-84px)]">
-        {/* Sidebar Navigation */}
-        <div className="w-80 bg-white/50 backdrop-blur-sm border-r border-gray-200/50 overflow-y-auto">
-          {/* Tabs */}
-          <div className="p-6 border-b border-gray-200/50">
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                {
-                  id: "itinerary",
-                  icon: List,
-                  label: "Itinerary",
-                  color: "blue",
-                },
-                {
-                  id: "calendar",
-                  icon: Calendar,
-                  label: "Overview",
-                  color: "purple",
-                },
-                { id: "map", icon: MapIcon, label: "Map", color: "pink" },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`relative px-4 py-3 text-sm font-semibold rounded-xl transition-all duration-300 ${
-                    activeTab === tab.id
-                      ? `bg-${tab.color}-500 text-white shadow-lg transform scale-105`
-                      : "text-gray-600 hover:text-gray-900 hover:bg-white/50"
-                  }`}
-                >
-                  <tab.icon className="w-4 h-4 mx-auto mb-1" />
-                  <div className="text-xs">{tab.label}</div>
-                </button>
-              ))}
+        <div className="flex gap-6">
+          {/* Sidebar Navigation */}
+          <div className="w-80 bg-white border border-gray-200 rounded-lg shadow-sm overflow-y-auto max-h-[calc(100vh-200px)]">
+            {/* Tabs */}
+            <div className="p-6 border-b border-gray-200">
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  {
+                    id: "itinerary",
+                    icon: List,
+                    label: "Itinerary",
+                    color: "blue",
+                  },
+                  {
+                    id: "calendar",
+                    icon: Calendar,
+                    label: "Overview",
+                    color: "purple",
+                  },
+                  { id: "map", icon: MapIcon, label: "Map", color: "pink" },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`relative px-4 py-3 text-sm font-semibold rounded-lg transition-all duration-300 ${
+                      activeTab === tab.id
+                        ? tab.color === "blue"
+                          ? "bg-blue-500 text-white shadow-md"
+                          : tab.color === "purple"
+                          ? "bg-purple-500 text-white shadow-md"
+                          : "bg-pink-500 text-white shadow-md"
+                        : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                    }`}
+                  >
+                    <tab.icon className="w-4 h-4 mx-auto mb-1" />
+                    <div className="text-xs">{tab.label}</div>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
 
           {/* Day Selection */}
           {activeTab === "itinerary" && (
@@ -925,9 +1039,9 @@ const ItineraryPage = () => {
                     <button
                       key={day.dayNumber}
                       onClick={() => setSelectedDay(day.dayNumber)}
-                      className={`p-4 rounded-xl border-2 transition-all duration-300 ${
+                      className={`p-4 rounded-lg border-2 transition-all duration-300 ${
                         isSelected
-                          ? "border-blue-500 bg-blue-50 shadow-md"
+                          ? "border-blue-500 bg-blue-50 shadow-sm"
                           : "border-gray-200 hover:border-gray-300 bg-white"
                       }`}
                     >
@@ -999,8 +1113,8 @@ const ItineraryPage = () => {
           )}
         </div>
 
-        {/* Main Content */}
-        <div className="flex-1 overflow-y-auto">
+          {/* Main Content */}
+          <div className="flex-1 bg-white border border-gray-200 rounded-lg shadow-sm overflow-y-auto max-h-[calc(100vh-200px)]">
           {/* Itinerary Tab */}
           {activeTab === "itinerary" && selectedDayData && (
             <div className="p-8">
@@ -1648,6 +1762,7 @@ const ItineraryPage = () => {
           </Card>
         </div>
       )}
+      </div>
     </div>
   );
 };

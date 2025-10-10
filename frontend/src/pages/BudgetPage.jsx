@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
+import Navbar from "@/components/Navbar";
 import TripPlanningSidebar from "@/components/TripPlanningSidebar";
 import { useTrip } from "@/contexts/TripContext";
 import { DollarSign, Plane, Home, Utensils, Calendar, ArrowRight, ArrowLeft } from "lucide-react";
@@ -335,14 +336,16 @@ const BudgetPage = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <TripPlanningSidebar 
-        currentStep="budget" 
-        onStepClick={handleStepClick}
-        tripData={tripData}
-      />
+    <div className="flex flex-col min-h-screen bg-gray-50">
+      <Navbar />
+      <div className="flex flex-1 pt-0">
+        <TripPlanningSidebar 
+          currentStep="budget" 
+          onStepClick={handleStepClick}
+          tripData={tripData}
+        />
 
-      <div className="flex-1 p-8">
+        <div className="flex-1 p-8">
         <div className="max-w-4xl mx-auto">
           <div className="mb-8">
             <div className="flex items-center justify-between mb-4">
@@ -656,6 +659,7 @@ const BudgetPage = () => {
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </div>
+        </div>
         </div>
       </div>
     </div>

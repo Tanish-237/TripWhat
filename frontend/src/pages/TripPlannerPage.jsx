@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -9,6 +9,7 @@ import Navbar from "@/components/Navbar";
 import GooglePlacesAutocomplete from "react-google-places-autocomplete";
 import { useGoogleMaps } from "@/hooks/useGoogleMaps";
 import StartLocationPicker from "@/components/StartLocationPicker";
+import { apiGetSavedTrips, apiGetUpcomingTrips, getToken } from "@/lib/api";
 import {
   Plus,
   CalendarIcon,
@@ -101,11 +102,54 @@ const DatePicker = ({ selected, onSelect }) => {
 
 // Dashboard components start here
 const QuickStats = () => {
-  const stats = [
-    { label: "Upcoming Trips", value: "2", icon: CalendarIcon },
-    { label: "Cities Visited", value: "12", icon: MapPin },
-    { label: "Days Traveled", value: "45", icon: Plane },
-  ];
+  const [stats, setStats] = useState([
+    { label: "Upcoming Trips", value: "0", icon: CalendarIcon, loading: true },
+    { label: "Cities Visited", value: "0", icon: MapPin, loading: true },
+    { label: "Days Traveled", value: "0", icon: Plane, loading: true },
+  ]);
+
+  useEffect(() => {
+    const fetchUserStats = async () => {
+      try {
+        const token = getToken();
+        if (!token) return;
+
+        // Fetch saved trips and upcoming trips to calculate stats
+        const [savedTripsResponse, upcomingTripsResponse] = await Promise.all([
+          apiGetSavedTrips(token),
+          apiGetUpcomingTrips(token)
+        ]);
+
+        const savedTrips = savedTripsResponse.savedTrips || [];
+        const upcomingTrips = upcomingTripsResponse.upcomingTrips || [];
+
+        // Calculate unique cities visited
+        const allCities = new Set();
+        savedTrips.forEach(trip => {
+          trip.cities?.forEach(city => {
+            allCities.add(city.name);
+          });
+        });
+
+        // Calculate total days traveled
+        const totalDays = savedTrips.reduce((sum, trip) => {
+          return sum + (trip.cities?.reduce((citySum, city) => citySum + city.days, 0) || 0);
+        }, 0);
+
+        setStats([
+          { label: "Upcoming Trips", value: upcomingTrips.length.toString(), icon: CalendarIcon, loading: false },
+          { label: "Cities Visited", value: allCities.size.toString(), icon: MapPin, loading: false },
+          { label: "Days Traveled", value: totalDays.toString(), icon: Plane, loading: false },
+        ]);
+      } catch (error) {
+        console.error("Error fetching user stats:", error);
+        // Keep loading state or show error state
+        setStats(prev => prev.map(stat => ({ ...stat, loading: false })));
+      }
+    };
+
+    fetchUserStats();
+  }, []);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
@@ -121,7 +165,11 @@ const QuickStats = () => {
                 <p className="text-sm text-gray-600 font-medium">
                   {stat.label}
                 </p>
-                <p className="text-3xl font-bold text-gray-900">{stat.value}</p>
+                {stat.loading ? (
+                  <div className="w-12 h-8 bg-gray-200 rounded animate-pulse"></div>
+                ) : (
+                  <p className="text-3xl font-bold text-gray-900">{stat.value}</p>
+                )}
               </div>
               <div className="p-3 rounded-xl group-hover:scale-110 transition-transform duration-300 bg-blue-100">
                 <Icon className="w-5 h-5 text-blue-600" />

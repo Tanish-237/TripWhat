@@ -132,12 +132,12 @@ export default function Navbar({ showSearch = false }) {
   };
 
   return (
-    <header className="w-full border-b bg-background sticky top-0 z-50 shadow-sm">
-      <nav className="max-w-7xl mx-auto flex items-center justify-between px-6 md:px-10 py-4">
-        {/* Logo / Brand Name */}
+    <header className="w-full border-b bg-white sticky top-0 z-50 shadow-sm">
+      <nav className="w-full px-6 md:px-10 py-4 flex items-center justify-between">
+        {/* Logo / Brand Name - Fixed to far left */}
         <Link
           to={isAuthenticated ? "/plan" : "/"}
-          className="flex items-center gap-3 text-xl md:text-2xl font-bold text-black"
+          className="flex items-center gap-3 text-xl md:text-2xl font-bold text-black flex-shrink-0"
         >
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-pink-500 shadow-md">
             <MapPin className="w-4 h-4 text-white" />
@@ -145,46 +145,48 @@ export default function Navbar({ showSearch = false }) {
           TripWhat
         </Link>
 
-        {/* Search Bar - Only show if showSearch prop is true (for TripPlannerPage) */}
-        {isAuthenticated && showSearch && (
-          <div className="flex-1 max-w-xl mx-8">
-            <div className="relative" ref={searchRef}>
-              <form onSubmit={handleSearch} className="relative">
-                <Input
-                  type="text"
-                  placeholder="Search cities, destinations, attractions..."
-                  value={searchQuery}
-                  onChange={handleInputChange}
-                  onFocus={handleInputFocus}
-                  className="w-full h-10 pl-10 pr-10 text-base bg-white border-gray-200 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 rounded-full text-gray-900"
+        {/* Center section with search bar when needed */}
+        <div className="flex-1 flex justify-center">
+          {isAuthenticated && showSearch && (
+            <div className="w-full max-w-xl">
+              <div className="relative" ref={searchRef}>
+                <form onSubmit={handleSearch} className="relative">
+                  <Input
+                    type="text"
+                    placeholder="Search cities, destinations, attractions..."
+                    value={searchQuery}
+                    onChange={handleInputChange}
+                    onFocus={handleInputFocus}
+                    className="w-full h-10 pl-10 pr-10 text-base bg-white border-gray-200 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 rounded-full text-gray-900"
+                  />
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search className="h-4 w-4 text-blue-500" />
+                  </div>
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={clearSearch}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                    >
+                      <X className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+                    </button>
+                  )}
+                </form>
+
+                <SearchSuggestions
+                  suggestions={suggestions}
+                  loading={loading}
+                  onSelectSuggestion={handleSelectSuggestion}
+                  visible={showSuggestions}
+                  error={searchError}
                 />
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Search className="h-4 w-4 text-blue-500" />
-                </div>
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={clearSearch}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                  >
-                    <X className="h-4 w-4 text-gray-400 hover:text-gray-600" />
-                  </button>
-                )}
-              </form>
-
-              <SearchSuggestions
-                suggestions={suggestions}
-                loading={loading}
-                onSelectSuggestion={handleSelectSuggestion}
-                visible={showSuggestions}
-                error={searchError}
-              />
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* Navigation Links */}
-        <div className="flex items-center gap-3">
+        {/* Navigation Links - Fixed to far right */}
+        <div className="flex items-center gap-3 flex-shrink-0">
           {isAuthenticated ? (
             <>
               <Button
@@ -192,31 +194,21 @@ export default function Navbar({ showSearch = false }) {
                 asChild
                 className="text-gray-600 hover:text-blue-600 transition-colors"
               >
-                <Link to="/saved-trips">Saved Trips</Link>
+                <Link to="/saved-trips">Saved</Link>
               </Button>
-
               <Button
                 variant="ghost"
                 asChild
-                className="text-gray-600 hover:text-blue-600 transition-colors"
+                className="text-gray-600 hover:text-pink-600 transition-colors"
               >
-                <Link to="/upcoming-trips">Upcoming Trips</Link>
+                <Link to="/upcoming-trips">Upcoming</Link>
               </Button>
-
               <Button
                 variant="ghost"
                 asChild
-                className="text-gray-600 hover:text-blue-600 transition-colors"
+                className="text-gray-600 hover:text-green-600 transition-colors"
               >
-                <Link to="/completed-trips">Completed Trips</Link>
-              </Button>
-
-              <Button
-                variant="ghost"
-                asChild
-                className="text-gray-600 hover:text-blue-600 transition-colors"
-              >
-                <Link to="/chat">Chat</Link>
+                <Link to="/completed-trips">Completed</Link>
               </Button>
               <Button
                 variant="default"

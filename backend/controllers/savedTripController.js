@@ -191,14 +191,18 @@ export const saveTrip = async (req, res) => {
   }
 };
 
-// Get all saved trips for a user
+// Get all saved trips for a user (excluding upcoming and completed)
 export const getSavedTrips = async (req, res) => {
   try {
     const { page = 1, limit = 10, search } = req.query;
     const skip = (page - 1) * limit;
 
-    // Build query
-    const query = { user: req.userId };
+    // Build query - only show trips that are not upcoming and not completed
+    const query = {
+      user: req.userId,
+      isUpcoming: false,
+      isCompleted: false,
+    };
 
     if (search) {
       query.$or = [
@@ -413,7 +417,7 @@ export const markTripAsUpcoming = async (req, res) => {
   }
 };
 
-// Remove trip from upcoming
+// Remove trip from upcoming (move back to saved)
 export const removeTripFromUpcoming = async (req, res) => {
   try {
     const { id } = req.params;
@@ -422,6 +426,7 @@ export const removeTripFromUpcoming = async (req, res) => {
       { _id: id, user: req.userId },
       {
         isUpcoming: false,
+        isCompleted: false, // Also reset completed status
         tripStartDate: null,
         tripEndDate: null,
       },
@@ -435,7 +440,7 @@ export const removeTripFromUpcoming = async (req, res) => {
     }
 
     res.json({
-      message: "Trip removed from upcoming successfully",
+      message: "Trip moved back to saved successfully",
       savedTrip,
     });
   } catch (error) {
@@ -456,6 +461,7 @@ export const getUpcomingTrips = async (req, res) => {
     let upcomingTrips = await SavedTrip.find({
       user: req.userId,
       isUpcoming: true,
+      isCompleted: false, // Exclude completed trips
     })
       .sort({ tripStartDate: 1 }) // Sort by trip start date, earliest first
       .skip(skip)
@@ -473,6 +479,7 @@ export const getUpcomingTrips = async (req, res) => {
     const total = await SavedTrip.countDocuments({
       user: req.userId,
       isUpcoming: true,
+      isCompleted: false,
     });
 
     res.json({

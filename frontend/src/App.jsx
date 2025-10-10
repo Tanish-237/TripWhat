@@ -159,6 +159,15 @@ function AppContent() {
         />
 
         <Route
+          path="/completed-trips"
+          element={
+            <ProtectedRoute>
+              <CompletedTripsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/chat"
           element={
             <ProtectedRoute>
