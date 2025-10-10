@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ItineraryMap } from "@/components/ItineraryMap";
 import {
   apiSaveTrip,
   apiCheckTripSaved,
@@ -1188,22 +1189,11 @@ const ItineraryPage = () => {
 
           {/* Map Tab */}
           {activeTab === "map" && (
-            <div className="h-full flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50">
-              <Card className="p-12 text-center bg-white/80 backdrop-blur-sm border border-white/20 shadow-2xl rounded-3xl">
-                <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
-                  <MapIcon className="w-10 h-10 text-white" />
-                </div>
-                <h3 className="text-2xl font-semibold text-gray-900 mb-4">
-                  Interactive Map Coming Soon
-                </h3>
-                <p className="text-gray-600 mb-6 max-w-md">
-                  Explore your itinerary locations on an interactive map with
-                  route planning and nearby recommendations.
-                </p>
-                <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all duration-300">
-                  Enable Map Features
-                </Button>
-              </Card>
+            <div className="h-[calc(100vh-200px)]">
+              <ItineraryMap 
+                itinerary={itinerary} 
+                selectedDay={selectedDay}
+              />
             </div>
           )}
         </div>

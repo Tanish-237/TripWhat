@@ -41,7 +41,7 @@ export function useGoogleMaps(apiKey) {
     // Create and load the script
     console.log('📦 [useGoogleMaps] Creating new script tag...');
     const script = document.createElement('script');
-    const scriptSrc = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+    const scriptSrc = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,marker,geometry`;
     script.src = scriptSrc;
     script.async = true;
     script.defer = true;
