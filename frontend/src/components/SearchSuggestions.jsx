@@ -2,10 +2,15 @@ import React from "react";
 import { MapPin, Calendar, Compass, Globe, Building, Mountain } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-export function SearchSuggestions({ suggestions, loading, onSelectSuggestion, visible }) {
+export function SearchSuggestions({ suggestions, loading, onSelectSuggestion, visible, error }) {
   const navigate = useNavigate();
   
-  if (!visible || (!loading && suggestions.length === 0)) return null;
+  if (!visible) return null;
+  
+  // Show loading, error, or no results states
+  if (loading || error || (!loading && suggestions.length === 0)) {
+    // Continue to render the dropdown for these states
+  }
   
   const getCategoryIcon = (type) => {
     switch (type?.toLowerCase()) {
@@ -51,6 +56,11 @@ export function SearchSuggestions({ suggestions, loading, onSelectSuggestion, vi
             <div className="h-1 w-1 bg-blue-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
           </div>
           <p className="mt-2 text-sm">Searching...</p>
+        </div>
+      ) : error ? (
+        <div className="p-4 text-center text-red-500">
+          <p className="text-sm">Unable to fetch suggestions</p>
+          <p className="text-xs text-gray-500 mt-1">Please try again</p>
         </div>
       ) : suggestions.length > 0 ? (
         <div>
@@ -99,7 +109,12 @@ export function SearchSuggestions({ suggestions, loading, onSelectSuggestion, vi
             </div>
           )}
         </div>
-      ) : null}
+      ) : (
+        <div className="p-4 text-center text-gray-500">
+          <p className="text-sm">No destinations found</p>
+          <p className="text-xs text-gray-400 mt-1">Try a different search term</p>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,23 +2,36 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
 
 async function request(path, options = {}) {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-    ...options,
-  });
+  const fullUrl = `${API_BASE_URL}${path}`;
+  console.log(`[API] Making request to: ${fullUrl}`);
+  
+  try {
+    const res = await fetch(fullUrl, {
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+      ...options,
+    });
 
-  const data = await res.json().catch(() => null);
-  if (!res.ok) {
-    const message = data?.message || "Request failed";
-    const error = new Error(message);
-    error.status = res.status;
-    error.data = data;
+    console.log(`[API] Response status: ${res.status} for ${fullUrl}`);
+
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      const message = data?.message || `Request failed with status ${res.status}`;
+      console.error(`[API] Error response:`, { status: res.status, message, data });
+      const error = new Error(message);
+      error.status = res.status;
+      error.data = data;
+      throw error;
+    }
+    
+    console.log(`[API] Success response for ${path}:`, data?.length ? `${data.length} items` : 'data received');
+    return data;
+  } catch (error) {
+    console.error(`[API] Network error for ${fullUrl}:`, error);
     throw error;
   }
-  return data;
 }
 
 export async function apiRegister({ name, email, password }) {

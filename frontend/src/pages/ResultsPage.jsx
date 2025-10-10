@@ -100,37 +100,73 @@ const ResultsPage = () => {
         console.log("🎯 Generating AI itinerary with payload:", payload);
 
         const token = getToken();
+        const AI_API_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
+        
+        console.log(`[ITINERARY] Environment variables:`, {
+          VITE_API_URL: import.meta.env.VITE_API_URL,
+          VITE_SOCKET_URL: import.meta.env.VITE_SOCKET_URL,
+          AI_API_URL: AI_API_URL
+        });
+        console.log(`[ITINERARY] Making request to: ${AI_API_URL}/api/itinerary/generate`);
+        console.log(`[ITINERARY] Token present: ${!!token}`);
+        console.log(`[ITINERARY] Token value:`, token?.substring(0, 20) + '...');
+        
+        // Test connectivity first
+        try {
+          const healthCheck = await axios.get(`${AI_API_URL}/health`, { timeout: 5000 });
+          console.log(`[ITINERARY] Health check successful:`, healthCheck.data);
+        } catch (healthError) {
+          console.error(`[ITINERARY] Health check failed:`, healthError);
+          throw new Error(`Cannot connect to AI service at ${AI_API_URL}`);
+        }
+        
         const response = await axios.post(
-          "http://localhost:5000/api/itinerary/generate",
+          `${AI_API_URL}/api/itinerary/generate`,
           payload,
           {
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
+            timeout: 60000, // 60 second timeout for AI generation
           }
         );
 
         console.log("✅ AI Itinerary generated:", response.data);
         setGeneratedItinerary(response.data);
 
-        // Store in context for chat integration
         updateTripData({
           generatedItinerary: response.data,
           itineraryMarkdown: response.data.markdown,
         });
       } catch (err) {
-        console.error("❌ Failed to generate itinerary:", err);
-        setError(
-          err.response?.data?.error ||
-            err.message ||
-            "Failed to generate itinerary"
-        );
+        console.error("❌ Error generating itinerary:", err);
+        console.error("❌ Error details:", {
+          message: err.message,
+          response: err.response?.data,
+          status: err.response?.status,
+          config: err.config?.url
+        });
+        
+        let errorMessage = "Failed to generate itinerary";
+        
+        if (err.code === 'NETWORK_ERROR' || err.message.includes('Network Error')) {
+          errorMessage = "Network Error - Unable to connect to AI service";
+        } else if (err.response?.status === 401) {
+          errorMessage = "Authentication failed - Please login again";
+        } else if (err.response?.status === 500) {
+          errorMessage = "Server error - Please try again later";
+        } else if (err.response?.data?.error) {
+          errorMessage = err.response.data.error;
+        } else if (err.message) {
+          errorMessage = err.message;
+        }
+        
+        setError(errorMessage);
       } finally {
         setIsLoading(false);
       }
     };
-
     generateItinerary();
   }, []); // Only run once on mount
 

@@ -9,14 +9,17 @@ export const authenticateToken = async (req, res, next) => {
       return res.status(401).json({ error: 'Access denied' });
     }
     
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret');
-    const user = await User.findById(decoded.userId);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as any;
+    // Handle both token formats: { sub: userId } and { userId: userId }
+    const userId = decoded.sub || decoded.userId;
+    const user = await User.findById(userId);
     
     if (!user) {
       return res.status(401).json({ error: 'Invalid token' });
     }
     
     req.user = user;
+    req.userId = userId; // Add userId for compatibility
     next();
   } catch (error) {
     console.error('Auth middleware error:', error);

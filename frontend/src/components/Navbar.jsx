@@ -14,6 +14,7 @@ export default function Navbar({ showSearch = false }) {
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [searchError, setSearchError] = useState(null);
   const searchRef = useRef(null);
   const location = useLocation();
   const searchTimeout = useRef(null);
@@ -50,25 +51,30 @@ export default function Navbar({ showSearch = false }) {
     searchTimeout.current = setTimeout(async () => {
       try {
         setLoading(true);
-        console.log('Searching for:', searchQuery.trim()); // Debug log
+        setSearchError(null);
+        console.log('[SEARCH] Searching for:', searchQuery.trim());
         
         // Use autocomplete API for suggestions
         const results = await apiGetLocationSuggestions(searchQuery.trim(), 8);
-        console.log('Autocomplete results:', results); // Debug log
+        console.log('[SEARCH] Autocomplete results:', results);
+        
+        // Ensure results is an array
+        const validResults = Array.isArray(results) ? results : [];
         
         // Only update suggestions and show them if we still have a valid query
         if (searchQuery.trim().length >= 2) {
-          setSuggestions(results);
-          setShowSuggestions(true);
+          setSuggestions(validResults);
+          setShowSuggestions(true); // Always show dropdown, even if empty
         }
       } catch (error) {
-        console.error("Error fetching search suggestions:", error);
+        console.error("[SEARCH] Error fetching search suggestions:", error);
+        setSearchError(error.message || 'Search failed');
         setSuggestions([]);
-        setShowSuggestions(false);
+        setShowSuggestions(true); // Show dropdown with error
       } finally {
         setLoading(false);
       }
-    }, 200); // Increased to 200ms for better stability
+    }, 300); // Increased to 300ms for better stability
 
     // Cleanup on component unmount
     return () => {
@@ -99,6 +105,7 @@ export default function Navbar({ showSearch = false }) {
     setSearchQuery("");
     setSuggestions([]);
     setShowSuggestions(false);
+    setSearchError(null);
   };
 
   const handleInputFocus = () => {
@@ -170,6 +177,7 @@ export default function Navbar({ showSearch = false }) {
                 loading={loading}
                 onSelectSuggestion={handleSelectSuggestion}
                 visible={showSuggestions}
+                error={searchError}
               />
             </div>
           </div>
