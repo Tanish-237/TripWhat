@@ -41,7 +41,14 @@ export function AuthProvider({ children }) {
         // Backend returns { user: { id, name, email } }
         setUser(data.user);
       } else {
-        console.log("[AUTH] Invalid token, removing from storage");
+        console.log(
+          "[AUTH] Token validation failed with status:",
+          response.status
+        );
+        const errorData = await response
+          .json()
+          .catch(() => ({ message: "Unknown error" }));
+        console.log("[AUTH] Error details:", errorData);
         localStorage.removeItem("tripwhat_token");
       }
     } catch (error) {
@@ -81,6 +88,8 @@ export function AuthProvider({ children }) {
 
     localStorage.setItem("tripwhat_token", token);
     setUser(user);
+
+    return user; // Return user data so login page can handle redirect
   };
 
   const signup = async (email, password, preferences) => {

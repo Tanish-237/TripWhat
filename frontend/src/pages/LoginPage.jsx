@@ -53,10 +53,17 @@ export default function LoginPage() {
       }
 
       // Use auth context to login (this handles token storage and user state)
-      await login(formData.email, formData.password);
+      const user = await login(formData.email, formData.password);
 
-      // Redirect to plan page after successful login
-      navigate("/plan", { replace: true });
+      console.log("[LOGIN] Login successful, user:", user);
+
+      // The useEffect hook should handle the redirect, but let's add a fallback
+      setTimeout(() => {
+        if (user) {
+          console.log("[LOGIN] Forcing redirect to /plan");
+          navigate("/plan", { replace: true });
+        }
+      }, 100);
     } catch (err) {
       setError(err.message || "Login failed");
     } finally {

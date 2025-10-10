@@ -20,7 +20,7 @@ export default function Navbar() {
         </Link>
 
         {/* Navigation Links */}
-        {isAuthenticated && (
+        {/* {isAuthenticated && (
           <div className="hidden md:flex items-center gap-6">
             <Link
               to="/plan"
@@ -35,33 +35,22 @@ export default function Navbar() {
               Saved Trips
             </Link>
           </div>
-        )}
+        )} */}
 
         {/* Auth Buttons */}
         <div className="flex items-center gap-3">
-          {isAuthenticated ? (
-            <>
-              <span className="text-sm text-gray-600 hidden sm:block">
-                Welcome, {user?.name}
-              </span>
-              <Button variant="outline" onClick={logout} className="text-black">
-                Logout
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button variant="outline" asChild>
-                <Link to="/login" className="text-black">
-                  Login
-                </Link>
-              </Button>
-              <Button asChild className="bg-black">
-                <Link className="text-white" to="/signup">
-                  Sign Up
-                </Link>
-              </Button>
-            </>
-          )}
+          <>
+            <Button variant="outline" asChild>
+              <Link to="/login" className="text-black">
+                Login
+              </Link>
+            </Button>
+            <Button asChild className="bg-black">
+              <Link className="text-white" to="/signup">
+                Sign Up
+              </Link>
+            </Button>
+          </>
         </div>
       </nav>
     </header>
