@@ -1,15 +1,34 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import Navbar from "../components/Navbar.jsx";
 import { motion } from "framer-motion";
+import { MapPin } from "lucide-react";
 
 export default function LandingPage() {
   return (
     <main className="min-h-screen relative">
-      {/* Sticky Navbar */}
+      {/* Custom landing page header */}
       <div className="fixed top-0 left-0 w-full z-50 shadow-md bg-white">
-        <Navbar />
+        <header className="max-w-7xl mx-auto flex items-center justify-between px-6 md:px-10 py-4">
+          <div className="flex items-center gap-3 text-xl md:text-2xl font-bold text-black">
+            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-pink-500 shadow-md">
+              <MapPin className="w-4 h-4 text-white" />
+            </div>
+            TripWhat
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" asChild>
+              <Link to="/login" className="text-black">
+                Login
+              </Link>
+            </Button>
+            <Button asChild className="bg-black">
+              <Link className="text-white" to="/signup">
+                Sign Up
+              </Link>
+            </Button>
+          </div>
+        </header>
       </div>
 
       <div className="pt-16">

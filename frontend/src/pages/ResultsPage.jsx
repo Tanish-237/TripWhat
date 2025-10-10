@@ -6,6 +6,7 @@ import TripPlanningSidebar from "@/components/TripPlanningSidebar";
 import { useTrip } from "@/contexts/TripContext";
 import { getToken } from "@/lib/api";
 import axios from "axios";
+import Navbar from "@/components/Navbar";
 import {
   Sparkles,
   MapPin,
@@ -185,8 +186,10 @@ const ResultsPage = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-50 text-black">
-      <TripPlanningSidebar
+    <div className="flex flex-col min-h-screen bg-gray-50 text-black">
+      <Navbar />
+      <div className="flex flex-1">
+        <TripPlanningSidebar
         currentStep="results"
         onStepClick={handleStepClick}
         tripData={tripData}
@@ -402,6 +405,7 @@ const ResultsPage = () => {
             </Button>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );
