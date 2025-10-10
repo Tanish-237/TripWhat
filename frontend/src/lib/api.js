@@ -1,5 +1,5 @@
-// Use environment variable if available, otherwise fallback to port 5000
-const API_BASE_URL = import.meta.env.BACKEND_URL || "http://localhost:8080";
+// Use environment variable if available, otherwise fallback to port 8080
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
 
 async function request(path, options = {}) {
   const res = await fetch(`${API_BASE_URL}${path}`, {
@@ -122,6 +122,14 @@ export async function apiGetSavedTrip(id, token) {
   return request(`/api/saved-trips/${id}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
+}
+
+export async function apiSearchPlaces(query, limit = 5) {
+  return request(`/api/places/search?query=${encodeURIComponent(query)}&limit=${limit}`);
+}
+
+export async function apiGetLocationSuggestions(query, limit = 8) {
+  return request(`/api/places/autocomplete?query=${encodeURIComponent(query)}&limit=${limit}`);
 }
 
 export async function apiUpdateSavedTrip(id, payload, token) {

@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import TripPlanningSidebar from "@/components/TripPlanningSidebar";
 import { useTrip } from "@/contexts/TripContext";
+import Navbar from "@/components/Navbar";
 import {
   Plus,
   CalendarIcon,
@@ -95,107 +96,7 @@ const DatePicker = ({ selected, onSelect }) => {
   );
 };
 
-import { getToken, clearToken } from "@/lib/api";
-
-const DashboardNav = () => {
-  const [searchQuery, setSearchQuery] = useState("");
-  const isAuthenticated = Boolean(getToken());
-  const handleLogout = () => {
-    clearToken();
-    window.location.href = "/";
-  };
-
-  return (
-    <nav className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm w-full">
-      <div className="px-4 w-full">
-        <div className="flex h-16 items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-pink-500 shadow-lg">
-              <MapPin className="w-5 h-5 text-white" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-lg font-bold text-gray-900">TripWhat</span>
-              <span className="text-[10px] text-gray-500 -mt-1">
-                Plan Smarter
-              </span>
-            </div>
-          </div>
-
-          <div className="flex-1 max-w-2xl mx-8">
-            <div className="relative">
-              <Input
-                type="text"
-                placeholder="Search destinations, trips, experiences..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full h-11 pl-12 pr-4 text-base bg-gray-50 border-gray-200 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-full"
-              />
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <svg
-                  className="h-5 w-5 text-gray-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              className="text-gray-600 hover:text-white hover:bg-gradient-to-r hover:from-blue-500/90 hover:to-pink-500/90 hover:backdrop-blur-sm px-4 py-2 transition-all duration-300"
-            >
-              Explore
-            </Button>
-            <Button
-              variant="ghost"
-              className="text-gray-600 hover:text-white hover:bg-gradient-to-r hover:from-pink-500/90 hover:to-blue-500/90 hover:backdrop-blur-sm px-4 py-2 transition-all duration-300"
-            >
-              Trips
-            </Button>
-            <Button
-              variant="ghost"
-              className="text-gray-600 hover:text-white hover:bg-gradient-to-r hover:from-pink-500/90 hover:to-blue-500/90 hover:backdrop-blur-sm px-4 py-2 transition-all duration-300"
-            >
-              <Link to="/saved-trips">Saved Trips</Link>
-            </Button>
-            {/* Navigation Links */}
-            {/* <div className="hidden md:flex items-center gap-6"> */}
-            {/* <Link
-              to="/plan"
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Plan
-            </Link> */}
-
-            {/* </div> */}
-
-            {isAuthenticated && (
-              <div className="ml-4">
-                <Button
-                  variant="outline"
-                  onClick={handleLogout}
-                  className="px-4 text-white bg-black"
-                >
-                  Logout
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </nav>
-  );
-};
-
+// Dashboard components start here
 const QuickStats = () => {
   const stats = [
     { label: "Upcoming Trips", value: "2", icon: CalendarIcon },
@@ -703,7 +604,7 @@ export default function TripPlannerPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <DashboardNav />
+      <Navbar showSearch={true} />
       <div className="flex">
         <TripPlanningSidebar
           currentStep="destinations"

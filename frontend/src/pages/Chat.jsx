@@ -6,6 +6,7 @@ import { MessageInput } from '../components/Chat/MessageInput.jsx';
 import { Map } from '../components/Map.jsx';
 import { ItineraryOverlay } from '../components/ItineraryOverlay.jsx';
 import { parseItineraryFromMarkdown } from '../utils/itineraryParser.js';
+import Navbar from '../components/Navbar.jsx';
 import axios from 'axios';
 import { Plane, MapPin } from 'lucide-react';
 
@@ -28,187 +29,162 @@ export function Chat() {
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, agentStatus]);
+  }, [messages, isLoading]);
 
-  // Handle new messages from Socket.io
+  // Fetch conversation history on initial load
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        // Check if there's a conversation ID in local storage
+        const storedId = localStorage.getItem('tripwhat_conversation_id');
+        
+        if (storedId) {
+          setConversationId(storedId);
+          
+          // Get the message history for this conversation
+          const token = localStorage.getItem('tripwhat_token');
+          if (token) {
+            const response = await axios.get(`${API_URL}/api/chat/history/${storedId}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (response.data.messages && response.data.messages.length > 0) {
+              setMessages(response.data.messages);
+              
+              // Look for any itineraries in the messages
+              const botMessages = response.data.messages.filter(m => m.role === 'assistant');
+              if (botMessages.length > 0) {
+                const lastBotMessage = botMessages[botMessages.length - 1];
+                const extractedItinerary = parseItineraryFromMarkdown(lastBotMessage.content);
+                if (extractedItinerary) {
+                  setCurrentItinerary(extractedItinerary);
+                  
+                  // Extract locations for the map
+                  const locations = [];
+                  extractedItinerary.days.forEach(day => {
+                    day.activities.forEach(activity => {
+                      if (activity.location && activity.coordinates) {
+                        locations.push({
+                          name: activity.name,
+                          description: activity.description,
+                          lat: activity.coordinates.lat,
+                          lng: activity.coordinates.lng
+                        });
+                      }
+                    });
+                  });
+                  
+                  setMapLocations(locations);
+                }
+              }
+            }
+          }
+        } else {
+          // Create a new conversation
+          const token = localStorage.getItem('tripwhat_token');
+          if (token) {
+            const response = await axios.post(`${API_URL}/api/chat/conversation`, {}, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (response.data.conversationId) {
+              setConversationId(response.data.conversationId);
+              localStorage.setItem('tripwhat_conversation_id', response.data.conversationId);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch conversation history:', error);
+      }
+    };
+    
+    fetchHistory();
+  }, []);
+
+  // Process incoming messages from socket
   useEffect(() => {
     if (lastMessage) {
-      try {
-        const data = JSON.parse(lastMessage);
-        // Process if: (1) no conversationId yet (first message), OR (2) matches our conversationId
-        const shouldProcess = !conversationId || data.conversationId === conversationId;
+      // Add the message to the chat
+      setMessages(prev => [...prev, { role: 'assistant', content: lastMessage }]);
+      
+      // Look for itinerary data
+      const extractedItinerary = parseItineraryFromMarkdown(lastMessage);
+      if (extractedItinerary) {
+        setCurrentItinerary(extractedItinerary);
         
-        if (shouldProcess) {
-          console.log('[CHAT] Adding assistant message to UI');
-          
-          // Set conversationId if we don't have one yet
-          if (!conversationId && data.conversationId) {
-            setConversationId(data.conversationId);
-          }
-          
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: 'assistant',
-              content: data.message,
-              timestamp: new Date(),
-            },
-          ]);
-          setIsLoading(false);
-        }
-      } catch (e) {
-        console.error('[CHAT] Failed to parse message:', e);
+        // Extract locations for the map
+        const locations = [];
+        extractedItinerary.days.forEach(day => {
+          day.activities.forEach(activity => {
+            if (activity.location && activity.coordinates) {
+              locations.push({
+                name: activity.name,
+                description: activity.description,
+                lat: activity.coordinates.lat,
+                lng: activity.coordinates.lng
+              });
+            }
+          });
+        });
+        
+        setMapLocations(locations);
       }
+      
       clearLastMessage();
+      setIsLoading(false);
     }
-  }, [lastMessage, conversationId, clearLastMessage]);
-
-  // Handle errors from Socket.io
-  useEffect(() => {
+    
     if (lastError) {
-      try {
-        const data = JSON.parse(lastError);
-        // Process if: (1) no conversationId yet (first message), OR (2) matches our conversationId
-        const shouldProcess = !conversationId || data.conversationId === conversationId;
-        
-        if (shouldProcess) {
-          console.error('[CHAT] Adding error message to UI');
-          
-          // Set conversationId if we don't have one yet
-          if (!conversationId && data.conversationId) {
-            setConversationId(data.conversationId);
-          }
-          
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: 'assistant',
-              content: `Sorry, I encountered an error: ${data.error}`,
-              timestamp: new Date(),
-            },
-          ]);
-          setIsLoading(false);
-        }
-      } catch (e) {
-        console.error('[CHAT] Failed to parse error:', e);
-      }
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: "I'm sorry, I encountered an error while processing your request. Please try again." 
+      }]);
       clearLastError();
+      setIsLoading(false);
     }
-  }, [lastError, conversationId, clearLastError]);
-
-  // Parse itinerary when assistant message arrives
-  useEffect(() => {
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage && lastMessage.role === 'assistant') {
-      const parsed = parseItineraryFromMarkdown(lastMessage.content);
-      if (parsed) {
-        console.log('[CHAT] Parsed itinerary:', parsed);
-        setCurrentItinerary(parsed);
-        
-        // Extract locations for map
-        const allActivities = parsed.days.flatMap(day =>
-          day.timeSlots.flatMap(slot => slot.activities)
-        );
-        
-        const locations = allActivities
-          .filter(activity => activity.location.lat !== 0 && activity.location.lon !== 0)
-          .map(activity => ({
-            lat: activity.location.lat,
-            lon: activity.location.lon,
-            name: activity.name,
-            description: activity.category
-          }));
-        
-        if (locations.length > 0) {
-          setMapLocations(locations);
-        }
-      }
-    }
-  }, [messages]);
+  }, [lastMessage, lastError, clearLastMessage, clearLastError]);
 
   const handleSendMessage = async (message) => {
-    // Add user message immediately
-    const userMessage = {
-      role: 'user',
-      content: message,
-      timestamp: new Date(),
-    };
-    setMessages((prev) => [...prev, userMessage]);
+    if (!message.trim() || isLoading) return;
+    
+    // Add user message to chat
+    setMessages(prev => [...prev, { role: 'user', content: message }]);
     setIsLoading(true);
-
+    
     try {
-      // Get auth token
+      // Save message to backend
       const token = localStorage.getItem('tripwhat_token');
-      
-      if (!token) {
-        throw new Error('Not authenticated. Please log in.');
-      }
-
-      // Send to backend
-      const response = await axios.post(`${API_URL}/api/chat`, {
-        message,
+      await axios.post(`${API_URL}/api/chat/message`, {
         conversationId,
+        message,
+        role: 'user'
       }, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': `Bearer ${token}` }
       });
-
-      // Set conversation ID if this is the first message
-      if (!conversationId && response.data.conversationId) {
-        setConversationId(response.data.conversationId);
-      }
-
-      // Note: AI response will come via Socket.io
-      // The axios response is just for confirmation
-
+      
+      // The socket will handle the response
     } catch (error) {
-      console.error('Send message error:', error);
-      
-      let errorMessage = 'Sorry, I had trouble processing your message. Please try again.';
-      
-      if (axios.isAxiosError(error)) {
-        if (error.response?.status === 401) {
-          errorMessage = 'Please log in to continue chatting.';
-        } else if (error.response?.data?.error) {
-          errorMessage = error.response.data.error;
-        }
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-      
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: errorMessage,
-          timestamp: new Date(),
-        },
-      ]);
+      console.error('Failed to send message:', error);
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: "I'm sorry, I couldn't send your message. Please check your connection and try again." 
+      }]);
       setIsLoading(false);
     }
   };
 
   return (
     <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900">
-      {/* Header */}
-      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
+      {/* Navbar */}
+      <Navbar />
+      
+      {/* Connection Status */}
+      <div className="bg-white dark:bg-gray-800 px-6 py-2 border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center">
-              <Plane className="text-white" size={20} />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                TripWhat
-              </h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-                {isConnected ? 'Connected' : 'Disconnected'}
-              </p>
-            </div>
-          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+            {isConnected ? 'Connected to chat' : 'Disconnected'}
+          </p>
           
           {conversationId && (
             <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
@@ -217,7 +193,7 @@ export function Chat() {
             </div>
           )}
         </div>
-      </header>
+      </div>
 
       {/* Split View: Chat + Map */}
       <div className="flex-1 flex overflow-hidden">
@@ -234,70 +210,81 @@ export function Chat() {
                 Where would you like to go?
               </h2>
               <p className="text-gray-600 dark:text-gray-400 mb-8 max-w-md mx-auto">
-                I'm your AI travel assistant. Ask me about destinations, plan trips, or get recommendations!
+                Tell me your travel plans and I'll help you create the perfect itinerary with local recommendations.
               </p>
+              <div className="space-y-2">
+                <p className="text-sm text-gray-500 dark:text-gray-400">Try asking:</p>
+                <div className="space-y-2">
+                  <button 
+                    onClick={() => handleSendMessage("Plan a weekend trip to Paris for a couple interested in art and fine dining.")}
+                    className="block w-full py-2 px-4 bg-gray-100 dark:bg-gray-700 rounded-lg text-left text-sm text-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    "Plan a weekend trip to Paris for a couple interested in art and fine dining."
+                  </button>
+                  <button 
+                    onClick={() => handleSendMessage("I want to take my family to Tokyo for 5 days. We love anime and traditional culture.")}
+                    className="block w-full py-2 px-4 bg-gray-100 dark:bg-gray-700 rounded-lg text-left text-sm text-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    "I want to take my family to Tokyo for 5 days. We love anime and traditional culture."
+                  </button>
+                  <button 
+                    onClick={() => handleSendMessage("What are the must-visit places in New York City for a first-time visitor?")}
+                    className="block w-full py-2 px-4 bg-gray-100 dark:bg-gray-700 rounded-lg text-left text-sm text-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    "What are the must-visit places in New York City for a first-time visitor?"
+                  </button>
+                </div>
+              </div>
             </div>
           ) : (
-            // Messages
             <>
-              {messages.map((msg, index) => (
+              {messages.map((message, index) => (
                 <MessageBubble
                   key={index}
-                  role={msg.role}
-                  content={msg.content}
-                  timestamp={msg.timestamp}
-                  onViewItinerary={() => {
-                    const parsed = parseItineraryFromMarkdown(msg.content);
-                    if (parsed) {
-                      setCurrentItinerary(parsed);
-                      setIsItineraryOpen(true);
-                    }
-                  }}
+                  message={message.content}
+                  isUser={message.role === 'user'}
                 />
               ))}
+              {isLoading && <TypingIndicator />}
+              <div ref={messagesEndRef} />
             </>
           )}
-
-          {/* Typing Indicator */}
-          {(isLoading || agentStatus) && <TypingIndicator status={agentStatus} />}
-
-          {/* Scroll Anchor */}
-          <div ref={messagesEndRef} />
           </div>
-
-          {/* Input */}
-          <MessageInput
-        onSend={handleSendMessage}
-        disabled={isLoading || !isConnected}
-        placeholder={
-          isConnected
-            ? 'Ask me about your next trip...'
-            : 'Connecting to server...'
-        }
-      />
+          
+          {/* Message Input */}
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+            <MessageInput 
+              onSendMessage={handleSendMessage} 
+              isLoading={isLoading}
+              isDisabled={!isConnected}
+              placeholder={!isConnected ? "Connecting to chat server..." : "Type your message..."}
+            />
+          </div>
         </div>
-
+        
         {/* Map Panel - 65% */}
-        <div className="w-[65%] relative bg-gray-50 dark:bg-gray-900">
+        <div className="w-[65%] relative">
           <Map locations={mapLocations} />
+          
+          {/* Itinerary Overlay Button */}
+          {currentItinerary && (
+            <button
+              onClick={() => setIsItineraryOpen(!isItineraryOpen)}
+              className="absolute top-4 right-4 z-10 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            >
+              {isItineraryOpen ? "Hide Itinerary" : "View Itinerary"}
+            </button>
+          )}
+          
+          {/* Itinerary Overlay */}
+          {currentItinerary && isItineraryOpen && (
+            <ItineraryOverlay 
+              itinerary={currentItinerary}
+              onClose={() => setIsItineraryOpen(false)}
+            />
+          )}
         </div>
       </div>
-
-      {/* Itinerary Overlay */}
-      <ItineraryOverlay
-        itinerary={currentItinerary}
-        isOpen={isItineraryOpen}
-        onClose={() => setIsItineraryOpen(false)}
-        onActivityClick={(activity) => {
-          // Center map on selected activity
-          setMapLocations([{
-            lat: activity.location.lat,
-            lon: activity.location.lon,
-            name: activity.name,
-            description: activity.description
-          }]);
-        }}
-      />
     </div>
   );
 }

@@ -21,6 +21,8 @@ import ResultsPage from "./pages/ResultsPage.jsx";
 import ItineraryPage from "./pages/ItineraryPage.jsx";
 import SavedTripsPage from "./pages/SavedTripsPage.jsx";
 import UpcomingTripsPage from "./pages/UpcomingTripsPage.jsx";
+import SearchPage from "./pages/SearchPage.jsx";
+import ProfilePage from "./pages/ProfilePage.jsx";
 import Home from "./pages/Home.jsx";
 import { Chat } from "./pages/Chat.jsx";
 
@@ -151,6 +153,24 @@ function AppContent() {
           element={
             <ProtectedRoute>
               <Chat />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/search"
+          element={
+            <ProtectedRoute>
+              <SearchPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute>
+              <ProfilePage />
             </ProtectedRoute>
           }
         />

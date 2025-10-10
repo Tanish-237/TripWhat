@@ -6,6 +6,7 @@ import connectDB from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import tripRoutes from "./routes/tripRoutes.js";
 import savedTripRoutes from "./routes/savedTripRoutes.js";
+import placesRoutes from "./routes/placesRoutes.js";
 import auth from "./middleware/auth.js";
 import { google } from "googleapis";
 import jwt from "jsonwebtoken";
@@ -24,6 +25,7 @@ connectDB();
 app.use("/api/auth", authRoutes);
 app.use("/api/trips", tripRoutes);
 app.use("/api/saved-trips", savedTripRoutes);
+app.use("/api/places", placesRoutes);
 
 // In-memory token store; for production, persist to DB
 const userGoogleTokens = new Map();
