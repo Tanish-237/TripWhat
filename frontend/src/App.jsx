@@ -21,6 +21,7 @@ import ResultsPage from "./pages/ResultsPage.jsx";
 import ItineraryPage from "./pages/ItineraryPage.jsx";
 import SavedTripsPage from "./pages/SavedTripsPage.jsx";
 import UpcomingTripsPage from "./pages/UpcomingTripsPage.jsx";
+import CompletedTripsPage from "./pages/CompletedTripsPage.jsx";
 import SearchPage from "./pages/SearchPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
 import Home from "./pages/Home.jsx";
@@ -144,6 +145,15 @@ function AppContent() {
           element={
             <ProtectedRoute>
               <UpcomingTripsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/completed-trips"
+          element={
+            <ProtectedRoute>
+              <CompletedTripsPage />
             </ProtectedRoute>
           }
         />

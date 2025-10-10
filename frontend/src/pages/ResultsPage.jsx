@@ -225,7 +225,7 @@ const ResultsPage = () => {
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 text-black">
       <Navbar />
-      <div className="flex flex-1">
+      <div className="flex flex-1 pt-0">
         <TripPlanningSidebar
         currentStep="results"
         onStepClick={handleStepClick}

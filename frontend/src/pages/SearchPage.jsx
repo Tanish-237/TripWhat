@@ -71,15 +71,15 @@ export default function SearchPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200">
+    <div className="min-h-screen bg-white">
       <Navbar />
       
       <main className="container max-w-6xl mx-auto px-4 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-800">
+          <h1 className="text-3xl font-bold text-gray-900">
             Search Results for "{searchQuery}"
           </h1>
-          <p className="text-slate-600 mt-2">
+          <p className="text-gray-600 mt-2">
             Showing {searchResults.length} results
           </p>
         </div>
