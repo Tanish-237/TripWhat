@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ItineraryMap } from "@/components/ItineraryMap";
 import { ChatSidebar } from "@/components/ChatSidebar";
+import { TimelineItinerary } from "@/components/TimelineItinerary";
 import {
   apiSaveTrip,
   apiCheckTripSaved,
@@ -45,14 +46,16 @@ import {
   Loader2,
   Clock,
   MessageSquare,
+  ListOrdered,
 } from "lucide-react";
 
 const ItineraryPage = () => {
   const navigate = useNavigate();
   const { tripData } = useTrip();
   const { isAuthenticated, user } = useAuth();
-  const [activeTab, setActiveTab] = useState("itinerary");
+  const [activeTab, setActiveTab] = useState("timeline");
   const [selectedDay, setSelectedDay] = useState(1);
+  const [activeTimelineDay, setActiveTimelineDay] = useState(1);
   const [completedActivities, setCompletedActivities] = useState(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const [showOnlyIncomplete, setShowOnlyIncomplete] = useState(false);
@@ -63,6 +66,8 @@ const ItineraryPage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  
+  const scrollContainerRef = React.useRef(null);
 
   // Handle different data structures for itinerary
   const itinerary =
@@ -597,46 +602,103 @@ const ItineraryPage = () => {
               </div>
             </div>
           </div>
-          <div className="flex gap-6">
-            {/* Sidebar Navigation */}
-            <div className="w-80 bg-white border border-gray-200 rounded-lg shadow-sm overflow-y-auto max-h-[calc(100vh-200px)]">
-              {/* Tabs */}
-              <div className="p-6 border-b border-gray-200">
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    {
-                      id: "itinerary",
-                      icon: List,
-                      label: "Itinerary",
-                      color: "blue",
-                    },
-                    {
-                      id: "calendar",
-                      icon: Calendar,
-                      label: "Overview",
-                      color: "purple",
-                    },
-                    { id: "map", icon: MapIcon, label: "Map", color: "pink" },
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`relative px-4 py-3 text-sm font-semibold rounded-lg transition-all duration-300 ${
-                        activeTab === tab.id
-                          ? tab.color === "blue"
-                            ? "bg-blue-500 text-white shadow-md"
-                            : tab.color === "purple"
-                            ? "bg-purple-500 text-white shadow-md"
-                            : "bg-pink-500 text-white shadow-md"
-                          : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-                      }`}
-                    >
-                      <tab.icon className="w-4 h-4 mx-auto mb-1" />
-                      <div className="text-xs">{tab.label}</div>
+
+        <div className="flex gap-6">
+          {/* Sidebar Navigation */}
+          <div className="w-80 bg-white border border-gray-200 rounded-lg shadow-sm overflow-y-auto max-h-[calc(100vh-200px)]">
+            {/* Tabs */}
+            <div className="p-6 border-b border-gray-200">
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  {
+                    id: "timeline",
+                    icon: ListOrdered,
+                    label: "Timeline",
+                    color: "indigo",
+                  },
+                  {
+                    id: "itinerary",
+                    icon: List,
+                    label: "Itinerary",
+                    color: "blue",
+                  },
+                  {
+                    id: "calendar",
+                    icon: Calendar,
+                    label: "Overview",
+                    color: "purple",
+                  },
+                  { id: "map", icon: MapIcon, label: "Map", color: "pink" },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`relative px-3 py-3 text-sm font-semibold rounded-lg transition-all duration-300 ${
+                      activeTab === tab.id
+                        ? tab.color === "indigo"
+                          ? "bg-indigo-500 text-white shadow-md"
+                          : tab.color === "blue"
+                          ? "bg-blue-500 text-white shadow-md"
+                          : tab.color === "purple"
+                          ? "bg-purple-500 text-white shadow-md"
+                          : "bg-pink-500 text-white shadow-md"
+                        : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                    }`}
+                  >
+                    <tab.icon className="w-4 h-4 mx-auto mb-1" />
+                    <div className="text-xs">{tab.label}</div>
                     </button>
                   ))}
                 </div>
               </div>
+
+          {/* Timeline Day Navigation */}
+          {activeTab === "timeline" && (
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                Days
+              </h3>
+              <div className="space-y-2">
+                {days?.map((day, index) => {
+                  const isActive = activeTimelineDay === day.dayNumber;
+                  return (
+                    <button
+                      key={day.dayNumber}
+                      onClick={() => {
+                        const element = document.getElementById(`day-${day.dayNumber}`);
+                        const container = scrollContainerRef.current;
+                        if (element && container) {
+                          const elementTop = element.offsetTop;
+                          container.scrollTo({ top: elementTop - 100, behavior: 'smooth' });
+                        }
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-lg transition-all duration-200 ${
+                        isActive
+                          ? 'bg-blue-600 text-white shadow-md'
+                          : 'bg-gray-50 text-gray-700 hover:bg-blue-50 hover:text-blue-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                          isActive
+                            ? 'bg-white text-blue-600'
+                            : 'bg-blue-100 text-blue-600'
+                        }`}>
+                          {index + 1}
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold">{day.title || `Day ${day.dayNumber}`}</p>
+                          <p className={`text-xs ${isActive ? 'text-blue-100' : 'text-gray-500'}`}>
+                            {day.timeSlots?.reduce((sum, slot) => sum + (slot.activities?.length || 0), 0) || 0} activities
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
               {/* Day Selection */}
               {activeTab === "itinerary" && (
@@ -679,59 +741,74 @@ const ItineraryPage = () => {
                 </div>
               )}
 
-              {/* Overview Stats */}
-              {activeTab === "calendar" && (
-                <div className="p-6 space-y-4">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                    Trip Stats
-                  </h3>
-                  {[
-                    {
-                      label: "Total Days",
-                      value: days?.length || 0,
-                      icon: Calendar,
-                      color: "blue",
-                    },
-                    {
-                      label: "Activities",
-                      value: getTotalActivities(),
-                      icon: Sparkles,
-                      color: "purple",
-                    },
-                    {
-                      label: "Completed",
-                      value: completedActivities.size,
-                      icon: CheckCircle2,
-                      color: "green",
-                    },
-                  ].map((stat, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center gap-3 p-3 bg-white/50 rounded-lg"
-                    >
-                      <div
-                        className={`w-10 h-10 bg-${stat.color}-500 rounded-lg flex items-center justify-center`}
-                      >
-                        <stat.icon className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <div className="text-xl font-bold text-gray-900">
-                          {stat.value}
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          {stat.label}
-                        </div>
-                      </div>
+          {/* Overview Stats */}
+          {activeTab === "calendar" && (
+            <div className="p-6 space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                Trip Stats
+              </h3>
+              {[
+                {
+                  label: "Total Days",
+                  value: days?.length || 0,
+                  icon: Calendar,
+                  color: "blue",
+                },
+                {
+                  label: "Activities",
+                  value: getTotalActivities(),
+                  icon: Sparkles,
+                  color: "purple",
+                },
+                {
+                  label: "Completed",
+                  value: completedActivities.size,
+                  icon: CheckCircle2,
+                  color: "green",
+                },
+              ].map((stat, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-3 p-3 bg-white/50 rounded-lg"
+                >
+                  <div
+                    className={`w-10 h-10 bg-${stat.color}-500 rounded-lg flex items-center justify-center`}
+                  >
+                    <stat.icon className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <div className="text-xl font-bold text-gray-900">
+                      {stat.value}
                     </div>
-                  ))}
+                    <div className="text-sm text-gray-600">
+                      {stat.label}
+                    </div>
+                  </div>
                 </div>
-              )}
+              ))}
             </div>
+          )}
+        </div>
 
-            {/* Main Content */}
-            <div className="flex-1 bg-white border border-gray-200 rounded-lg shadow-sm overflow-y-auto max-h-[calc(100vh-200px)]">
-              {/* Itinerary Tab */}
-              {activeTab === "itinerary" && selectedDayData && (
+          {/* Main Content */}
+          <div 
+            ref={scrollContainerRef}
+            className="flex-1 bg-white border border-gray-200 rounded-lg shadow-sm overflow-y-auto max-h-[calc(100vh-200px)]"
+          >
+          {/* Timeline Tab */}
+          {activeTab === "timeline" && (
+            <div className="p-8">
+              <TimelineItinerary 
+                itinerary={itinerary} 
+                tripData={tripData} 
+                onActiveDayChange={setActiveTimelineDay}
+                scrollContainerRef={scrollContainerRef}
+              />
+            </div>
+          )}
+
+          {/* Itinerary Tab */}
+          {activeTab === "itinerary" && selectedDayData && (
                 <div className="p-8">
                   <div className="max-w-4xl mx-auto">
                     {/* Day Header */}

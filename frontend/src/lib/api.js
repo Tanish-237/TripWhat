@@ -239,3 +239,39 @@ export async function apiGetTripStatistics(token) {
     headers: { Authorization: `Bearer ${token}` },
   });
 }
+
+// Travel Data APIs
+export async function apiGetFlightOffers(params, token) {
+  const queryString = new URLSearchParams(params).toString();
+  return request(`/api/travel-data/flights?${queryString}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function apiGetHotelOffers(params, token) {
+  const queryString = new URLSearchParams(params).toString();
+  return request(`/api/travel-data/hotels?${queryString}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function apiGetEvents(params, token) {
+  const queryString = new URLSearchParams(params).toString();
+  return request(`/api/travel-data/events?${queryString}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function apiGetWeatherForecast(params, token) {
+  const queryString = new URLSearchParams(params).toString();
+  return request(`/api/travel-data/weather?${queryString}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function apiGetRestaurants(params, token) {
+  const queryString = new URLSearchParams(params).toString();
+  return request(`/api/travel-data/restaurants?${queryString}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
