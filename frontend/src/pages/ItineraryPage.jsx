@@ -15,6 +15,7 @@ import {
   getToken,
 } from "@/lib/api";
 import { toast } from "react-toastify";
+import { fetchWeatherData, getWeatherTip } from "@/utils/weatherService";
 import {
   Calendar,
   MapPin,
@@ -47,6 +48,14 @@ import {
   Clock,
   MessageSquare,
   ListOrdered,
+  Cloud,
+  CloudRain,
+  CloudSnow,
+  CloudDrizzle,
+  Zap,
+  Wind,
+  Thermometer,
+  Droplets,
 } from "lucide-react";
 
 const ItineraryPage = () => {
@@ -66,14 +75,88 @@ const ItineraryPage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  
+
   const scrollContainerRef = React.useRef(null);
+  const [weatherData, setWeatherData] = useState(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [timelineWeatherData, setTimelineWeatherData] = useState(null);
+  const [timelineWeatherLoading, setTimelineWeatherLoading] = useState(false);
 
   // Handle different data structures for itinerary
   const itinerary =
     tripData?.generatedItinerary?.itinerary ||
     tripData?.generatedItinerary ||
     null;
+
+  // Function to get weather data for a specific trip date
+  const getWeatherForTripDate = async (lat, lon, cityName, tripDate) => {
+    setWeatherLoading(true);
+    try {
+      const weather = await fetchWeatherData(lat, lon, cityName, tripDate);
+      setWeatherData(weather);
+    } catch (error) {
+      console.error("Weather fetch error:", error);
+      setWeatherData(null);
+    } finally {
+      setWeatherLoading(false);
+    }
+  };
+
+  // Function to get weather data for timeline day
+  const getTimelineWeatherForTripDate = async (
+    lat,
+    lon,
+    cityName,
+    tripDate
+  ) => {
+    setTimelineWeatherLoading(true);
+    try {
+      const weather = await fetchWeatherData(lat, lon, cityName, tripDate);
+      setTimelineWeatherData(weather);
+    } catch (error) {
+      console.error("Timeline weather fetch error:", error);
+      setTimelineWeatherData(null);
+    } finally {
+      setTimelineWeatherLoading(false);
+    }
+  };
+
+  // Calculate the actual date for the selected day of the trip
+  const getTripDateForDay = (dayNumber) => {
+    if (!tripData?.startDate || !dayNumber) return null;
+
+    const startDate = new Date(tripData.startDate);
+    const tripDate = new Date(startDate);
+    tripDate.setDate(startDate.getDate() + (dayNumber - 1));
+
+    return tripDate;
+  };
+
+  // Get location from selected day's first activity
+  const getSelectedDayLocation = (dayData) => {
+    if (!dayData || !dayData.timeSlots) return null;
+
+    for (const slot of dayData.timeSlots) {
+      if (slot.activities && slot.activities.length > 0) {
+        const activity = slot.activities[0];
+        if (
+          activity.location &&
+          activity.location.latitude &&
+          activity.location.longitude
+        ) {
+          return {
+            lat: activity.location.latitude,
+            lon: activity.location.longitude,
+            city:
+              activity.location.city ||
+              activity.location.address?.split(",")[0] ||
+              "Unknown",
+          };
+        }
+      }
+    }
+    return null;
+  };
 
   console.log("📊 ItineraryPage - tripData:", tripData);
   console.log("📊 ItineraryPage - itinerary:", itinerary);
@@ -381,6 +464,39 @@ const ItineraryPage = () => {
   const selectedDayData =
     days?.find((d) => d.dayNumber === selectedDay) || days?.[0];
 
+  // Fetch weather when selected day changes
+  useEffect(() => {
+    const location = getSelectedDayLocation(selectedDayData);
+    const tripDate = getTripDateForDay(selectedDay);
+
+    if (location && tripDate) {
+      getWeatherForTripDate(
+        location.lat,
+        location.lon,
+        location.city,
+        tripDate
+      );
+    }
+  }, [selectedDay, selectedDayData, tripData?.startDate]);
+
+  // Fetch weather when active timeline day changes
+  useEffect(() => {
+    const timelineDayData = days?.find(
+      (d) => d.dayNumber === activeTimelineDay
+    );
+    const location = getSelectedDayLocation(timelineDayData);
+    const tripDate = getTripDateForDay(activeTimelineDay);
+
+    if (location && tripDate) {
+      getTimelineWeatherForTripDate(
+        location.lat,
+        location.lon,
+        location.city,
+        tripDate
+      );
+    }
+  }, [activeTimelineDay, days, tripData?.startDate]);
+
   const getTotalActivities = () => {
     return (
       days?.reduce(
@@ -419,6 +535,30 @@ const ItineraryPage = () => {
         <Clock className="w-5 h-5 text-gray-500" />
       )
     );
+  };
+
+  const getWeatherIcon = (weatherMain, description) => {
+    const weatherLower = weatherMain?.toLowerCase() || "";
+    const descLower = description?.toLowerCase() || "";
+
+    if (weatherLower.includes("clear") || weatherLower.includes("sun")) {
+      return <Sun className="w-6 h-6 text-yellow-500" />;
+    } else if (weatherLower.includes("cloud")) {
+      return <Cloud className="w-6 h-6 text-gray-500" />;
+    } else if (weatherLower.includes("rain") || descLower.includes("rain")) {
+      return <CloudRain className="w-6 h-6 text-blue-500" />;
+    } else if (weatherLower.includes("drizzle")) {
+      return <CloudDrizzle className="w-6 h-6 text-blue-400" />;
+    } else if (weatherLower.includes("snow")) {
+      return <CloudSnow className="w-6 h-6 text-blue-200" />;
+    } else if (
+      weatherLower.includes("thunder") ||
+      descLower.includes("storm")
+    ) {
+      return <Zap className="w-6 h-6 text-purple-500" />;
+    } else {
+      return <Cloud className="w-6 h-6 text-gray-500" />;
+    }
   };
 
   const toggleActivityComplete = (dayNum, slotIndex, actIndex) => {
@@ -602,103 +742,240 @@ const ItineraryPage = () => {
               </div>
             </div>
           </div>
-
-        <div className="flex gap-6">
-          {/* Sidebar Navigation */}
-          <div className="w-80 bg-white border border-gray-200 rounded-lg shadow-sm overflow-y-auto max-h-[calc(100vh-200px)]">
-            {/* Tabs */}
-            <div className="p-6 border-b border-gray-200">
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  {
-                    id: "timeline",
-                    icon: ListOrdered,
-                    label: "Timeline",
-                    color: "indigo",
-                  },
-                  {
-                    id: "itinerary",
-                    icon: List,
-                    label: "Itinerary",
-                    color: "blue",
-                  },
-                  {
-                    id: "calendar",
-                    icon: Calendar,
-                    label: "Overview",
-                    color: "purple",
-                  },
-                  { id: "map", icon: MapIcon, label: "Map", color: "pink" },
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`relative px-3 py-3 text-sm font-semibold rounded-lg transition-all duration-300 ${
-                      activeTab === tab.id
-                        ? tab.color === "indigo"
-                          ? "bg-indigo-500 text-white shadow-md"
-                          : tab.color === "blue"
-                          ? "bg-blue-500 text-white shadow-md"
-                          : tab.color === "purple"
-                          ? "bg-purple-500 text-white shadow-md"
-                          : "bg-pink-500 text-white shadow-md"
-                        : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-                    }`}
-                  >
-                    <tab.icon className="w-4 h-4 mx-auto mb-1" />
-                    <div className="text-xs">{tab.label}</div>
+          <div className="flex gap-6">
+            {/* Sidebar Navigation */}
+            <div className="w-80 bg-white border border-gray-200 rounded-lg shadow-sm overflow-y-auto max-h-[calc(100vh-200px)]">
+              {/* Tabs */}
+              <div className="p-6 border-b border-gray-200">
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    {
+                      id: "timeline",
+                      icon: ListOrdered,
+                      label: "Timeline",
+                      color: "indigo",
+                    },
+                    {
+                      id: "itinerary",
+                      icon: List,
+                      label: "Itinerary",
+                      color: "blue",
+                    },
+                    {
+                      id: "calendar",
+                      icon: Calendar,
+                      label: "Overview",
+                      color: "purple",
+                    },
+                    { id: "map", icon: MapIcon, label: "Map", color: "pink" },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`relative px-3 py-3 text-sm font-semibold rounded-lg transition-all duration-300 ${
+                        activeTab === tab.id
+                          ? tab.color === "indigo"
+                            ? "bg-indigo-500 text-white shadow-md"
+                            : tab.color === "blue"
+                            ? "bg-blue-500 text-white shadow-md"
+                            : tab.color === "purple"
+                            ? "bg-purple-500 text-white shadow-md"
+                            : "bg-pink-500 text-white shadow-md"
+                          : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                      }`}
+                    >
+                      <tab.icon className="w-4 h-4 mx-auto mb-1" />
+                      <div className="text-xs">{tab.label}</div>
                     </button>
                   ))}
                 </div>
               </div>
 
-          {/* Timeline Day Navigation */}
-          {activeTab === "timeline" && (
-            <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Days
-              </h3>
-              <div className="space-y-2">
-                {days?.map((day, index) => {
-                  const isActive = activeTimelineDay === day.dayNumber;
-                  return (
-                    <button
-                      key={day.dayNumber}
-                      onClick={() => {
-                        const element = document.getElementById(`day-${day.dayNumber}`);
-                        const container = scrollContainerRef.current;
-                        if (element && container) {
-                          const elementTop = element.offsetTop;
-                          container.scrollTo({ top: elementTop - 100, behavior: 'smooth' });
-                        }
-                      }}
-                      className={`w-full text-left px-4 py-3 rounded-lg transition-all duration-200 ${
-                        isActive
-                          ? 'bg-blue-600 text-white shadow-md'
-                          : 'bg-gray-50 text-gray-700 hover:bg-blue-50 hover:text-blue-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                          isActive
-                            ? 'bg-white text-blue-600'
-                            : 'bg-blue-100 text-blue-600'
-                        }`}>
-                          {index + 1}
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-semibold">{day.title || `Day ${day.dayNumber}`}</p>
-                          <p className={`text-xs ${isActive ? 'text-blue-100' : 'text-gray-500'}`}>
-                            {day.timeSlots?.reduce((sum, slot) => sum + (slot.activities?.length || 0), 0) || 0} activities
-                          </p>
+              {/* Timeline Day Navigation */}
+              {activeTab === "timeline" && (
+                <div className="p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    Days
+                  </h3>
+                  <div className="space-y-2">
+                    {days?.map((day, index) => {
+                      const isActive = activeTimelineDay === day.dayNumber;
+                      return (
+                        <button
+                          key={day.dayNumber}
+                          onClick={() => {
+                            const element = document.getElementById(
+                              `day-${day.dayNumber}`
+                            );
+                            const container = scrollContainerRef.current;
+                            if (element && container) {
+                              const elementTop = element.offsetTop;
+                              container.scrollTo({
+                                top: elementTop - 100,
+                                behavior: "smooth",
+                              });
+                            }
+                          }}
+                          className={`w-full text-left px-4 py-3 rounded-lg transition-all duration-200 ${
+                            isActive
+                              ? "bg-blue-600 text-white shadow-md"
+                              : "bg-gray-50 text-gray-700 hover:bg-blue-50 hover:text-blue-700"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div
+                              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                                isActive
+                                  ? "bg-white text-blue-600"
+                                  : "bg-blue-100 text-blue-600"
+                              }`}
+                            >
+                              {index + 1}
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm font-semibold">
+                                {day.title || `Day ${day.dayNumber}`}
+                              </p>
+                              <p
+                                className={`text-xs ${
+                                  isActive ? "text-blue-100" : "text-gray-500"
+                                }`}
+                              >
+                                {day.timeSlots?.reduce(
+                                  (sum, slot) =>
+                                    sum + (slot.activities?.length || 0),
+                                  0
+                                ) || 0}{" "}
+                                activities
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Timeline Weather Section */}
+              {activeTab === "timeline" && (
+                <div className="px-6 pb-6">
+                  <div className="border-t border-gray-200 pt-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                      Day {activeTimelineDay} Weather
+                    </h3>
+                    {getTripDateForDay(activeTimelineDay) && (
+                      <p className="text-sm text-gray-600 mb-4">
+                        {getTripDateForDay(
+                          activeTimelineDay
+                        ).toLocaleDateString("en-US", {
+                          weekday: "long",
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </p>
+                    )}
+                    {timelineWeatherLoading ? (
+                      <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl p-4 border border-blue-100">
+                        <div className="flex items-center justify-center">
+                          <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+                          <span className="ml-2 text-sm text-gray-600">
+                            Loading weather...
+                          </span>
                         </div>
                       </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+                    ) : timelineWeatherData ? (
+                      <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl p-4 border border-blue-100 shadow-sm">
+                        {/* Main Weather Info */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            {getWeatherIcon(
+                              timelineWeatherData.main,
+                              timelineWeatherData.description
+                            )}
+                            <div>
+                              <div className="text-2xl font-bold text-gray-900">
+                                {timelineWeatherData.temperature}°C
+                              </div>
+                              <div className="text-xs text-gray-600 capitalize">
+                                {timelineWeatherData.description}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm font-medium text-gray-700 truncate max-w-20">
+                              {timelineWeatherData.city}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Feels {timelineWeatherData.feelsLike}°C
+                            </div>
+                            {timelineWeatherData.date && (
+                              <div className="text-xs text-blue-600 font-medium mt-1">
+                                {(() => {
+                                  const today = new Date().toDateString();
+                                  const weatherDate = new Date(
+                                    getTripDateForDay(activeTimelineDay)
+                                  ).toDateString();
+                                  if (weatherDate === today) return "Today";
+                                  return "Forecast";
+                                })()}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Weather Details */}
+                        <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-blue-200/50">
+                          <div className="flex items-center gap-2">
+                            <Droplets className="w-4 h-4 text-blue-500" />
+                            <div>
+                              <div className="text-xs text-gray-500">
+                                Humidity
+                              </div>
+                              <div className="text-sm font-medium text-gray-700">
+                                {timelineWeatherData.humidity}%
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Wind className="w-4 h-4 text-gray-500" />
+                            <div>
+                              <div className="text-xs text-gray-500">Wind</div>
+                              <div className="text-sm font-medium text-gray-700">
+                                {timelineWeatherData.windSpeed} m/s
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Weather Tips */}
+                        <div className="mt-3 pt-3 border-t border-blue-200/50">
+                          <div className="text-xs text-blue-700 bg-blue-100/50 rounded-lg p-2">
+                            {getWeatherTip(timelineWeatherData)}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                        <div className="text-center text-gray-500">
+                          <Cloud className="w-6 h-6 mx-auto mb-2 text-gray-400" />
+                          <div className="text-sm">
+                            Weather forecast unavailable
+                          </div>
+                          <div className="text-xs text-gray-400 mt-1">
+                            {getTripDateForDay(activeTimelineDay)
+                              ? `For ${getTripDateForDay(
+                                  activeTimelineDay
+                                ).toLocaleDateString()}`
+                              : "Location data needed for weather"}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Day Selection */}
               {activeTab === "itinerary" && (
@@ -741,74 +1018,195 @@ const ItineraryPage = () => {
                 </div>
               )}
 
-          {/* Overview Stats */}
-          {activeTab === "calendar" && (
-            <div className="p-6 space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Trip Stats
-              </h3>
-              {[
-                {
-                  label: "Total Days",
-                  value: days?.length || 0,
-                  icon: Calendar,
-                  color: "blue",
-                },
-                {
-                  label: "Activities",
-                  value: getTotalActivities(),
-                  icon: Sparkles,
-                  color: "purple",
-                },
-                {
-                  label: "Completed",
-                  value: completedActivities.size,
-                  icon: CheckCircle2,
-                  color: "green",
-                },
-              ].map((stat, index) => (
-                <div
-                  key={index}
-                  className="flex items-center gap-3 p-3 bg-white/50 rounded-lg"
-                >
-                  <div
-                    className={`w-10 h-10 bg-${stat.color}-500 rounded-lg flex items-center justify-center`}
-                  >
-                    <stat.icon className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <div className="text-xl font-bold text-gray-900">
-                      {stat.value}
-                    </div>
-                    <div className="text-sm text-gray-600">
-                      {stat.label}
-                    </div>
+              {/* Weather Section */}
+              {activeTab === "itinerary" && (
+                <div className="px-6 pb-6">
+                  <div className="border-t border-gray-200 pt-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                      Day {selectedDay} Weather
+                    </h3>
+                    {getTripDateForDay(selectedDay) && (
+                      <p className="text-sm text-gray-600 mb-4">
+                        {getTripDateForDay(selectedDay).toLocaleDateString(
+                          "en-US",
+                          {
+                            weekday: "long",
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          }
+                        )}
+                      </p>
+                    )}
+                    {weatherLoading ? (
+                      <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl p-4 border border-blue-100">
+                        <div className="flex items-center justify-center">
+                          <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+                          <span className="ml-2 text-sm text-gray-600">
+                            Loading weather...
+                          </span>
+                        </div>
+                      </div>
+                    ) : weatherData ? (
+                      <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl p-4 border border-blue-100 shadow-sm">
+                        {/* Main Weather Info */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            {getWeatherIcon(
+                              weatherData.main,
+                              weatherData.description
+                            )}
+                            <div>
+                              <div className="text-2xl font-bold text-gray-900">
+                                {weatherData.temperature}°C
+                              </div>
+                              <div className="text-xs text-gray-600 capitalize">
+                                {weatherData.description}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm font-medium text-gray-700 truncate max-w-20">
+                              {weatherData.city}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Feels {weatherData.feelsLike}°C
+                            </div>
+                            {weatherData.date && (
+                              <div className="text-xs text-blue-600 font-medium mt-1">
+                                {(() => {
+                                  const today = new Date().toDateString();
+                                  const weatherDate = new Date(
+                                    getTripDateForDay(selectedDay)
+                                  ).toDateString();
+                                  if (weatherDate === today) return "Today";
+                                  return "Forecast";
+                                })()}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Weather Details */}
+                        <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-blue-200/50">
+                          <div className="flex items-center gap-2">
+                            <Droplets className="w-4 h-4 text-blue-500" />
+                            <div>
+                              <div className="text-xs text-gray-500">
+                                Humidity
+                              </div>
+                              <div className="text-sm font-medium text-gray-700">
+                                {weatherData.humidity}%
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Wind className="w-4 h-4 text-gray-500" />
+                            <div>
+                              <div className="text-xs text-gray-500">Wind</div>
+                              <div className="text-sm font-medium text-gray-700">
+                                {weatherData.windSpeed} m/s
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Weather Tips */}
+                        <div className="mt-3 pt-3 border-t border-blue-200/50">
+                          <div className="text-xs text-blue-700 bg-blue-100/50 rounded-lg p-2">
+                            {getWeatherTip(weatherData)}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                        <div className="text-center text-gray-500">
+                          <Cloud className="w-6 h-6 mx-auto mb-2 text-gray-400" />
+                          <div className="text-sm">
+                            Weather forecast unavailable
+                          </div>
+                          <div className="text-xs text-gray-400 mt-1">
+                            {getTripDateForDay(selectedDay)
+                              ? `For ${getTripDateForDay(
+                                  selectedDay
+                                ).toLocaleDateString()}`
+                              : "Location data needed for weather"}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              )}
 
-          {/* Main Content */}
-          <div 
-            ref={scrollContainerRef}
-            className="flex-1 bg-white border border-gray-200 rounded-lg shadow-sm overflow-y-auto max-h-[calc(100vh-200px)]"
-          >
-          {/* Timeline Tab */}
-          {activeTab === "timeline" && (
-            <div className="p-8">
-              <TimelineItinerary 
-                itinerary={itinerary} 
-                tripData={tripData} 
-                onActiveDayChange={setActiveTimelineDay}
-                scrollContainerRef={scrollContainerRef}
-              />
+              {/* Overview Stats */}
+              {activeTab === "calendar" && (
+                <div className="p-6 space-y-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    Trip Stats
+                  </h3>
+                  {[
+                    {
+                      label: "Total Days",
+                      value: days?.length || 0,
+                      icon: Calendar,
+                      color: "blue",
+                    },
+                    {
+                      label: "Activities",
+                      value: getTotalActivities(),
+                      icon: Sparkles,
+                      color: "purple",
+                    },
+                    {
+                      label: "Completed",
+                      value: completedActivities.size,
+                      icon: CheckCircle2,
+                      color: "green",
+                    },
+                  ].map((stat, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center gap-3 p-3 bg-white/50 rounded-lg"
+                    >
+                      <div
+                        className={`w-10 h-10 bg-${stat.color}-500 rounded-lg flex items-center justify-center`}
+                      >
+                        <stat.icon className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <div className="text-xl font-bold text-gray-900">
+                          {stat.value}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {stat.label}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
 
-          {/* Itinerary Tab */}
-          {activeTab === "itinerary" && selectedDayData && (
+            {/* Main Content */}
+            <div
+              ref={scrollContainerRef}
+              className="flex-1 bg-white border border-gray-200 rounded-lg shadow-sm overflow-y-auto max-h-[calc(100vh-200px)]"
+            >
+              {/* Timeline Tab */}
+              {activeTab === "timeline" && (
+                <div className="p-8">
+                  <TimelineItinerary
+                    itinerary={itinerary}
+                    tripData={tripData}
+                    onActiveDayChange={setActiveTimelineDay}
+                    scrollContainerRef={scrollContainerRef}
+                  />
+                </div>
+              )}
+
+              {/* Itinerary Tab */}
+              {activeTab === "itinerary" && selectedDayData && (
                 <div className="p-8">
                   <div className="max-w-4xl mx-auto">
                     {/* Day Header */}
