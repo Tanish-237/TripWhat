@@ -60,9 +60,10 @@ export function SearchSuggestions({ suggestions, loading, onSelectSuggestion, vi
               className={`flex items-center p-3 hover:bg-gray-50 cursor-pointer transition-colors duration-150 ${
                 index !== suggestions.length - 1 ? 'border-b border-gray-100' : ''
               }`}
-              onClick={() => {
+              onMouseDown={(e) => {
+                // Prevent the input from losing focus
+                e.preventDefault();
                 onSelectSuggestion(suggestion);
-                navigate(`/search?q=${encodeURIComponent(suggestion.name)}`);
               }}
             >
               <div className="mr-3 flex-shrink-0">
@@ -87,12 +88,13 @@ export function SearchSuggestions({ suggestions, loading, onSelectSuggestion, vi
             <div className="p-2 bg-gray-50 border-t border-gray-200 text-center">
               <button 
                 className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-                onClick={() => {
+                onMouseDown={(e) => {
+                  e.preventDefault();
                   const firstSuggestion = suggestions[0];
                   navigate(`/search?q=${encodeURIComponent(firstSuggestion.name)}`);
                 }}
               >
-                View all results for "{suggestions[0].name}"
+                View all results for "{suggestions[0]?.name}"
               </button>
             </div>
           )}

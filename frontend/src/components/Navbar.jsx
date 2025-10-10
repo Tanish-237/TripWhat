@@ -26,6 +26,7 @@ export default function Navbar({ showSearch = false }) {
       }
     };
     
+    // Use mousedown instead of click for better UX
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
@@ -34,7 +35,7 @@ export default function Navbar({ showSearch = false }) {
 
   // Fetch search suggestions with debounce
   useEffect(() => {
-    if (searchQuery.trim().length < 1) {
+    if (searchQuery.trim().length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
@@ -45,25 +46,29 @@ export default function Navbar({ showSearch = false }) {
       clearTimeout(searchTimeout.current);
     }
 
-    // Set a new timeout for debouncing (reduced to 150ms for faster response)
+    // Set a new timeout for debouncing
     searchTimeout.current = setTimeout(async () => {
       try {
         setLoading(true);
         console.log('Searching for:', searchQuery.trim()); // Debug log
-        // Use autocomplete API for suggestions (faster and more relevant for location search)
+        
+        // Use autocomplete API for suggestions
         const results = await apiGetLocationSuggestions(searchQuery.trim(), 8);
         console.log('Autocomplete results:', results); // Debug log
-        setSuggestions(results);
-        setShowSuggestions(true);
+        
+        // Only update suggestions and show them if we still have a valid query
+        if (searchQuery.trim().length >= 2) {
+          setSuggestions(results);
+          setShowSuggestions(true);
+        }
       } catch (error) {
         console.error("Error fetching search suggestions:", error);
         setSuggestions([]);
-        // Optional: Show user-friendly error
-        // setError("Failed to fetch suggestions");
+        setShowSuggestions(false);
       } finally {
         setLoading(false);
       }
-    }, 150); // 150ms debounce delay for faster response
+    }, 200); // Increased to 200ms for better stability
 
     // Cleanup on component unmount
     return () => {
@@ -84,11 +89,34 @@ export default function Navbar({ showSearch = false }) {
   const handleSelectSuggestion = (suggestion) => {
     setSearchQuery(suggestion.name);
     setShowSuggestions(false);
+    // Small delay to ensure the UI updates before navigating
+    setTimeout(() => {
+      navigate(`/search?q=${encodeURIComponent(suggestion.name)}`);
+    }, 100);
   };
   
   const clearSearch = () => {
     setSearchQuery("");
     setSuggestions([]);
+    setShowSuggestions(false);
+  };
+
+  const handleInputFocus = () => {
+    if (searchQuery.trim().length >= 2 && suggestions.length > 0) {
+      setShowSuggestions(true);
+    }
+  };
+
+  const handleInputChange = (e) => {
+    const value = e.target.value;
+    setSearchQuery(value);
+    
+    // Show suggestions immediately if we have cached results and valid query
+    if (value.trim().length >= 2 && suggestions.length > 0) {
+      setShowSuggestions(true);
+    } else if (value.trim().length < 2) {
+      setShowSuggestions(false);
+    }
   };
 
   const handleLogout = () => {
@@ -119,8 +147,8 @@ export default function Navbar({ showSearch = false }) {
                   type="text"
                   placeholder="Search cities, destinations, attractions..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onFocus={() => searchQuery.trim().length >= 2 && setShowSuggestions(true)}
+                  onChange={handleInputChange}
+                  onFocus={handleInputFocus}
                   className="w-full h-10 pl-10 pr-10 text-base bg-white border-gray-200 focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 rounded-full text-gray-900"
                 />
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
