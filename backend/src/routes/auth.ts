@@ -42,6 +42,8 @@ router.post("/register", async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        bio: user.bio,
+        avatarUrl: user.avatarUrl,
         preferences: user.preferences,
       },
     });
@@ -81,6 +83,8 @@ router.post("/login", async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        bio: user.bio,
+        avatarUrl: user.avatarUrl,
         preferences: user.preferences,
       },
     });
@@ -114,6 +118,8 @@ router.get("/me", async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        bio: user.bio,
+        avatarUrl: user.avatarUrl,
         preferences: user.preferences,
       },
     });
@@ -184,6 +190,56 @@ router.put("/preferences", async (req, res) => {
       .json({
         error: error instanceof Error ? error.message : "Unknown error",
       });
+  }
+});
+
+// Update user profile (name, bio, avatarUrl)
+router.put("/profile", async (req, res) => {
+  try {
+    const token = req.header("Authorization")?.replace("Bearer ", "");
+
+    if (!token) {
+      return res.status(401).json({ error: "Access denied" });
+    }
+
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || "fallback-secret"
+    ) as any;
+    const user = await User.findById(decoded.userId);
+
+    if (!user) {
+      return res.status(401).json({ error: "Invalid token" });
+    }
+
+    const { name, bio, avatarUrl, preferences } = req.body;
+
+    // Update profile fields
+    if (name !== undefined) user.name = name;
+    if (bio !== undefined) user.bio = bio;
+    if (avatarUrl !== undefined) user.avatarUrl = avatarUrl;
+    if (preferences !== undefined) {
+      user.preferences = { ...user.preferences, ...preferences };
+    }
+
+    await user.save();
+
+    res.json({
+      message: "Profile updated successfully",
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        bio: user.bio,
+        avatarUrl: user.avatarUrl,
+        preferences: user.preferences,
+      },
+    });
+  } catch (error) {
+    console.error("Profile update error:", error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
   }
 });
 

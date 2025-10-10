@@ -82,15 +82,19 @@ export const getSavedTrips = async (req, res) => {
     // Build query - only show trips that are not upcoming and not completed
     const query = { 
       user: req.userId,
-      isUpcoming: false,
-      isCompleted: false,
+      isUpcoming: { $ne: true },
+      isCompleted: { $ne: true },
     };
 
     if (search) {
-      query.$or = [
-        { title: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
-        { tags: { $in: [new RegExp(search, "i")] } },
+      query.$and = [
+        {
+          $or: [
+            { title: { $regex: search, $options: "i" } },
+            { description: { $regex: search, $options: "i" } },
+            { tags: { $in: [new RegExp(search, "i")] } },
+          ]
+        }
       ];
     }
 
@@ -269,11 +273,19 @@ export const markTripAsUpcoming = async (req, res) => {
       { _id: id, user: req.userId },
       {
         isUpcoming: true,
+        isCompleted: false, // Explicitly set to false
         tripStartDate: startDate,
         tripEndDate: endDate,
       },
       { new: true, runValidators: true }
     );
+    
+    console.log('✅ Trip marked as upcoming:', {
+      id: savedTrip._id,
+      title: savedTrip.title,
+      isUpcoming: savedTrip.isUpcoming,
+      isCompleted: savedTrip.isCompleted
+    });
 
     res.json({
       message: "Trip marked as upcoming successfully",
@@ -309,6 +321,13 @@ export const removeTripFromUpcoming = async (req, res) => {
         error: "Saved trip not found",
       });
     }
+    
+    console.log('✅ Trip moved to saved:', {
+      id: savedTrip._id,
+      title: savedTrip.title,
+      isUpcoming: savedTrip.isUpcoming,
+      isCompleted: savedTrip.isCompleted
+    });
 
     res.json({
       message: "Trip moved back to saved successfully",
@@ -332,7 +351,7 @@ export const getUpcomingTrips = async (req, res) => {
     const upcomingTrips = await SavedTrip.find({
       user: req.userId,
       isUpcoming: true,
-      isCompleted: false, // Exclude completed trips
+      isCompleted: { $ne: true }, // Exclude completed trips
     })
       .sort({ tripStartDate: 1 }) // Sort by trip start date, earliest first
       .skip(skip)
@@ -341,7 +360,7 @@ export const getUpcomingTrips = async (req, res) => {
     const total = await SavedTrip.countDocuments({
       user: req.userId,
       isUpcoming: true,
-      isCompleted: false,
+      isCompleted: { $ne: true },
     });
 
     res.json({
@@ -416,6 +435,13 @@ export const markTripAsCompleted = async (req, res) => {
         error: "Saved trip not found",
       });
     }
+    
+    console.log('✅ Trip marked as completed:', {
+      id: savedTrip._id,
+      title: savedTrip.title,
+      isUpcoming: savedTrip.isUpcoming,
+      isCompleted: savedTrip.isCompleted
+    });
 
     res.json({
       message: "Trip marked as completed successfully",
@@ -425,6 +451,136 @@ export const markTripAsCompleted = async (req, res) => {
     console.error("Error marking trip as completed:", error);
     res.status(500).json({
       error: "Failed to mark trip as completed",
+      details: error.message,
+    });
+  }
+};
+
+// Get user trip statistics
+export const getTripStatistics = async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    // Get all trips
+    const allTrips = await SavedTrip.find({ user: userId });
+    
+    console.log('📊 Total trips found:', allTrips.length);
+    console.log('Trip flags:', allTrips.map(t => ({
+      id: t._id,
+      title: t.title,
+      isUpcoming: t.isUpcoming,
+      isCompleted: t.isCompleted
+    })));
+
+    // Count different trip types (treating undefined/null as false)
+    const totalTrips = allTrips.length;
+    const savedTrips = allTrips.filter(
+      (trip) => trip.isUpcoming !== true && trip.isCompleted !== true
+    ).length;
+    const upcomingTrips = allTrips.filter(
+      (trip) => trip.isUpcoming === true && trip.isCompleted !== true
+    ).length;
+    const completedTrips = allTrips.filter((trip) => trip.isCompleted === true).length;
+    
+    console.log('📊 Statistics calculated:', {
+      totalTrips,
+      savedTrips,
+      upcomingTrips,
+      completedTrips
+    });
+
+    // Calculate total days traveled (only from completed trips)
+    const completedTripsList = allTrips.filter((trip) => trip.isCompleted === true);
+    const totalDaysTraveled = completedTripsList.reduce((sum, trip) => sum + (trip.totalDays || 0), 0);
+    
+    console.log('📊 Completed trips for stats:', completedTripsList.map(t => ({
+      title: t.title,
+      totalDays: t.totalDays,
+      cities: t.cities?.map(c => c.name)
+    })));
+
+    // Get unique cities visited (from completed trips only)
+    const citiesVisited = new Set();
+    completedTripsList.forEach((trip) => {
+      trip.cities?.forEach((city) => citiesVisited.add(city.name));
+    });
+
+    // Get unique countries visited (from completed trips only)
+    const countriesVisited = new Set();
+    completedTripsList.forEach((trip) => {
+      trip.cities?.forEach((city) => {
+        // Extract country from city name (simplified)
+        const parts = city.name.split(",");
+        if (parts.length > 1) {
+          countriesVisited.add(parts[parts.length - 1].trim());
+        }
+      });
+    });
+    
+    console.log('📊 Travel stats:', {
+      totalDaysTraveled,
+      citiesVisited: Array.from(citiesVisited),
+      countriesVisited: Array.from(countriesVisited)
+    });
+
+    // Calculate total activities (from all trips with itineraries)
+    const totalActivities = allTrips.reduce((sum, trip) => {
+      if (!trip.generatedItinerary?.days) return sum;
+      return (
+        sum +
+        trip.generatedItinerary.days.reduce(
+          (daySum, day) =>
+            daySum +
+            day.timeSlots.reduce(
+              (slotSum, slot) => slotSum + slot.activities.length,
+              0
+            ),
+          0
+        )
+      );
+    }, 0);
+
+    // Get most recent trip (from completed trips only)
+    const recentTrip = completedTripsList
+      .sort((a, b) => new Date(b.tripEndDate) - new Date(a.tripEndDate))[0];
+
+    // Get upcoming trip (upcoming but not completed)
+    const nextTrip = allTrips
+      .filter((trip) => trip.isUpcoming === true && trip.isCompleted !== true)
+      .sort((a, b) => new Date(a.tripStartDate) - new Date(b.tripStartDate))[0];
+
+    res.json({
+      statistics: {
+        totalTrips,
+        savedTrips,
+        upcomingTrips,
+        completedTrips,
+        totalDaysTraveled,
+        citiesVisited: citiesVisited.size,
+        countriesVisited: countriesVisited.size,
+        totalActivities,
+        recentTrip: recentTrip
+          ? {
+              id: recentTrip._id,
+              title: recentTrip.title,
+              cities: recentTrip.cities,
+              endDate: recentTrip.tripEndDate,
+            }
+          : null,
+        nextTrip: nextTrip
+          ? {
+              id: nextTrip._id,
+              title: nextTrip.title,
+              cities: nextTrip.cities,
+              startDate: nextTrip.tripStartDate,
+            }
+          : null,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching trip statistics:", error);
+    res.status(500).json({
+      error: "Failed to fetch trip statistics",
       details: error.message,
     });
   }

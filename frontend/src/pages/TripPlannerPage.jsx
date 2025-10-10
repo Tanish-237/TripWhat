@@ -9,7 +9,7 @@ import Navbar from "@/components/Navbar";
 import GooglePlacesAutocomplete from "react-google-places-autocomplete";
 import { useGoogleMaps } from "@/hooks/useGoogleMaps";
 import StartLocationPicker from "@/components/StartLocationPicker";
-import { apiGetSavedTrips, apiGetUpcomingTrips, getToken } from "@/lib/api";
+import { apiGetTripStatistics, getToken } from "@/lib/api";
 import {
   Plus,
   CalendarIcon,
@@ -114,37 +114,25 @@ const QuickStats = () => {
         const token = getToken();
         if (!token) return;
 
-        // Fetch saved trips and upcoming trips to calculate stats
-        const [savedTripsResponse, upcomingTripsResponse] = await Promise.all([
-          apiGetSavedTrips(token),
-          apiGetUpcomingTrips(token)
-        ]);
+        // Fetch trip statistics from backend
+        const statsResponse = await apiGetTripStatistics(token);
+        const statistics = statsResponse.statistics;
 
-        const savedTrips = savedTripsResponse.savedTrips || [];
-        const upcomingTrips = upcomingTripsResponse.upcomingTrips || [];
-
-        // Calculate unique cities visited
-        const allCities = new Set();
-        savedTrips.forEach(trip => {
-          trip.cities?.forEach(city => {
-            allCities.add(city.name);
-          });
-        });
-
-        // Calculate total days traveled
-        const totalDays = savedTrips.reduce((sum, trip) => {
-          return sum + (trip.cities?.reduce((citySum, city) => citySum + city.days, 0) || 0);
-        }, 0);
+        console.log('📊 Home page statistics:', statistics);
 
         setStats([
-          { label: "Upcoming Trips", value: upcomingTrips.length.toString(), icon: CalendarIcon, loading: false },
-          { label: "Cities Visited", value: allCities.size.toString(), icon: MapPin, loading: false },
-          { label: "Days Traveled", value: totalDays.toString(), icon: Plane, loading: false },
+          { label: "Upcoming Trips", value: (statistics.upcomingTrips || 0).toString(), icon: CalendarIcon, loading: false },
+          { label: "Cities Visited", value: (statistics.citiesVisited || 0).toString(), icon: MapPin, loading: false },
+          { label: "Days Traveled", value: (statistics.totalDaysTraveled || 0).toString(), icon: Plane, loading: false },
         ]);
       } catch (error) {
         console.error("Error fetching user stats:", error);
-        // Keep loading state or show error state
-        setStats(prev => prev.map(stat => ({ ...stat, loading: false })));
+        // Set to 0 on error
+        setStats([
+          { label: "Upcoming Trips", value: "0", icon: CalendarIcon, loading: false },
+          { label: "Cities Visited", value: "0", icon: MapPin, loading: false },
+          { label: "Days Traveled", value: "0", icon: Plane, loading: false },
+        ]);
       }
     };
 

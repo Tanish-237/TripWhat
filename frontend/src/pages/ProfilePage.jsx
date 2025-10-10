@@ -5,8 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2, Save, LogOut } from "lucide-react";
+import { Loader2, Save, LogOut, MapPin, Calendar, Plane, TrendingUp, Shield, Trash2, Clock, DollarSign, Compass, RefreshCw } from "lucide-react";
 import Navbar from "@/components/Navbar";
+import { apiUpdateProfile, apiGetTripStatistics, getToken } from "@/lib/api";
+import { toast } from "react-toastify";
 
 // Dynamic avatar URLs with travel-themed seeds
 const generateAvatars = (userName = '') => {
@@ -26,12 +28,14 @@ const generateAvatars = (userName = '') => {
 };
 
 const ProfilePage = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [avatars, setAvatars] = useState(generateAvatars());
+  const [statistics, setStatistics] = useState(null);
+  const [loadingStats, setLoadingStats] = useState(true);
   
   const [profileData, setProfileData] = useState({
     name: '',
@@ -41,9 +45,13 @@ const ProfilePage = () => {
     preferences: {
       notificationsEnabled: true,
       darkMode: false,
-      language: 'english',
+      budget: 'mid-range',
+      travelStyle: 'cultural',
+      interests: [],
     }
   });
+  
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     // Generate avatars based on user's name and update state
@@ -57,9 +65,55 @@ const ProfilePage = () => {
         email: user.email || '',
         bio: user.bio || '',
         avatarUrl: user.avatarUrl || userAvatars[0],
+        preferences: {
+          notificationsEnabled: user.preferences?.notificationsEnabled ?? true,
+          darkMode: user.preferences?.darkMode ?? false,
+          budget: user.preferences?.budget || 'mid-range',
+          travelStyle: user.preferences?.travelStyle || 'cultural',
+          interests: user.preferences?.interests || [],
+        }
       }));
     }
+    
+    // Fetch trip statistics
+    fetchStatistics();
   }, [user]);
+  
+  const fetchStatistics = async () => {
+    try {
+      setLoadingStats(true);
+      const token = getToken();
+      if (!token) {
+        console.log('No token found, skipping statistics fetch');
+        return;
+      }
+      
+      console.log('🔄 Fetching trip statistics...');
+      const response = await apiGetTripStatistics(token);
+      console.log('📥 Statistics response:', response);
+      
+      if (response && response.statistics) {
+        setStatistics(response.statistics);
+        console.log('✅ Statistics breakdown:', {
+          totalTrips: response.statistics.totalTrips,
+          savedTrips: response.statistics.savedTrips,
+          upcomingTrips: response.statistics.upcomingTrips,
+          completedTrips: response.statistics.completedTrips,
+          totalDaysTraveled: response.statistics.totalDaysTraveled,
+          citiesVisited: response.statistics.citiesVisited,
+          countriesVisited: response.statistics.countriesVisited
+        });
+      } else {
+        console.error('❌ Invalid statistics response:', response);
+        toast.error('Invalid statistics data received');
+      }
+    } catch (error) {
+      console.error('❌ Error fetching statistics:', error);
+      toast.error('Failed to load trip statistics');
+    } finally {
+      setLoadingStats(false);
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -91,19 +145,56 @@ const ProfilePage = () => {
     setMessage({ type: '', text: '' });
     
     try {
-      // In a real app, you would make an API call to update the profile
-      // For now we'll simulate a successful update
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const token = getToken();
+      if (!token) {
+        toast.error('Please log in to update your profile');
+        setSaving(false);
+        return;
+      }
       
+      // Prepare complete profile data
+      const profileUpdateData = {
+        name: profileData.name?.trim() || '',
+        bio: profileData.bio?.trim() || '',
+        avatarUrl: profileData.avatarUrl || '',
+        preferences: {
+          budget: profileData.preferences?.budget || 'mid-range',
+          travelStyle: profileData.preferences?.travelStyle || 'cultural',
+          interests: profileData.preferences?.interests || [],
+          notificationsEnabled: profileData.preferences?.notificationsEnabled ?? true,
+          darkMode: profileData.preferences?.darkMode ?? false,
+        }
+      };
+      
+      console.log('Saving complete profile data:', profileUpdateData);
+      
+      const response = await apiUpdateProfile(profileUpdateData, token);
+      
+      console.log('Profile update response:', response);
+      
+      // Update user context with new data
+      if (updateUser && response.user) {
+        updateUser(response.user);
+        console.log('User context updated with:', response.user);
+      }
+      
+      toast.success('Profile updated successfully! 🎉');
       setMessage({ 
         type: 'success', 
-        text: 'Profile updated successfully!' 
+        text: 'All changes saved successfully!' 
       });
+      
+      // Auto-hide success message after 3 seconds
+      setTimeout(() => {
+        setMessage({ type: '', text: '' });
+      }, 3000);
     } catch (error) {
       console.error('Error updating profile:', error);
+      const errorMsg = error.message || 'Failed to update profile. Please try again.';
+      toast.error(errorMsg);
       setMessage({ 
         type: 'error', 
-        text: 'Failed to update profile. Please try again.' 
+        text: errorMsg
       });
     } finally {
       setSaving(false);
@@ -136,6 +227,100 @@ const ProfilePage = () => {
             {message.text}
           </div>
         )}
+
+        {/* Trip Statistics */}
+        {loadingStats ? (
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">Your Travel Journey</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              {[1, 2, 3, 4].map((i) => (
+                <Card key={i} className="bg-gray-50 animate-pulse">
+                  <CardContent className="pt-6">
+                    <div className="h-12 bg-gray-200 rounded mb-2"></div>
+                    <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        ) : statistics ? (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold text-gray-900">Your Travel Journey</h2>
+              <button
+                onClick={fetchStatistics}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                title="Refresh statistics"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Refresh</span>
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <Calendar className="w-8 h-8 text-green-600" />
+                    <span className="text-3xl font-bold text-green-900">{statistics.totalDaysTraveled || 0}</span>
+                  </div>
+                  <p className="text-sm font-medium text-green-700">Days Traveled</p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <MapPin className="w-8 h-8 text-purple-600" />
+                    <span className="text-3xl font-bold text-purple-900">{statistics.citiesVisited || 0}</span>
+                  </div>
+                  <p className="text-sm font-medium text-purple-700">Cities Visited</p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <TrendingUp className="w-8 h-8 text-orange-600" />
+                    <span className="text-3xl font-bold text-orange-900">{statistics.countriesVisited || 0}</span>
+                  </div>
+                  <p className="text-sm font-medium text-orange-700">Countries</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="bg-blue-50 border-blue-200">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-2 h-2 rounded-full bg-blue-600"></div>
+                    <p className="text-sm font-semibold text-gray-700">Saved Trips</p>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900">{statistics.savedTrips || 0}</p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-green-50 border-green-200">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-2 h-2 rounded-full bg-green-600"></div>
+                    <p className="text-sm font-semibold text-gray-700">Upcoming Trips</p>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900">{statistics.upcomingTrips || 0}</p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-purple-50 border-purple-200">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-2 h-2 rounded-full bg-purple-600"></div>
+                    <p className="text-sm font-semibold text-gray-700">Completed Trips</p>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900">{statistics.completedTrips || 0}</p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        ) : null}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {/* Left Column - Avatar */}
@@ -189,9 +374,10 @@ const ProfilePage = () => {
                   <Input
                     type="text"
                     name="name"
-                    value={profileData.name}
+                    value={profileData.name || ''}
                     onChange={handleChange}
                     placeholder="Your name"
+                    className="text-gray-900 font-medium"
                   />
                 </div>
 
@@ -202,10 +388,11 @@ const ProfilePage = () => {
                   <Input
                     type="email"
                     name="email"
-                    value={profileData.email}
+                    value={profileData.email || ''}
                     onChange={handleChange}
                     placeholder="your.email@example.com"
                     disabled
+                    className="text-gray-700"
                   />
                   <p className="text-xs text-gray-500 mt-1">
                     Email cannot be changed
@@ -213,103 +400,244 @@ const ProfilePage = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Bio
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Bio
+                    </label>
+                    <span className="text-xs text-gray-500">
+                      {profileData.bio?.length || 0}/500
+                    </span>
+                  </div>
                   <Textarea
                     name="bio"
-                    value={profileData.bio}
+                    value={profileData.bio || ''}
                     onChange={handleChange}
                     placeholder="Tell us something about yourself and your travel preferences..."
-                    className="resize-none"
+                    className="resize-none text-gray-900"
                     rows={4}
+                    maxLength={500}
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Share your travel stories, favorite destinations, or dream trips!
+                  </p>
                 </div>
 
-                <div className="pt-4 flex flex-col sm:flex-row justify-between gap-3">
-                  <Button
-                    variant="outline"
-                    className="flex items-center gap-2"
-                    onClick={handleLogout}
-                  >
-                    <LogOut className="w-4 h-4" />
-                    Logout
-                  </Button>
+                <div className="pt-4">
                   <Button
                     onClick={handleSaveProfile}
                     disabled={saving}
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
+                    className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 h-11"
                   >
                     {saving ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Loader2 className="w-5 h-5 animate-spin" />
                     ) : (
-                      <Save className="w-4 h-4" />
+                      <Save className="w-5 h-5" />
                     )}
-                    Save Changes
+                    {saving ? 'Saving...' : 'Save Changes'}
                   </Button>
                 </div>
               </CardContent>
             </Card>
 
+            {/* Travel Preferences */}
             <Card className="mt-6">
               <CardHeader>
-                <CardTitle className="text-xl">Preferences</CardTitle>
+                <CardTitle className="text-xl flex items-center gap-2">
+                  <Compass className="w-5 h-5 text-blue-600" />
+                  Travel Preferences
+                </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-gray-700">
-                      Enable notifications
-                    </label>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        className="sr-only peer"
-                        checked={profileData.preferences.notificationsEnabled}
-                        onChange={() => handlePreferenceChange(
-                          'notificationsEnabled', 
-                          !profileData.preferences.notificationsEnabled
-                        )}
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                    </label>
+              <CardContent className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Budget Preference
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {['budget', 'mid-range', 'luxury'].map((level) => (
+                      <button
+                        key={level}
+                        onClick={() => handlePreferenceChange('budget', level)}
+                        className={`px-4 py-2 rounded-lg border-2 transition-all capitalize ${
+                          profileData.preferences.budget === level
+                            ? 'border-blue-500 bg-blue-50 text-blue-700 font-semibold'
+                            : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                        }`}
+                      >
+                        {level === 'mid-range' ? 'Mid-Range' : level}
+                      </button>
+                    ))}
                   </div>
+                </div>
 
-                  <div className="flex items-center justify-between">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Travel Style
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {['adventure', 'relaxation', 'cultural', 'business'].map((style) => (
+                      <button
+                        key={style}
+                        onClick={() => handlePreferenceChange('travelStyle', style)}
+                        className={`px-4 py-2 rounded-lg border-2 transition-all capitalize ${
+                          profileData.preferences.travelStyle === style
+                            ? 'border-green-500 bg-green-50 text-green-700 font-semibold'
+                            : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                        }`}
+                      >
+                        {style}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Interests
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {['museums', 'nightlife', 'nature', 'food', 'shopping', 'history', 'art'].map((interest) => (
+                      <button
+                        key={interest}
+                        onClick={() => {
+                          const interests = profileData.preferences.interests || [];
+                          const newInterests = interests.includes(interest)
+                            ? interests.filter(i => i !== interest)
+                            : [...interests, interest];
+                          handlePreferenceChange('interests', newInterests);
+                        }}
+                        className={`px-3 py-1.5 rounded-full text-sm transition-all capitalize ${
+                          (profileData.preferences.interests || []).includes(interest)
+                            ? 'bg-purple-500 text-white font-medium'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {interest}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* App Preferences */}
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="text-xl flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-blue-600" />
+                  App Settings
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">
+                      Enable Notifications
+                    </label>
+                    <p className="text-xs text-gray-500">Get updates about your trips</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer"
+                      checked={profileData.preferences.notificationsEnabled}
+                      onChange={() => handlePreferenceChange(
+                        'notificationsEnabled', 
+                        !profileData.preferences.notificationsEnabled
+                      )}
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
                     <label className="text-sm font-medium text-gray-700">
                       Dark Mode
                     </label>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        className="sr-only peer"
-                        checked={profileData.preferences.darkMode}
-                        onChange={() => handlePreferenceChange(
-                          'darkMode', 
-                          !profileData.preferences.darkMode
-                        )}
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                    </label>
+                    <p className="text-xs text-gray-500">Coming soon!</p>
                   </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Language
-                    </label>
-                    <select
-                      className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-                      value={profileData.preferences.language}
-                      onChange={(e) => handlePreferenceChange('language', e.target.value)}
-                    >
-                      <option value="english">English</option>
-                      <option value="spanish">Spanish</option>
-                      <option value="french">French</option>
-                      <option value="german">German</option>
-                      <option value="japanese">Japanese</option>
-                    </select>
-                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer opacity-50">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer"
+                      checked={profileData.preferences.darkMode}
+                      disabled
+                    />
+                    <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+                  </label>
                 </div>
+                
+                {user?.createdAt && (
+                  <div className="pt-4 border-t border-gray-200">
+                    <div className="flex items-center gap-2 text-sm text-gray-600 mb-4">
+                      <Clock className="w-4 h-4" />
+                      <span>Member since {new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span>
+                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={handleLogout}
+                      className="w-full flex items-center justify-center gap-2 border-gray-300 text-gray-700 hover:bg-gray-50"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Sign Out
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Danger Zone */}
+            <Card className="mt-6 border-red-200">
+              <CardHeader>
+                <CardTitle className="text-xl flex items-center gap-2 text-red-600">
+                  <Trash2 className="w-5 h-5" />
+                  Danger Zone
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!showDeleteConfirm ? (
+                  <div>
+                    <p className="text-sm text-gray-600 mb-3">
+                      Permanently delete your account and all associated data. This action cannot be undone.
+                    </p>
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowDeleteConfirm(true)}
+                      className="border-red-300 text-red-700 hover:bg-red-50"
+                    >
+                      Delete Account
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <p className="text-sm font-semibold text-red-800 mb-3">
+                      Are you absolutely sure? This will:
+                    </p>
+                    <ul className="text-sm text-red-700 mb-4 list-disc list-inside space-y-1">
+                      <li>Delete all your trip data</li>
+                      <li>Remove your profile permanently</li>
+                      <li>Cancel all upcoming trips</li>
+                    </ul>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowDeleteConfirm(false)}
+                        className="flex-1"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          toast.info('Account deletion is disabled in demo');
+                          setShowDeleteConfirm(false);
+                        }}
+                        className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                      >
+                        Yes, Delete My Account
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

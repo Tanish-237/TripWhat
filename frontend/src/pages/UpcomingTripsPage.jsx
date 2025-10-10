@@ -563,22 +563,6 @@ const UpcomingTripsPage = () => {
                     <p className="text-white/90 text-sm">
                       Trip: {formatDate(trip.tripStartDate)}
                     </p>
-                    
-                    {/* Remove Button */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveFromUpcoming(trip._id);
-                      }}
-                      disabled={removingId === trip._id}
-                      className="absolute top-3 right-3 p-2 bg-white/20 hover:bg-red-500 text-white rounded-full transition-colors duration-200"
-                    >
-                      {removingId === trip._id ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Star className="w-4 h-4" />
-                      )}
-                    </button>
                   </div>
 
                   {/* Card Content */}

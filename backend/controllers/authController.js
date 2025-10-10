@@ -26,7 +26,14 @@ export const register = async (req, res) => {
     const token = generateToken(user._id.toString());
 
     return res.status(201).json({
-      user: { id: user._id, name: user.name, email: user.email },
+      user: { 
+        id: user._id, 
+        name: user.name, 
+        email: user.email,
+        bio: user.bio,
+        avatarUrl: user.avatarUrl,
+        preferences: user.preferences
+      },
       token,
     });
   } catch (err) {
@@ -56,7 +63,14 @@ export const login = async (req, res) => {
 
     const token = generateToken(user._id.toString());
     return res.json({
-      user: { id: user._id, name: user.name, email: user.email },
+      user: { 
+        id: user._id, 
+        name: user.name, 
+        email: user.email,
+        bio: user.bio,
+        avatarUrl: user.avatarUrl,
+        preferences: user.preferences
+      },
       token,
     });
   } catch (err) {
@@ -69,10 +83,18 @@ export const login = async (req, res) => {
 
 export const me = async (req, res) => {
   try {
-    const user = await User.findById(req.userId).select("_id name email");
+    const user = await User.findById(req.userId).select("_id name email bio avatarUrl preferences createdAt");
     if (!user) return res.status(404).json({ message: "User not found" });
     return res.json({
-      user: { id: user._id, name: user.name, email: user.email },
+      user: { 
+        id: user._id, 
+        name: user.name, 
+        email: user.email,
+        bio: user.bio,
+        avatarUrl: user.avatarUrl,
+        preferences: user.preferences,
+        createdAt: user.createdAt
+      },
     });
   } catch (err) {
     console.log(err);
@@ -109,5 +131,46 @@ export const updatePreferences = async (req, res) => {
     return res
       .status(500)
       .json({ message: "Failed to update preferences", error: err.message });
+  }
+};
+
+export const updateProfile = async (req, res) => {
+  try {
+    const { name, bio, avatarUrl, preferences } = req.body;
+    
+    const updateData = {};
+    if (name !== undefined) updateData.name = name;
+    if (bio !== undefined) updateData.bio = bio;
+    if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl;
+    if (preferences !== undefined) updateData.preferences = preferences;
+    
+    console.log('Updating user profile:', req.userId, updateData);
+    
+    const user = await User.findByIdAndUpdate(
+      req.userId,
+      updateData,
+      { new: true, runValidators: true }
+    ).select("_id name email bio avatarUrl preferences");
+    
+    if (!user) return res.status(404).json({ message: "User not found" });
+    
+    console.log('Profile updated successfully:', user);
+    
+    return res.json({
+      message: "Profile updated successfully",
+      user: { 
+        id: user._id, 
+        name: user.name, 
+        email: user.email,
+        bio: user.bio,
+        avatarUrl: user.avatarUrl,
+        preferences: user.preferences
+      },
+    });
+  } catch (err) {
+    console.log('Error updating profile:', err);
+    return res
+      .status(500)
+      .json({ message: "Failed to update profile", error: err.message });
   }
 };

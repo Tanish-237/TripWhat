@@ -1,6 +1,6 @@
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { MapPin, User, Search, X } from "lucide-react";
+import { MapPin, User, Search, X, LogOut, Settings } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/input";
@@ -15,7 +15,9 @@ export default function Navbar({ showSearch = false }) {
   const [loading, setLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [searchError, setSearchError] = useState(null);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const searchRef = useRef(null);
+  const profileMenuRef = useRef(null);
   const location = useLocation();
   const searchTimeout = useRef(null);
 
@@ -24,6 +26,9 @@ export default function Navbar({ showSearch = false }) {
     const handleClickOutside = (event) => {
       if (searchRef.current && !searchRef.current.contains(event.target)) {
         setShowSuggestions(false);
+      }
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
+        setShowProfileMenu(false);
       }
     };
     
@@ -210,16 +215,68 @@ export default function Navbar({ showSearch = false }) {
               >
                 <Link to="/completed-trips">Completed</Link>
               </Button>
-              <Button
-                variant="default"
-                asChild
-                className="ml-2 flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                <Link to="/profile">
-                  <User className="w-4 h-4" />
-                  <span className="ml-1">Profile</span>
-                </Link>
-              </Button>
+              
+              {/* Profile Avatar Dropdown */}
+              <div className="relative ml-2" ref={profileMenuRef}>
+                <button
+                  onClick={() => setShowProfileMenu(!showProfileMenu)}
+                  className="flex items-center gap-2 focus:outline-none group"
+                >
+                  <div className="w-9 h-9 rounded-full overflow-hidden border-2 border-gray-300 group-hover:border-blue-500 transition-all duration-200 ring-0 group-hover:ring-2 group-hover:ring-blue-200">
+                    <img
+                      src={user?.avatarUrl || `https://api.dicebear.com/7.x/adventurer/svg?seed=${user?.name || 'User'}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`}
+                      alt={user?.name || 'User'}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                </button>
+
+                {/* Dropdown Menu */}
+                {showProfileMenu && (
+                  <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                    {/* User Info */}
+                    <div className="px-4 py-3 border-b border-gray-100">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{user?.name}</p>
+                      <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+                    </div>
+
+                    {/* Menu Items */}
+                    <div className="py-1">
+                      <Link
+                        to="/profile"
+                        onClick={() => setShowProfileMenu(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                      >
+                        <User className="w-4 h-4" />
+                        <span>My Profile</span>
+                      </Link>
+                      
+                      <Link
+                        to="/saved-trips"
+                        onClick={() => setShowProfileMenu(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                      >
+                        <Settings className="w-4 h-4" />
+                        <span>Manage Trips</span>
+                      </Link>
+                    </div>
+
+                    {/* Logout */}
+                    <div className="border-t border-gray-100 pt-1">
+                      <button
+                        onClick={() => {
+                          setShowProfileMenu(false);
+                          handleLogout();
+                        }}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors w-full"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Sign Out</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           ) : (
             <>

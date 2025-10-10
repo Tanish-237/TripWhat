@@ -123,11 +123,19 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const updateUser = (updatedUserData) => {
+    setUser(prev => ({
+      ...prev,
+      ...updatedUserData
+    }));
+  };
+
   const value = {
     user,
     login,
     signup,
     logout,
+    updateUser,
     loading,
     isAuthenticated: !!user,
   };

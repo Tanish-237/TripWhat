@@ -12,6 +12,7 @@ import {
   getUpcomingTrips,
   getCompletedTrips,
   markTripAsCompleted,
+  getTripStatistics,
 } from "../controllers/savedTripController.js";
 
 const router = Router();
@@ -30,6 +31,9 @@ router.get("/upcoming", getUpcomingTrips);
 
 // Get completed trips for the user
 router.get("/completed", getCompletedTrips);
+
+// Get trip statistics for the user
+router.get("/statistics", getTripStatistics);
 
 // Check if a trip is already saved
 router.get("/check", checkTripSaved);

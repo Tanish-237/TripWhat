@@ -221,3 +221,21 @@ export async function apiMarkTripAsCompleted(id, token) {
     },
   });
 }
+
+// Profile APIs
+export async function apiUpdateProfile(profileData, token) {
+  return request("/api/auth/profile", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(profileData),
+  });
+}
+
+export async function apiGetTripStatistics(token) {
+  return request("/api/saved-trips/statistics", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
