@@ -79,6 +79,7 @@ const ResultsPage = () => {
             tripData.startDate instanceof Date
               ? tripData.startDate.toISOString()
               : tripData.startDate,
+          startLocation: tripData.startLocation,
           cities: (tripData.cities || []).map((c, idx) => ({
             id: c.id || `city-${idx}`,
             name: c.name,
@@ -128,7 +129,7 @@ const ResultsPage = () => {
               "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
-            timeout: 60000, // 60 second timeout for AI generation
+            timeout: 300000, // 5 minute timeout for AI generation
           }
         );
 
@@ -376,6 +377,21 @@ const ResultsPage = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* Start Location */}
+                {tripData?.startLocation && (
+                  <div className="mb-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                      <MapPin className="w-5 h-5 text-green-600" />
+                      Starting From
+                    </h3>
+                    <div className="px-4 py-3 bg-green-50 rounded-lg border border-green-200">
+                      <span className="font-semibold text-green-900">
+                        {tripData.startLocation.name}
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 {/* Cities Preview */}
                 <div className="mb-8">

@@ -8,6 +8,7 @@ import { useTrip } from "@/contexts/TripContext";
 import Navbar from "@/components/Navbar";
 import GooglePlacesAutocomplete from "react-google-places-autocomplete";
 import { useGoogleMaps } from "@/hooks/useGoogleMaps";
+import StartLocationPicker from "@/components/StartLocationPicker";
 import {
   Plus,
   CalendarIcon,
@@ -297,6 +298,7 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
   const [startDate, setStartDate] = useState(
     tripData?.startDate ? new Date(tripData.startDate) : null
   );
+  const [startLocation, setStartLocation] = useState(tripData?.startLocation || null);
   const [cities, setCities] = useState(tripData?.cities || []);
   const [newCityName, setNewCityName] = useState("");
   const [selectedPlace, setSelectedPlace] = useState(null);
@@ -314,16 +316,20 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
     if (tripData?.startDate) {
       setStartDate(new Date(tripData.startDate));
     }
+    if (tripData?.startLocation) {
+      setStartLocation(tripData.startLocation);
+    }
     if (tripData?.cities) {
       setCities(tripData.cities);
     }
   }, [tripData]);
 
   // Persist data changes to context
-  const persistData = (newStartDate = startDate, newCities = cities) => {
+  const persistData = (newStartDate = startDate, newStartLocation = startLocation, newCities = cities) => {
     const totalDays = newCities.reduce((sum, city) => sum + city.days, 0);
     updateTripData({
       startDate: newStartDate,
+      startLocation: newStartLocation,
       cities: newCities,
       totalDays,
     });
@@ -331,7 +337,12 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
 
   const handleDateChange = (date) => {
     setStartDate(date);
-    persistData(date, cities);
+    persistData(date, startLocation, cities);
+  };
+
+  const handleStartLocationChange = (location) => {
+    setStartLocation(location);
+    persistData(startDate, location, cities);
   };
 
   const addCity = () => {
@@ -344,7 +355,7 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
       };
       const newCities = [...cities, newCity];
       setCities(newCities);
-      persistData(startDate, newCities);
+      persistData(startDate, startLocation, newCities);
       setNewCityName("");
       setSelectedPlace(null);
       setNewCityDays("3");
@@ -355,7 +366,7 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
   const removeCity = (id) => {
     const newCities = cities.filter((city) => city.id !== id);
     setCities(newCities);
-    persistData(startDate, newCities);
+    persistData(startDate, startLocation, newCities);
   };
 
   const updateCity = (id, updates) => {
@@ -363,7 +374,7 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
       city.id === id ? { ...city, ...updates } : city
     );
     setCities(newCities);
-    persistData(startDate, newCities);
+    persistData(startDate, startLocation, newCities);
   };
 
   const handleDragStart = (e, index) => {
@@ -386,7 +397,7 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
     newCities.splice(dropIndex, 0, draggedCity);
 
     setCities(newCities);
-    persistData(startDate, newCities);
+    persistData(startDate, startLocation, newCities);
     setDraggedIndex(null);
   };
 
@@ -396,6 +407,7 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
     if (startDate && cities.length > 0) {
       const tripData = {
         startDate,
+        startLocation,
         cities,
         totalDays: cities.reduce((sum, city) => sum + city.days, 0),
       };
@@ -404,6 +416,7 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
     } else {
       console.log("Cannot proceed: missing startDate or cities", {
         startDate,
+        startLocation,
         cities,
       });
     }
@@ -430,21 +443,41 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Left Column - Destinations */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Date Picker Section - Now in left column */}
-            <Card className="p-6 bg-white border border-gray-200 shadow-sm hover:shadow-md hover:bg-white/90 hover:backdrop-blur-sm transition-all duration-300">
-              <div className="space-y-3">
-                <label className="text-base font-semibold flex items-center gap-2 text-gray-800">
-                  <CalendarIcon className="w-4 h-4 text-blue-500" />
-                  When does your journey begin?
-                </label>
-                <div className="relative z-30">
-                  <DatePicker
-                    selected={startDate}
-                    onSelect={handleDateChange}
-                  />
+            {/* Date and Start Location Section */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Date Picker */}
+              <Card className="p-6 bg-white border border-gray-200 shadow-sm hover:shadow-md hover:bg-white/90 hover:backdrop-blur-sm transition-all duration-300">
+                <div className="space-y-3">
+                  <label className="text-base font-semibold flex items-center gap-2 text-gray-800">
+                    <CalendarIcon className="w-4 h-4 text-blue-500" />
+                    When does your journey begin?
+                  </label>
+                  <div className="relative z-30">
+                    <DatePicker
+                      selected={startDate}
+                      onSelect={handleDateChange}
+                    />
+                  </div>
                 </div>
-              </div>
-            </Card>
+              </Card>
+
+              {/* Start Location Picker */}
+              <Card className="p-6 bg-white border border-gray-200 shadow-sm hover:shadow-md hover:bg-white/90 hover:backdrop-blur-sm transition-all duration-300">
+                <div className="space-y-3">
+                  <label className="text-base font-semibold flex items-center gap-2 text-gray-800">
+                    <MapPin className="w-4 h-4 text-green-500" />
+                    Where are you starting from?
+                  </label>
+                  <div className="relative z-20">
+                    <StartLocationPicker
+                      selected={startLocation}
+                      onSelect={handleStartLocationChange}
+                      isGoogleMapsLoaded={isGoogleMapsLoaded}
+                    />
+                  </div>
+                </div>
+              </Card>
+            </div>
 
             <div className="space-y-4">
               <label className="text-xl font-semibold flex items-center gap-2 text-gray-800">
@@ -650,6 +683,16 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
                             </span>
                             <span className="text-sm font-bold text-green-600">
                               {format(startDate, "MMMM do, yyyy")}
+                            </span>
+                          </div>
+                        )}
+                        {startLocation && (
+                          <div className="p-3 rounded-lg bg-gradient-to-r from-purple-50 to-green-50">
+                            <span className="text-sm font-medium text-gray-600 block">
+                              Starting From
+                            </span>
+                            <span className="text-sm font-bold text-purple-600">
+                              {startLocation.name}
                             </span>
                           </div>
                         )}

@@ -5,6 +5,7 @@ export const createTrip = async (req, res) => {
     const body = req.body || {};
     const {
       startDate,
+      startLocation,
       cities,
       totalDays,
       people,
@@ -34,6 +35,7 @@ export const createTrip = async (req, res) => {
     const doc = await Trip.create({
       user: req.userId,
       startDate,
+      startLocation,
       cities,
       totalDays,
       people,

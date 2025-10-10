@@ -20,6 +20,15 @@ const budgetSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const startLocationSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    placeId: { type: String, trim: true },
+    description: { type: String, trim: true },
+  },
+  { _id: false }
+);
+
 const tripSchema = new mongoose.Schema(
   {
     user: {
@@ -29,6 +38,7 @@ const tripSchema = new mongoose.Schema(
       index: true,
     },
     startDate: { type: Date, required: true },
+    startLocation: { type: startLocationSchema },
     cities: {
       type: [citySchema],
       validate: (v) => Array.isArray(v) && v.length > 0,

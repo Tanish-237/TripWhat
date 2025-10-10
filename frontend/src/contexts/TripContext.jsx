@@ -15,6 +15,7 @@ export const TripProvider = ({ children }) => {
     // Destinations data
     cities: [],
     startDate: null,
+    startLocation: null,
     totalDays: null,
     
     // Budget data - start with null/empty values
@@ -37,6 +38,7 @@ export const TripProvider = ({ children }) => {
     setTripData({
       cities: [],
       startDate: null,
+      startLocation: null,
       totalDays: 0,
       budget: {
         total: 5000,
