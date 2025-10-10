@@ -17,7 +17,7 @@ export default function OnboardingPage() {
   const handleComplete = async () => {
     // Update user preferences via API
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
       const token = localStorage.getItem('tripwhat_token');
       
       await fetch(`${API_URL}/api/auth/preferences`, {

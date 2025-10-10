@@ -92,7 +92,7 @@ export function AuthProvider({ children }) {
     return user; // Return user data so login page can handle redirect
   };
 
-  const signup = async (email, password, preferences) => {
+  const signup = async (email, password, userData) => {
     const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
 
     const response = await fetch(`${API_URL}/api/auth/register`, {
@@ -100,7 +100,11 @@ export function AuthProvider({ children }) {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ email, password, preferences }),
+      body: JSON.stringify({ 
+        name: userData.name, 
+        email, 
+        password 
+      }),
     });
 
     if (!response.ok) {

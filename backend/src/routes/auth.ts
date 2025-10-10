@@ -8,7 +8,7 @@ const router = express.Router();
 // Register
 router.post("/register", async (req, res) => {
   try {
-    const { email, password, preferences } = req.body;
+    const { name, email, password, preferences } = req.body;
 
     // Check if user already exists
     const existingUser = await User.findOne({ email });
@@ -21,6 +21,7 @@ router.post("/register", async (req, res) => {
 
     // Create user
     const user = new User({
+      name,
       email,
       password: hashedPassword,
       preferences: preferences || {},
@@ -39,6 +40,7 @@ router.post("/register", async (req, res) => {
       token,
       user: {
         id: user._id,
+        name: user.name,
         email: user.email,
         preferences: user.preferences,
       },
@@ -77,6 +79,7 @@ router.post("/login", async (req, res) => {
       token,
       user: {
         id: user._id,
+        name: user.name,
         email: user.email,
         preferences: user.preferences,
       },
@@ -109,6 +112,7 @@ router.get("/me", async (req, res) => {
     res.json({
       user: {
         id: user._id,
+        name: user.name,
         email: user.email,
         preferences: user.preferences,
       },
