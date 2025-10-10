@@ -386,28 +386,16 @@ const ItineraryPage = () => {
     );
   };
 
-  // Reliable image function using Picsum Photos
-  const getActivityImage = (activity, index = 0) => {
-    // Use backend image if available
+  // ONLY use Google Places images - NO FALLBACKS
+  const getActivityImage = (activity) => {
+    // Only return Google Places image URL
     if (activity.imageUrl && activity.imageUrl.trim() !== "") {
+      console.log('✅ Using Google Places image for:', activity.name);
       return activity.imageUrl;
     }
-
-    // Generate consistent image based on activity name hash
-    const hash = hashCode(activity.name || "activity");
-    const imageId = Math.abs(hash % 1000) + 1; // 1-1000 range
-    return `https://picsum.photos/id/${imageId}/800/600`;
-  };
-
-  // Simple hash function for consistent image selection
-  const hashCode = (str) => {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash;
-    }
-    return hash;
+    
+    console.log('❌ No image available for:', activity.name);
+    return null; // Return null if no Google image
   };
 
   const getPeriodIcon = (period) => {
@@ -831,19 +819,27 @@ const ItineraryPage = () => {
                               style={{ animationDelay: `${actIndex * 100}ms` }}
                             >
                               <div className="flex">
-                                {/* Activity Image */}
-                                <div className="w-64 h-48 flex-shrink-0 relative overflow-hidden">
-                                  <img
-                                    src={getActivityImage(activity, actIndex)}
-                                    alt={activity.name}
-                                    className="w-full h-full object-cover transition-transform duration-300 hover:scale-110"
-                                    loading="lazy"
-                                    onError={(e) => {
-                                      const fallbackId =
-                                        Math.floor(Math.random() * 100) + 1;
-                                      e.target.src = `https://picsum.photos/id/${fallbackId}/800/600`;
-                                    }}
-                                  />
+                                {/* Activity Image - ONLY Google Places */}
+                                <div className="w-64 h-48 flex-shrink-0 relative overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200">
+                                  {getActivityImage(activity) ? (
+                                    <img
+                                      src={getActivityImage(activity)}
+                                      alt={activity.name}
+                                      className="w-full h-full object-cover transition-transform duration-300 hover:scale-110"
+                                      loading="lazy"
+                                      onError={(e) => {
+                                        // Hide image on error
+                                        e.target.style.display = 'none';
+                                      }}
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center">
+                                      <div className="text-center p-6">
+                                        <MapPin className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                                        <p className="text-xs text-gray-500">No photo available</p>
+                                      </div>
+                                    </div>
+                                  )}
                                   <div className="absolute top-3 right-3 flex gap-2">
                                     <button
                                       onClick={() =>
@@ -874,65 +870,132 @@ const ItineraryPage = () => {
                                   )}
                                 </div>
 
-                                {/* Activity Details */}
+                                {/* Activity Details - ENHANCED */}
                                 <div className="flex-1 p-6">
-                                  <div className="flex items-start justify-between mb-4">
+                                  <div className="flex items-start justify-between mb-3">
                                     <div className="flex-1">
-                                      <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                                        {activity.name}
-                                      </h3>
-                                      {activity.category && (
-                                        <span className="inline-block px-3 py-1 text-xs font-medium rounded-full bg-blue-50 text-blue-700 border border-blue-200 capitalize">
-                                          {activity.category}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="flex gap-2">
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="border-gray-300 text-gray-700 hover:bg-gray-50"
-                                      >
-                                        <ExternalLink className="w-4 h-4 mr-2" />
-                                        Details
-                                      </Button>
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <h3 className="text-xl font-semibold text-gray-900">
+                                          {activity.name}
+                                        </h3>
+                                        {activity.mustVisit && (
+                                          <span className="inline-flex items-center px-2 py-1 text-xs font-bold rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 text-white shadow-sm">
+                                            <Star className="w-3 h-3 mr-1 fill-current" />
+                                            Must Visit
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        {activity.category && (
+                                          <span className="inline-block px-3 py-1 text-xs font-medium rounded-full bg-blue-50 text-blue-700 border border-blue-200 capitalize">
+                                            {activity.category}
+                                          </span>
+                                        )}
+                                        {activity.isOpen !== undefined && (
+                                          <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${
+                                            activity.isOpen 
+                                              ? 'bg-green-50 text-green-700 border border-green-200' 
+                                              : 'bg-red-50 text-red-700 border border-red-200'
+                                          }`}>
+                                            {activity.isOpen ? '🟢 Open Now' : '🔴 Closed'}
+                                          </span>
+                                        )}
+                                        {activity.tags?.slice(0, 3).map((tag, idx) => (
+                                          <span key={idx} className="inline-block px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">
+                                            {tag}
+                                          </span>
+                                        ))}
+                                      </div>
                                     </div>
                                   </div>
 
                                   {activity.description && (
-                                    <p className="text-sm text-gray-600 mb-4 leading-relaxed">
+                                    <p className="text-sm text-gray-600 mb-4 leading-relaxed line-clamp-2">
                                       {activity.description}
                                     </p>
                                   )}
 
-                                  <div className="flex items-center gap-6 text-sm">
-                                    <div className="flex items-center gap-2 text-gray-600">
-                                      <Clock className="w-4 h-4" />
-                                      <span>
-                                        {activity.duration || "2 hours"}
-                                      </span>
+                                  {/* Enhanced Info Grid */}
+                                  <div className="grid grid-cols-2 gap-3 mb-4">
+                                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                                      <Clock className="w-4 h-4 text-blue-500" />
+                                      <span>{activity.duration || "2 hours"}</span>
                                     </div>
                                     {activity.estimatedCost && (
-                                      <div className="flex items-center gap-2 text-green-600">
+                                      <div className="flex items-center gap-2 text-sm text-green-600 font-medium">
                                         <DollarSign className="w-4 h-4" />
                                         <span>{activity.estimatedCost}</span>
                                       </div>
                                     )}
-                                    {activity.location && (
-                                      <div className="flex items-center gap-2 text-blue-600">
-                                        <MapPin className="w-4 h-4" />
-                                        <button className="hover:underline">
-                                          View on Map
-                                        </button>
+                                    {activity.bestTimeToVisit && (
+                                      <div className="flex items-center gap-2 text-sm text-purple-600">
+                                        <Sun className="w-4 h-4" />
+                                        <span className="truncate">{activity.bestTimeToVisit}</span>
                                       </div>
                                     )}
-                                    <div className="flex items-center gap-2 text-purple-600">
-                                      <Navigation className="w-4 h-4" />
-                                      <button className="hover:underline">
-                                        Get Directions
-                                      </button>
-                                    </div>
+                                    {activity.distanceToNext && (
+                                      <div className="flex items-center gap-2 text-sm text-orange-600">
+                                        <Navigation className="w-4 h-4" />
+                                        <span className="truncate">{activity.distanceToNext}</span>
+                                      </div>
+                                    )}
                                   </div>
+
+                                  {/* Action Buttons */}
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    {activity.websiteUrl && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => window.open(activity.websiteUrl, '_blank')}
+                                        className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                                      >
+                                        <ExternalLink className="w-3 h-3 mr-1" />
+                                        Website
+                                      </Button>
+                                    )}
+                                    {activity.phoneNumber && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => window.open(`tel:${activity.phoneNumber}`, '_blank')}
+                                        className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                                      >
+                                        📞 Call
+                                      </Button>
+                                    )}
+                                    {activity.location?.latitude && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => window.open(
+                                          `https://www.google.com/maps/dir/?api=1&destination=${activity.location.latitude},${activity.location.longitude}`,
+                                          '_blank'
+                                        )}
+                                        className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                                      >
+                                        <MapPin className="w-3 h-3 mr-1" />
+                                        Directions
+                                      </Button>
+                                    )}
+                                  </div>
+
+                                  {/* Opening Hours Preview */}
+                                  {activity.openingHours && activity.openingHours.length > 0 && (
+                                    <div className="mt-4 pt-4 border-t border-gray-100">
+                                      <details className="group">
+                                        <summary className="text-xs font-medium text-gray-600 cursor-pointer hover:text-gray-900 flex items-center gap-2">
+                                          <Clock className="w-3 h-3" />
+                                          View Opening Hours
+                                        </summary>
+                                        <div className="mt-2 space-y-1 text-xs text-gray-600">
+                                          {activity.openingHours.slice(0, 7).map((hours, idx) => (
+                                            <div key={idx} className="pl-5">{hours}</div>
+                                          ))}
+                                        </div>
+                                      </details>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </Card>

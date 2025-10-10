@@ -662,9 +662,119 @@ export class TravelAgent {
 
   /**
    * Generate itinerary with structured trip context
-   * This is optimized for the onboarding flow where we have complete trip details
+   * NEW: Uses OpenAI web search + Google Places API
    */
   async generateItineraryWithContext(tripContext: any): Promise<any> {
+    try {
+      console.log('\n🎯 [ENHANCED ITINERARY] Generating with OpenAI web search + Google Places API');
+      
+      const { TRAVEL_TYPE_PREFERENCES, calculateDailyBudget } = await import('../types/tripContext.js');
+      const { enhancedItineraryBuilder } = await import('../services/enhancedItineraryBuilder.js');
+      
+      // Calculate total days from cities
+      const totalDays = tripContext.cities.reduce((sum: number, city: any) => sum + city.days, 0);
+      
+      // Get daily budget breakdown
+      const dailyBudget = calculateDailyBudget(
+        tripContext.budget,
+        tripContext.budgetMode,
+        totalDays
+      );
+      
+      // Get travel type preferences
+      const travelPrefs = TRAVEL_TYPE_PREFERENCES[tripContext.travelType as keyof typeof TRAVEL_TYPE_PREFERENCES];
+      
+      console.log('💰 Daily budget:', dailyBudget);
+      console.log('🎨 Travel preferences:', travelPrefs);
+      console.log('🗓️ Total days:', totalDays);
+      console.log('🏙️ Cities:', tripContext.cities.map((c: any) => `${c.name} (${c.days} days)`));
+      
+      // Build itineraries for each city using enhanced builder
+      const allDays: any[] = [];
+      let currentDayNumber = 1;
+      
+      for (const city of tripContext.cities) {
+        console.log(`\n🌐 [WEB SEARCH] Processing ${city.name} (${city.days} days)`);
+        
+        // Use enhanced builder with web search + Google Places
+        const cityItinerary = await enhancedItineraryBuilder.buildItineraryWithWebSearch(
+          city.name,
+          city.days,
+          {
+            travelType: tripContext.travelType,
+            preferences: travelPrefs.categories,
+            dailyBudget: dailyBudget.activities,
+            activityLevel: travelPrefs.activityLevel,
+            pacing: travelPrefs.pacing,
+            numberOfPeople: tripContext.people
+          }
+        );
+        
+        if (cityItinerary && cityItinerary.days) {
+          // Add city-specific days to all days
+          cityItinerary.days.forEach((day: any) => {
+            day.dayNumber = currentDayNumber++;
+            day.city = city.name;
+            allDays.push(day);
+          });
+          
+          console.log(`✅ Generated ${cityItinerary.days.length} days for ${city.name}`);
+        } else {
+          console.error(`❌ Failed to generate itinerary for ${city.name}`);
+        }
+      }
+      
+      if (allDays.length === 0) {
+        return {
+          response: null,
+          itinerary: null,
+          error: 'Failed to generate itinerary for any city'
+        };
+      }
+      
+      // Create complete itinerary
+      const completeItinerary = {
+        tripMetadata: {
+          destination: tripContext.cities.map((c: any) => c.name).join(' → '),
+          duration: totalDays,
+          startDate: tripContext.startDate,
+          travelType: tripContext.travelType,
+          numberOfPeople: tripContext.people,
+          budget: {
+            total: tripContext.budget.total,
+            perDay: dailyBudget.totalPerDay,
+            breakdown: dailyBudget
+          }
+        },
+        days: allDays
+      };
+      
+      // Format the response
+      const formattedResponse = this.formatItineraryWithContext(completeItinerary, tripContext);
+      
+      console.log(`\n✅ [ENHANCED ITINERARY] Successfully generated ${allDays.length}-day itinerary`);
+      console.log(`📊 Total activities: ${allDays.reduce((sum, day) => 
+        sum + day.timeSlots.reduce((s: number, slot: any) => s + slot.activities.length, 0), 0)}`);
+      
+      return {
+        response: formattedResponse,
+        itinerary: completeItinerary,
+        error: null
+      };
+    } catch (error) {
+      console.error('❌ [ENHANCED ITINERARY] Error:', error);
+      return {
+        response: null,
+        itinerary: null,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  /**
+   * OLD METHOD - Keep as fallback
+   */
+  async generateItineraryWithContext_OLD(tripContext: any): Promise<any> {
     try {
       console.log('\n🎯 [CONTEXT ITINERARY] Generating with full trip context');
       
