@@ -119,8 +119,9 @@ const savedTripSchema = new mongoose.Schema(
     // Additional metadata
     isPublic: { type: Boolean, default: false },
     tags: { type: [String], default: [] },
-    // Upcoming trip status
+    // Trip status
     isUpcoming: { type: Boolean, default: false },
+    isCompleted: { type: Boolean, default: false },
     tripStartDate: { type: Date }, // When the actual trip starts
     tripEndDate: { type: Date }, // When the actual trip ends
   },
@@ -131,6 +132,7 @@ const savedTripSchema = new mongoose.Schema(
 savedTripSchema.index({ user: 1, createdAt: -1 });
 savedTripSchema.index({ title: "text", description: "text" });
 savedTripSchema.index({ user: 1, isUpcoming: 1, tripStartDate: 1 });
+savedTripSchema.index({ user: 1, isCompleted: 1 });
 
 const SavedTrip = mongoose.model("SavedTrip", savedTripSchema);
 export default SavedTrip;

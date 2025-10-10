@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import Navbar from "@/components/Navbar";
 import TripPlanningSidebar from "@/components/TripPlanningSidebar";
 import { useTrip } from "@/contexts/TripContext";
 import {
@@ -185,14 +186,16 @@ const PreferencesPage = () => {
   const isComplete = people > 0 && travelType;
 
   return (
-    <div className="flex min-h-screen bg-gray-50 text-black">
-      <TripPlanningSidebar
-        currentStep="preferences"
-        onStepClick={handleStepClick}
-        tripData={tripData}
-      />
+    <div className="flex flex-col min-h-screen bg-gray-50 text-black">
+      <Navbar />
+      <div className="flex flex-1 pt-0">
+        <TripPlanningSidebar
+          currentStep="preferences"
+          onStepClick={handleStepClick}
+          tripData={tripData}
+        />
 
-      <div className="flex-1 p-8">
+        <div className="flex-1 p-8">
         <div className="max-w-4xl mx-auto">
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-4">
@@ -370,6 +373,7 @@ const PreferencesPage = () => {
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </div>
+        </div>
         </div>
       </div>
     </div>

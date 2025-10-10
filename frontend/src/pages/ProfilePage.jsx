@@ -8,43 +8,36 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Loader2, Save, LogOut } from "lucide-react";
 import Navbar from "@/components/Navbar";
 
-// Avatar options
-const avatars = [
-  "/avatars/avatar-1.png",
-  "/avatars/avatar-2.png",
-  "/avatars/avatar-3.png",
-  "/avatars/avatar-4.png",
-  "/avatars/avatar-5.png",
-  "/avatars/avatar-6.png",
-  "/avatars/avatar-7.png",
-  "/avatars/avatar-8.png",
-];
+// Dynamic avatar URLs with travel-themed seeds
+const generateAvatars = (userName = '') => {
+  const travelSeeds = [
+    'Traveler', 'Explorer', 'Wanderer', 'Adventurer', 
+    'Nomad', 'Voyager', 'Globetrotter', 'Backpacker',
+    'Tourist', 'Pilgrim', 'Journeyer', 'Roamer'
+  ];
+  
+  // Use user's name as base seed if available, otherwise use travel themes
+  const baseSeeds = userName ? [userName, `${userName}Travel`, `${userName}Adventure`] : [];
+  const allSeeds = [...baseSeeds, ...travelSeeds].slice(0, 12);
+  
+  return allSeeds.map(seed => 
+    `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(seed)}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`
+  );
+};
 
-// Placeholder avatar URLs since we don't have actual avatars in the project yet
-const placeholderAvatars = [
-  "https://api.dicebear.com/7.x/adventurer/svg?seed=Felix",
-  "https://api.dicebear.com/7.x/adventurer/svg?seed=Aneka", 
-  "https://api.dicebear.com/7.x/adventurer/svg?seed=Luna",
-  "https://api.dicebear.com/7.x/adventurer/svg?seed=Mia",
-  "https://api.dicebear.com/7.x/adventurer/svg?seed=Zoe",
-  "https://api.dicebear.com/7.x/adventurer/svg?seed=Alex",
-  "https://api.dicebear.com/7.x/adventurer/svg?seed=Leo",
-  "https://api.dicebear.com/7.x/adventurer/svg?seed=Tom",
-];
-
-export default function ProfilePage() {
+const ProfilePage = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [avatars, setAvatars] = useState(generateAvatars());
   
   const [profileData, setProfileData] = useState({
     name: '',
     email: '',
     bio: '',
-    avatarUrl: placeholderAvatars[0],
+    avatarUrl: avatars[0],
     preferences: {
       notificationsEnabled: true,
       darkMode: false,
@@ -53,15 +46,17 @@ export default function ProfilePage() {
   });
 
   useEffect(() => {
-    // In a real app, you would fetch the full profile from the backend
-    if (user) {
+    // Generate avatars based on user's name and update state
+    if (user?.name) {
+      const userAvatars = generateAvatars(user.name);
+      setAvatars(userAvatars);
+      
       setProfileData(prev => ({
         ...prev,
         name: user.name || '',
         email: user.email || '',
-        // We assume these fields are from the user object or use defaults
         bio: user.bio || '',
-        avatarUrl: user.avatarUrl || placeholderAvatars[0],
+        avatarUrl: user.avatarUrl || userAvatars[0],
       }));
     }
   }, [user]);
@@ -127,11 +122,11 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200">
+    <div className="min-h-screen bg-white">
       <Navbar />
       
       <main className="container max-w-4xl mx-auto px-4 py-8">
-        <h1 className="text-3xl font-bold text-slate-800 mb-8">Your Profile</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">Your Profile</h1>
 
         {message.text && (
           <div className={`mb-6 p-4 rounded-md ${
@@ -160,7 +155,7 @@ export default function ProfilePage() {
                 
                 <h3 className="text-lg font-medium mb-4">Select an Avatar</h3>
                 <div className="grid grid-cols-4 gap-3">
-                  {placeholderAvatars.map((avatar, index) => (
+                  {avatars.map((avatar, index) => (
                     <div 
                       key={index}
                       className={`w-14 h-14 rounded-full overflow-hidden cursor-pointer border-2 hover:scale-105 transition-transform ${
@@ -322,4 +317,6 @@ export default function ProfilePage() {
       </main>
     </div>
   );
-}
+};
+
+export default ProfilePage;

@@ -10,6 +10,7 @@ import chatRoutes from "./routes/chat.js";
 import authRoutes from "./routes/auth.js";
 import itineraryRoutes from "./routes/itinerary.js";
 import savedTripRoutes from "../routes/savedTripRoutes.js";
+import placesRoutes from "../routes/placesRoutes.js";
 import { authenticateToken } from "./middleware/auth.js";
 import { setSocketIO } from "./controllers/chatController.js";
 
@@ -60,6 +61,9 @@ app.get("/api", (req, res) => {
 
 // Auth routes (public)
 app.use("/api/auth", authRoutes);
+
+// Places routes (public - for search)
+app.use("/api/places", placesRoutes);
 
 // Protected routes
 app.use("/api/chat", authenticateToken, chatRoutes);

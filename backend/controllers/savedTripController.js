@@ -73,14 +73,18 @@ export const saveTrip = async (req, res) => {
   }
 };
 
-// Get all saved trips for a user
+// Get all saved trips for a user (excluding upcoming and completed)
 export const getSavedTrips = async (req, res) => {
   try {
     const { page = 1, limit = 10, search } = req.query;
     const skip = (page - 1) * limit;
 
-    // Build query
-    const query = { user: req.userId };
+    // Build query - only show trips that are not upcoming and not completed
+    const query = { 
+      user: req.userId,
+      isUpcoming: false,
+      isCompleted: false,
+    };
 
     if (search) {
       query.$or = [
@@ -284,7 +288,7 @@ export const markTripAsUpcoming = async (req, res) => {
   }
 };
 
-// Remove trip from upcoming
+// Remove trip from upcoming (move back to saved)
 export const removeTripFromUpcoming = async (req, res) => {
   try {
     const { id } = req.params;
@@ -293,6 +297,7 @@ export const removeTripFromUpcoming = async (req, res) => {
       { _id: id, user: req.userId },
       {
         isUpcoming: false,
+        isCompleted: false, // Also reset completed status
         tripStartDate: null,
         tripEndDate: null,
       },
@@ -306,7 +311,7 @@ export const removeTripFromUpcoming = async (req, res) => {
     }
 
     res.json({
-      message: "Trip removed from upcoming successfully",
+      message: "Trip moved back to saved successfully",
       savedTrip,
     });
   } catch (error) {
@@ -327,6 +332,7 @@ export const getUpcomingTrips = async (req, res) => {
     const upcomingTrips = await SavedTrip.find({
       user: req.userId,
       isUpcoming: true,
+      isCompleted: false, // Exclude completed trips
     })
       .sort({ tripStartDate: 1 }) // Sort by trip start date, earliest first
       .skip(skip)
@@ -335,6 +341,7 @@ export const getUpcomingTrips = async (req, res) => {
     const total = await SavedTrip.countDocuments({
       user: req.userId,
       isUpcoming: true,
+      isCompleted: false,
     });
 
     res.json({
@@ -349,6 +356,75 @@ export const getUpcomingTrips = async (req, res) => {
     console.error("Error fetching upcoming trips:", error);
     res.status(500).json({
       error: "Failed to fetch upcoming trips",
+      details: error.message,
+    });
+  }
+};
+
+// Get all completed trips for a user
+export const getCompletedTrips = async (req, res) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (page - 1) * limit;
+
+    const completedTrips = await SavedTrip.find({
+      user: req.userId,
+      isCompleted: true,
+    })
+      .sort({ tripEndDate: -1 }) // Sort by trip end date, most recent first
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await SavedTrip.countDocuments({
+      user: req.userId,
+      isCompleted: true,
+    });
+
+    res.json({
+      completedTrips,
+      pagination: {
+        current: parseInt(page),
+        pages: Math.ceil(total / limit),
+        total,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching completed trips:", error);
+    res.status(500).json({
+      error: "Failed to fetch completed trips",
+      details: error.message,
+    });
+  }
+};
+
+// Mark a trip as completed
+export const markTripAsCompleted = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const savedTrip = await SavedTrip.findOneAndUpdate(
+      { _id: id, user: req.userId },
+      {
+        isCompleted: true,
+        tripEndDate: new Date(), // Set end date to now
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!savedTrip) {
+      return res.status(404).json({
+        error: "Saved trip not found",
+      });
+    }
+
+    res.json({
+      message: "Trip marked as completed successfully",
+      savedTrip,
+    });
+  } catch (error) {
+    console.error("Error marking trip as completed:", error);
+    res.status(500).json({
+      error: "Failed to mark trip as completed",
       details: error.message,
     });
   }

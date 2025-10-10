@@ -199,3 +199,25 @@ export async function apiRemoveTripFromUpcoming(id, token) {
     headers: { Authorization: `Bearer ${token}` },
   });
 }
+
+// Completed Trips APIs
+export async function apiGetCompletedTrips(token, params = {}) {
+  const queryParams = new URLSearchParams(params).toString();
+  const url = queryParams
+    ? `/api/saved-trips/completed?${queryParams}`
+    : "/api/saved-trips/completed";
+
+  return request(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function apiMarkTripAsCompleted(id, token) {
+  return request(`/api/saved-trips/${id}/completed`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
