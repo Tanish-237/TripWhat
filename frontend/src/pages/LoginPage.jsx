@@ -23,14 +23,13 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, isAuthenticated, loading } = useAuth();
 
   useEffect(() => {
-    const token = getToken();
-    if (token) {
+    if (!loading && isAuthenticated) {
       navigate("/plan", { replace: true });
     }
-  }, [navigate]);
+  }, [navigate, isAuthenticated, loading]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -64,6 +63,18 @@ export default function LoginPage() {
       setIsLoading(false);
     }
   };
+
+  // Show loading while checking authentication
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 text-black flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 text-black">

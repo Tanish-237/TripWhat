@@ -18,10 +18,13 @@ export function AuthProvider({ children }) {
 
   const fetchUser = async () => {
     try {
-      const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+      const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
       const token = localStorage.getItem("tripwhat_token");
-      
-      console.log("[AUTH] Fetching user with token:", token ? "Token found" : "No token");
+
+      console.log(
+        "[AUTH] Fetching user with token:",
+        token ? "Token found" : "No token"
+      );
 
       const response = await fetch(`${API_URL}/api/auth/me`, {
         headers: {
@@ -50,8 +53,8 @@ export function AuthProvider({ children }) {
   };
 
   const login = async (email, password) => {
-    const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
-    
+    const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
+
     console.log("[AUTH] Attempting login for email:", email);
 
     const response = await fetch(`${API_URL}/api/auth/login`, {
@@ -67,18 +70,21 @@ export function AuthProvider({ children }) {
     if (!response.ok) {
       const error = await response.json();
       console.error("[AUTH] Login failed:", error);
-      throw new Error(error.error || "Login failed");
+      throw new Error(error.message || "Login failed");
     }
 
     const { token, user } = await response.json();
-    console.log("[AUTH] Login successful, storing token and user:", { token: !!token, user });
+    console.log("[AUTH] Login successful, storing token and user:", {
+      token: !!token,
+      user,
+    });
 
     localStorage.setItem("tripwhat_token", token);
     setUser(user);
   };
 
   const signup = async (email, password, preferences) => {
-    const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+    const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
 
     const response = await fetch(`${API_URL}/api/auth/register`, {
       method: "POST",
@@ -90,7 +96,7 @@ export function AuthProvider({ children }) {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || "Signup failed");
+      throw new Error(error.message || "Signup failed");
     }
 
     const { token, user } = await response.json();

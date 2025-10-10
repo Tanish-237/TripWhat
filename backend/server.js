@@ -5,8 +5,9 @@ import cors from "cors";
 import connectDB from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import tripRoutes from "./routes/tripRoutes.js";
+import savedTripRoutes from "./routes/savedTripRoutes.js";
 
-const port = process.env.PORT || 5000;
+const port = 8080;
 const mongoUri = process.env.MONGODB_URI;
 
 const app = express();
@@ -19,6 +20,7 @@ connectDB();
 
 app.use("/api/auth", authRoutes);
 app.use("/api/trips", tripRoutes);
+app.use("/api/saved-trips", savedTripRoutes);
 
 app.get("/", (req, res) => {
   res.send("API Working");
