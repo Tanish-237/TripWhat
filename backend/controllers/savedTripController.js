@@ -235,3 +235,121 @@ export const checkTripSaved = async (req, res) => {
     });
   }
 };
+
+// Mark a trip as upcoming
+export const markTripAsUpcoming = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tripStartDate } = req.body;
+
+    if (!tripStartDate) {
+      return res.status(400).json({
+        error: "Trip start date is required",
+      });
+    }
+
+    // Get the trip to calculate end date
+    const trip = await SavedTrip.findOne({ _id: id, user: req.userId });
+    if (!trip) {
+      return res.status(404).json({
+        error: "Saved trip not found",
+      });
+    }
+
+    // Calculate end date: start date + total days
+    const startDate = new Date(tripStartDate);
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + trip.totalDays);
+
+    const savedTrip = await SavedTrip.findOneAndUpdate(
+      { _id: id, user: req.userId },
+      {
+        isUpcoming: true,
+        tripStartDate: startDate,
+        tripEndDate: endDate,
+      },
+      { new: true, runValidators: true }
+    );
+
+    res.json({
+      message: "Trip marked as upcoming successfully",
+      savedTrip,
+    });
+  } catch (error) {
+    console.error("Error marking trip as upcoming:", error);
+    res.status(500).json({
+      error: "Failed to mark trip as upcoming",
+      details: error.message,
+    });
+  }
+};
+
+// Remove trip from upcoming
+export const removeTripFromUpcoming = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const savedTrip = await SavedTrip.findOneAndUpdate(
+      { _id: id, user: req.userId },
+      {
+        isUpcoming: false,
+        tripStartDate: null,
+        tripEndDate: null,
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!savedTrip) {
+      return res.status(404).json({
+        error: "Saved trip not found",
+      });
+    }
+
+    res.json({
+      message: "Trip removed from upcoming successfully",
+      savedTrip,
+    });
+  } catch (error) {
+    console.error("Error removing trip from upcoming:", error);
+    res.status(500).json({
+      error: "Failed to remove trip from upcoming",
+      details: error.message,
+    });
+  }
+};
+
+// Get all upcoming trips for a user
+export const getUpcomingTrips = async (req, res) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (page - 1) * limit;
+
+    const upcomingTrips = await SavedTrip.find({
+      user: req.userId,
+      isUpcoming: true,
+    })
+      .sort({ tripStartDate: 1 }) // Sort by trip start date, earliest first
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await SavedTrip.countDocuments({
+      user: req.userId,
+      isUpcoming: true,
+    });
+
+    res.json({
+      upcomingTrips,
+      pagination: {
+        current: parseInt(page),
+        pages: Math.ceil(total / limit),
+        total,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching upcoming trips:", error);
+    res.status(500).json({
+      error: "Failed to fetch upcoming trips",
+      details: error.message,
+    });
+  }
+};

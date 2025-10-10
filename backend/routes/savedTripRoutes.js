@@ -7,6 +7,9 @@ import {
   updateSavedTrip,
   deleteSavedTrip,
   checkTripSaved,
+  markTripAsUpcoming,
+  removeTripFromUpcoming,
+  getUpcomingTrips,
 } from "../controllers/savedTripController.js";
 
 const router = Router();
@@ -20,6 +23,9 @@ router.post("/", saveTrip);
 // Get all saved trips for the user
 router.get("/", getSavedTrips);
 
+// Get upcoming trips for the user
+router.get("/upcoming", getUpcomingTrips);
+
 // Check if a trip is already saved
 router.get("/check", checkTripSaved);
 
@@ -28,6 +34,12 @@ router.get("/:id", getSavedTrip);
 
 // Update a saved trip
 router.put("/:id", updateSavedTrip);
+
+// Mark trip as upcoming
+router.put("/:id/upcoming", markTripAsUpcoming);
+
+// Remove trip from upcoming
+router.delete("/:id/upcoming", removeTripFromUpcoming);
 
 // Delete a saved trip
 router.delete("/:id", deleteSavedTrip);

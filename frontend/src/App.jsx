@@ -20,6 +20,7 @@ import PreferencesPage from "./pages/PreferencesPage.jsx";
 import ResultsPage from "./pages/ResultsPage.jsx";
 import ItineraryPage from "./pages/ItineraryPage.jsx";
 import SavedTripsPage from "./pages/SavedTripsPage.jsx";
+import UpcomingTripsPage from "./pages/UpcomingTripsPage.jsx";
 import Home from "./pages/Home.jsx";
 import { Chat } from "./pages/Chat.jsx";
 
@@ -132,6 +133,15 @@ function AppContent() {
           element={
             <ProtectedRoute>
               <SavedTripsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/upcoming-trips"
+          element={
+            <ProtectedRoute>
+              <UpcomingTripsPage />
             </ProtectedRoute>
           }
         />

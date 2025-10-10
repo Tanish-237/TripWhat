@@ -34,19 +34,19 @@ const ResultsPage = () => {
       Array.isArray(tripData?.cities) &&
       tripData.cities.length > 0;
     const hasPrefs = tripData?.people && tripData?.travelType;
-    
+
     // More lenient budget check - if we have at least a budget object
     // we'll use default values for any missing fields
     const hasBudget = tripData?.budget !== undefined;
 
     // Log helpful information for debugging
-    console.log("Trip data check:", { 
-      hasCore, 
-      hasPrefs, 
+    console.log("Trip data check:", {
+      hasCore,
+      hasPrefs,
       hasBudget,
-      budget: tripData?.budget
+      budget: tripData?.budget,
     });
-    
+
     if (!hasCore || !hasPrefs || !hasBudget) {
       console.log("Missing required trip data for itinerary generation");
       return;
@@ -63,15 +63,15 @@ const ResultsPage = () => {
           travel: 25,
           accommodation: 25,
           food: 25,
-          events: 25
+          events: 25,
         };
-        
+
         // Merge any existing budget values with defaults
         const budget = {
           ...defaultBudget,
-          ...(tripData.budget || {})
+          ...(tripData.budget || {}),
         };
-        
+
         // Build the payload with validated budget
         const payload = {
           startDate:
@@ -167,8 +167,9 @@ const ResultsPage = () => {
   };
 
   const getTotalActivities = () => {
-    if (!generatedItinerary?.itinerary?.days) return 0;
-    return generatedItinerary.itinerary.days.reduce(
+    const itinerary = generatedItinerary?.itinerary || generatedItinerary;
+    if (!itinerary?.days) return 0;
+    return itinerary.days.reduce(
       (sum, day) =>
         sum + day.timeSlots.reduce((s, slot) => s + slot.activities.length, 0),
       0
@@ -382,7 +383,8 @@ const ResultsPage = () => {
                 </div>
 
                 <p className="text-center text-sm text-gray-500 mt-6">
-                  View your full itinerary with timeline & map, or chat with AI to refine your plan
+                  View your full itinerary with timeline & map, or chat with AI
+                  to refine your plan
                 </p>
               </div>
             </Card>

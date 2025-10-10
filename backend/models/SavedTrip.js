@@ -27,7 +27,7 @@ const activitySchema = new mongoose.Schema(
     category: { type: String },
     duration: { type: String },
     estimatedCost: { type: String },
-    location: { type: String },
+    location: { type: mongoose.Schema.Types.Mixed }, // Allow both string and object coordinates
     rating: { type: Number },
     imageUrl: { type: String },
   },
@@ -119,6 +119,10 @@ const savedTripSchema = new mongoose.Schema(
     // Additional metadata
     isPublic: { type: Boolean, default: false },
     tags: { type: [String], default: [] },
+    // Upcoming trip status
+    isUpcoming: { type: Boolean, default: false },
+    tripStartDate: { type: Date }, // When the actual trip starts
+    tripEndDate: { type: Date }, // When the actual trip ends
   },
   { timestamps: true }
 );
@@ -126,6 +130,7 @@ const savedTripSchema = new mongoose.Schema(
 // Index for better query performance
 savedTripSchema.index({ user: 1, createdAt: -1 });
 savedTripSchema.index({ title: "text", description: "text" });
+savedTripSchema.index({ user: 1, isUpcoming: 1, tripStartDate: 1 });
 
 const SavedTrip = mongoose.model("SavedTrip", savedTripSchema);
 export default SavedTrip;

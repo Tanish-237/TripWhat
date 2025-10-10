@@ -3,7 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useTrip } from "@/contexts/TripContext";
-import { apiGetSavedTrips, apiDeleteSavedTrip, getToken } from "@/lib/api";
+import {
+  apiGetSavedTrips,
+  apiDeleteSavedTrip,
+  apiMarkTripAsUpcoming,
+  apiRemoveTripFromUpcoming,
+  getToken,
+} from "@/lib/api";
 import { toast } from "react-toastify";
 import {
   Sparkles,
@@ -21,6 +27,8 @@ import {
   Heart,
   Eye,
   Edit3,
+  Clock,
+  Star,
 } from "lucide-react";
 
 const SavedTripsPage = () => {
@@ -33,6 +41,10 @@ const SavedTripsPage = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filteredTrips, setFilteredTrips] = useState([]);
   const [deletingId, setDeletingId] = useState(null);
+  const [updatingId, setUpdatingId] = useState(null);
+  const [showUpcomingModal, setShowUpcomingModal] = useState(false);
+  const [selectedTrip, setSelectedTrip] = useState(null);
+  const [tripStartDate, setTripStartDate] = useState("");
 
   useEffect(() => {
     fetchSavedTrips();
@@ -104,6 +116,85 @@ const SavedTripsPage = () => {
       toast.error("Failed to delete trip");
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleMarkAsUpcoming = (trip) => {
+    setSelectedTrip(trip);
+    setTripStartDate("");
+    setShowUpcomingModal(true);
+  };
+
+  const handleRemoveFromUpcoming = async (tripId) => {
+    try {
+      setUpdatingId(tripId);
+      const token = getToken();
+      await apiRemoveTripFromUpcoming(tripId, token);
+
+      // Update local state
+      setSavedTrips((prev) =>
+        prev.map((trip) =>
+          trip._id === tripId
+            ? {
+                ...trip,
+                isUpcoming: false,
+                tripStartDate: null,
+                tripEndDate: null,
+              }
+            : trip
+        )
+      );
+      toast.success("Trip removed from upcoming");
+    } catch (err) {
+      console.error("Error removing trip from upcoming:", err);
+      toast.error("Failed to remove trip from upcoming");
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleSubmitUpcoming = async () => {
+    if (!tripStartDate) {
+      toast.error("Please select a trip start date");
+      return;
+    }
+
+    try {
+      setUpdatingId(selectedTrip._id);
+      const token = getToken();
+      await apiMarkTripAsUpcoming(
+        selectedTrip._id,
+        {
+          tripStartDate,
+        },
+        token
+      );
+
+      // Update local state
+      setSavedTrips((prev) =>
+        prev.map((trip) =>
+          trip._id === selectedTrip._id
+            ? {
+                ...trip,
+                isUpcoming: true,
+                tripStartDate: new Date(tripStartDate),
+                tripEndDate: (() => {
+                  const startDate = new Date(tripStartDate);
+                  const endDate = new Date(startDate);
+                  endDate.setDate(endDate.getDate() + trip.totalDays);
+                  return endDate;
+                })(),
+              }
+            : trip
+        )
+      );
+      toast.success("Trip marked as upcoming!");
+      setShowUpcomingModal(false);
+    } catch (err) {
+      console.error("Error marking trip as upcoming:", err);
+      toast.error("Failed to mark trip as upcoming");
+    } finally {
+      setUpdatingId(null);
     }
   };
 
@@ -240,6 +331,14 @@ const SavedTripsPage = () => {
 
             <div className="flex items-center gap-3">
               <Button
+                onClick={() => navigate("/upcoming-trips")}
+                variant="outline"
+                className="border-green-500 text-green-600 hover:bg-green-50"
+              >
+                <Clock className="w-4 h-4 mr-2" />
+                Upcoming Trips
+              </Button>
+              <Button
                 onClick={() => navigate("/plan")}
                 className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
               >
@@ -304,6 +403,12 @@ const SavedTripsPage = () => {
                       <span className="px-3 py-1 text-xs font-bold rounded-full bg-white/90 text-blue-600">
                         Saved Trip
                       </span>
+                      {trip.isUpcoming && (
+                        <span className="px-3 py-1 text-xs font-bold rounded-full bg-white/90 text-green-600 flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          Upcoming
+                        </span>
+                      )}
                       <span className="px-3 py-1 text-xs font-bold rounded-full bg-white/90 text-purple-600 capitalize">
                         {trip.travelType} Travel
                       </span>
@@ -312,7 +417,9 @@ const SavedTripsPage = () => {
                       {trip.title}
                     </h2>
                     <p className="text-white/90 text-sm">
-                      {formatDate(trip.startDate)}
+                      {trip.isUpcoming && trip.tripStartDate
+                        ? `Trip: ${formatDate(trip.tripStartDate)}`
+                        : `Created: ${formatDate(trip.startDate)}`}
                     </p>
                   </div>
 
@@ -392,21 +499,141 @@ const SavedTripsPage = () => {
                     </div>
                   )}
 
-                  {/* Action Button */}
-                  <Button
-                    onClick={() => handleViewTrip(trip)}
-                    className="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white"
-                  >
-                    <Eye className="w-4 h-4 mr-2" />
-                    View Itinerary
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
+                  {/* Action Buttons */}
+                  <div className="space-y-2">
+                    <Button
+                      onClick={() => handleViewTrip(trip)}
+                      className="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white"
+                    >
+                      <Eye className="w-4 h-4 mr-2" />
+                      View Itinerary
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </Button>
+
+                    {!trip.isUpcoming ? (
+                      <Button
+                        onClick={() => handleMarkAsUpcoming(trip)}
+                        variant="outline"
+                        className="w-full border-green-500 text-green-600 hover:bg-green-50"
+                      >
+                        <Clock className="w-4 h-4 mr-2" />
+                        Mark as Upcoming
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={() => handleRemoveFromUpcoming(trip._id)}
+                        variant="outline"
+                        className="w-full border-orange-500 text-orange-600 hover:bg-orange-50"
+                        disabled={updatingId === trip._id}
+                      >
+                        {updatingId === trip._id ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Star className="w-4 h-4 mr-2" />
+                        )}
+                        Remove from Upcoming
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </Card>
             ))}
           </div>
         )}
       </div>
+
+      {/* Upcoming Trip Modal */}
+      {showUpcomingModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-md bg-white/95 backdrop-blur-sm border border-white/20 shadow-2xl rounded-2xl">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-blue-500 rounded-xl flex items-center justify-center">
+                  <Clock className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">
+                    Mark as Upcoming
+                  </h3>
+                  <p className="text-sm text-gray-600">Set your trip dates</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Trip Start Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={tripStartDate}
+                    onChange={(e) => setTripStartDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+
+                {tripStartDate && (
+                  <div className="bg-blue-50 p-3 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      <strong>Calculated End Date:</strong>{" "}
+                      {(() => {
+                        const startDate = new Date(tripStartDate);
+                        const endDate = new Date(startDate);
+                        endDate.setDate(
+                          endDate.getDate() + selectedTrip.totalDays
+                        );
+                        return endDate.toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        });
+                      })()}
+                    </p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      Based on {selectedTrip.totalDays} day
+                      {selectedTrip.totalDays !== 1 ? "s" : ""} trip duration
+                    </p>
+                  </div>
+                )}
+
+                <div className="bg-blue-50 p-3 rounded-lg">
+                  <p className="text-sm text-blue-800">
+                    <strong>Selected Trip:</strong> {selectedTrip?.title}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <Button
+                  onClick={() => setShowUpcomingModal(false)}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSubmitUpcoming}
+                  disabled={updatingId === selectedTrip?._id || !tripStartDate}
+                  className="flex-1 bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white"
+                >
+                  {updatingId === selectedTrip?._id ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Marking...
+                    </>
+                  ) : (
+                    <>
+                      <Clock className="w-4 h-4 mr-2" />
+                      Mark as Upcoming
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 };

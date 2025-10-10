@@ -124,3 +124,33 @@ export async function apiCheckTripSaved(params, token) {
     headers: { Authorization: `Bearer ${token}` },
   });
 }
+
+// Upcoming Trips APIs
+export async function apiGetUpcomingTrips(token, params = {}) {
+  const queryParams = new URLSearchParams(params).toString();
+  const url = queryParams
+    ? `/api/saved-trips/upcoming?${queryParams}`
+    : "/api/saved-trips/upcoming";
+
+  return request(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function apiMarkTripAsUpcoming(id, payload, token) {
+  return request(`/api/saved-trips/${id}/upcoming`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function apiRemoveTripFromUpcoming(id, token) {
+  return request(`/api/saved-trips/${id}/upcoming`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}

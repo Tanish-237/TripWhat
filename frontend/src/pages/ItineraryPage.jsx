@@ -4,12 +4,16 @@ import { useTrip } from "@/contexts/TripContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { apiSaveTrip, apiCheckTripSaved, getToken } from "@/lib/api";
+import {
+  apiSaveTrip,
+  apiCheckTripSaved,
+  apiMarkTripAsUpcoming,
+  getToken,
+} from "@/lib/api";
 import { toast } from "react-toastify";
 import {
   Calendar,
   MapPin,
-  Clock,
   DollarSign,
   ChevronLeft,
   ChevronRight,
@@ -36,6 +40,7 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  Clock,
 } from "lucide-react";
 
 const ItineraryPage = () => {
@@ -48,13 +53,27 @@ const ItineraryPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showOnlyIncomplete, setShowOnlyIncomplete] = useState(false);
   const [animateCards, setAnimateCards] = useState(true);
+  const [showUpcomingModal, setShowUpcomingModal] = useState(false);
+  const [tripStartDate, setTripStartDate] = useState("");
+  const [isMarkingUpcoming, setIsMarkingUpcoming] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
 
-  const itinerary = tripData?.generatedItinerary?.itinerary;
+  // Handle different data structures for itinerary
+  const itinerary =
+    tripData?.generatedItinerary?.itinerary ||
+    tripData?.generatedItinerary ||
+    null;
 
   console.log("📊 ItineraryPage - tripData:", tripData);
   console.log("📊 ItineraryPage - itinerary:", itinerary);
+  console.log("📊 ItineraryPage - generatedItinerary structure:", {
+    hasGeneratedItinerary: !!tripData?.generatedItinerary,
+    hasItinerary: !!tripData?.generatedItinerary?.itinerary,
+    hasDays: !!tripData?.generatedItinerary?.itinerary?.days,
+    daysLength: tripData?.generatedItinerary?.itinerary?.days?.length,
+    hasTripMetadata: !!tripData?.generatedItinerary?.tripMetadata,
+  });
 
   useEffect(() => {
     if (!itinerary) {
@@ -122,10 +141,32 @@ const ItineraryPage = () => {
         tripData.startDate
       ).toLocaleDateString()}`;
 
-      // Ensure generatedItinerary has the required tripMetadata
+      // Debug the current data structure
+      console.log(
+        "🔍 Saving trip - tripData.generatedItinerary:",
+        tripData.generatedItinerary
+      );
+      console.log(
+        "🔍 Saving trip - has itinerary property:",
+        !!tripData.generatedItinerary?.itinerary
+      );
+      console.log(
+        "🔍 Saving trip - has days:",
+        !!tripData.generatedItinerary?.days
+      );
+      console.log(
+        "🔍 Saving trip - has tripMetadata:",
+        !!tripData.generatedItinerary?.tripMetadata
+      );
+
+      // Extract the actual itinerary data from the AI response structure
+      const actualItinerary =
+        tripData.generatedItinerary?.itinerary || tripData.generatedItinerary;
+
+      // Ensure generatedItinerary has the required tripMetadata and proper structure
       const generatedItinerary = {
-        ...tripData.generatedItinerary,
-        tripMetadata: tripData.generatedItinerary?.tripMetadata || {
+        ...actualItinerary,
+        tripMetadata: actualItinerary?.tripMetadata || {
           destination: cityNames,
           numberOfPeople: tripData.people,
           travelers: tripData.people,
@@ -147,7 +188,18 @@ const ItineraryPage = () => {
             },
           },
         },
+        // Preserve the markdown if it exists
+        markdown: tripData.generatedItinerary?.markdown,
       };
+
+      console.log(
+        "🔍 Saving trip - final generatedItinerary:",
+        generatedItinerary
+      );
+      console.log(
+        "🔍 Saving trip - sample activity location:",
+        generatedItinerary?.days?.[0]?.timeSlots?.[0]?.activities?.[0]?.location
+      );
 
       const payload = {
         title,
@@ -178,6 +230,113 @@ const ItineraryPage = () => {
       toast.error(error.message || "Failed to save trip");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleMarkAsUpcoming = () => {
+    // Use the original trip start date as default
+    const originalStartDate = tripData?.startDate
+      ? new Date(tripData.startDate).toISOString().split("T")[0]
+      : "";
+    setTripStartDate(originalStartDate);
+    setShowUpcomingModal(true);
+  };
+
+  const handleSubmitUpcoming = async () => {
+    if (!tripStartDate) {
+      toast.error("Please select a trip start date");
+      return;
+    }
+
+    if (!isAuthenticated) {
+      toast.error("Please log in to mark trips as upcoming");
+      return;
+    }
+
+    try {
+      setIsMarkingUpcoming(true);
+      const token = getToken();
+
+      if (!token) {
+        toast.error("Authentication token not found");
+        return;
+      }
+
+      // First save the trip, then mark as upcoming
+      const cityNames =
+        tripData.cities?.map((c) => c.name).join(" → ") || "My Trip";
+      const title = `${cityNames} - ${new Date(
+        tripData.startDate
+      ).toLocaleDateString()}`;
+
+      // Extract the actual itinerary data from the AI response structure
+      const actualItinerary =
+        tripData.generatedItinerary?.itinerary || tripData.generatedItinerary;
+
+      // Ensure generatedItinerary has the required tripMetadata and proper structure
+      const generatedItinerary = {
+        ...actualItinerary,
+        tripMetadata: actualItinerary?.tripMetadata || {
+          destination: cityNames,
+          numberOfPeople: tripData.people,
+          travelers: tripData.people,
+          budget: {
+            perDay: tripData.budget?.total
+              ? Math.round(
+                  tripData.budget.total /
+                    (tripData.cities?.reduce(
+                      (sum, city) => sum + city.days,
+                      0
+                    ) || 1)
+                )
+              : 0,
+            breakdown: {
+              activities: tripData.budget?.events || 0,
+              accommodation: tripData.budget?.accommodation || 0,
+              food: tripData.budget?.food || 0,
+              travel: tripData.budget?.travel || 0,
+            },
+          },
+        },
+        markdown: tripData.generatedItinerary?.markdown,
+      };
+
+      const payload = {
+        title,
+        description: `A ${tripData.travelType} trip to ${cityNames} for ${tripData.people} people`,
+        startDate:
+          tripData.startDate instanceof Date
+            ? tripData.startDate.toISOString()
+            : tripData.startDate,
+        cities: tripData.cities,
+        totalDays:
+          tripData.cities?.reduce((sum, city) => sum + city.days, 0) || 0,
+        people: tripData.people,
+        travelType: tripData.travelType,
+        budget: tripData.budget,
+        budgetMode: tripData.budgetMode || "capped",
+        generatedItinerary,
+        tags: [
+          tripData.travelType,
+          ...(tripData.cities?.map((c) => c.name) || []),
+        ],
+      };
+
+      // Save the trip first
+      const saveResponse = await apiSaveTrip(payload, token);
+      const savedTripId = saveResponse.savedTrip._id;
+
+      // Now mark as upcoming
+      await apiMarkTripAsUpcoming(savedTripId, { tripStartDate }, token);
+
+      setIsSaved(true);
+      toast.success("Trip saved and marked as upcoming! 🎉");
+      setShowUpcomingModal(false);
+    } catch (err) {
+      console.error("Error marking trip as upcoming:", err);
+      toast.error("Failed to mark trip as upcoming");
+    } finally {
+      setIsMarkingUpcoming(false);
     }
   };
 
@@ -418,6 +577,24 @@ const ItineraryPage = () => {
                   <>
                     <Heart className="w-4 h-4 mr-2" />
                     Save Trip
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={handleMarkAsUpcoming}
+                disabled={isMarkingUpcoming}
+                size="sm"
+                className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+              >
+                {isMarkingUpcoming ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Clock className="w-4 h-4 mr-2" />
+                    Mark as Upcoming
                   </>
                 )}
               </Button>
@@ -967,6 +1144,104 @@ const ItineraryPage = () => {
           )}
         </div>
       </div>
+
+      {/* Upcoming Trip Modal */}
+      {showUpcomingModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-md bg-white/95 backdrop-blur-sm border border-white/20 shadow-2xl rounded-2xl">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-blue-500 rounded-xl flex items-center justify-center">
+                  <Clock className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">
+                    Mark as Upcoming
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    Set your trip start date
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Trip Start Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={tripStartDate}
+                    onChange={(e) => setTripStartDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+
+                {tripStartDate && (
+                  <div className="bg-blue-50 p-3 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      <strong>Calculated End Date:</strong>{" "}
+                      {(() => {
+                        const startDate = new Date(tripStartDate);
+                        const endDate = new Date(startDate);
+                        endDate.setDate(
+                          endDate.getDate() + (tripData?.totalDays || 0)
+                        );
+                        return endDate.toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        });
+                      })()}
+                    </p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      Based on {tripData?.totalDays || 0} day
+                      {(tripData?.totalDays || 0) !== 1 ? "s" : ""} trip
+                      duration
+                    </p>
+                  </div>
+                )}
+
+                <div className="bg-blue-50 p-3 rounded-lg">
+                  <p className="text-sm text-blue-800">
+                    <strong>Note:</strong> This will save your trip and mark it
+                    as upcoming. The end date will be calculated automatically
+                    based on your trip duration.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <Button
+                  onClick={() => setShowUpcomingModal(false)}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSubmitUpcoming}
+                  disabled={isMarkingUpcoming || !tripStartDate}
+                  className="flex-1 bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white"
+                >
+                  {isMarkingUpcoming ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Clock className="w-4 h-4 mr-2" />
+                      Mark as Upcoming
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 };
