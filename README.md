@@ -53,7 +53,8 @@ tripwhat/
 │
 └── docs/
     ├── PHASE1-COMPLETE.md
-    ├── PHASE1.5-COMPLETE.md    # 🆕 Latest features
+    ├── PHASE1.5-COMPLETE.md
+    ├── GOOGLE-PLACES-SETUP.md  # 🆕 Google Maps setup guide
     ├── ROADMAP.md
     └── SETUP.md
 
@@ -130,7 +131,12 @@ FRONTEND_URL=http://localhost:5173
 **Frontend (.env)**:
 ```env
 VITE_API_URL=http://localhost:5000
+
+# Optional: Google Places Autocomplete
+VITE_GOOGLE_MAPS_API_KEY=your-google-maps-api-key
 ```
+
+> 📝 **Note**: Google Places Autocomplete is optional. If not configured, the app will use standard text input. [See setup guide](./docs/GOOGLE-PLACES-SETUP.md)
 
 ### Running the App
 
@@ -153,13 +159,14 @@ npm run dev
 
 ## ✨ Features
 
-- Chat-based trip planning
-- AI agent with MCP tool integration
-- Structured itinerary output
-- Interactive map with destination pins
-- Swipeable destination cards
-- Multi-turn conversation refinement
-- Booking affiliate links
+- **Smart City Search**: Google Places Autocomplete for destination selection
+- **Chat-based Planning**: Natural language trip planning
+- **AI Agent**: MCP tool integration with LangGraph orchestration
+- **Budget-Aware Itineraries**: Personalized day-by-day plans
+- **Interactive Maps**: Destination pins and route visualization
+- **Multi-City Trips**: Seamless multi-destination itineraries
+- **Saved & Upcoming Trips**: Organize and track your travel plans
+- **Real-time Updates**: WebSocket-powered live itinerary generation
 
 ## Development roadmap
 

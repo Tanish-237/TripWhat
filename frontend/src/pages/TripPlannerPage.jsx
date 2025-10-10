@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import TripPlanningSidebar from "@/components/TripPlanningSidebar";
 import { useTrip } from "@/contexts/TripContext";
 import Navbar from "@/components/Navbar";
+import GooglePlacesAutocomplete from "react-google-places-autocomplete";
+import { useGoogleMaps } from "@/hooks/useGoogleMaps";
 import {
   Plus,
   CalendarIcon,
@@ -131,24 +133,28 @@ const QuickStats = () => {
   );
 };
 
-const CityCard = ({ city, index, onRemove, onUpdate }) => {
+const CityCard = ({ city, index, onRemove, onUpdate, isGoogleMapsLoaded }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(city.name);
+  const [editPlace, setEditPlace] = useState(null);
   const [editDays, setEditDays] = useState(city.days.toString());
 
   const handleSave = () => {
-    if (editName.trim()) {
+    const cityName = editPlace?.label || editName.trim();
+    if (cityName) {
       onUpdate(city.id, {
-        name: editName.trim(),
+        name: cityName,
         days: Number.parseInt(editDays) || 1,
       });
       setIsEditing(false);
+      setEditPlace(null);
     }
   };
 
   const handleCancel = () => {
     setEditName(city.name);
     setEditDays(city.days.toString());
+    setEditPlace(null);
     setIsEditing(false);
   };
 
@@ -165,16 +171,48 @@ const CityCard = ({ city, index, onRemove, onUpdate }) => {
 
         {isEditing ? (
           <div className="flex flex-1 gap-2 items-center">
-            <Input
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              className="h-10 flex-1 bg-white border-gray-200 text-gray-900 placeholder:text-gray-500"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSave();
-                if (e.key === "Escape") handleCancel();
-              }}
-            />
+            {isGoogleMapsLoaded ? (
+              <div className="flex-1">
+                <GooglePlacesAutocomplete
+                  selectProps={{
+                    value: editPlace,
+                    onChange: setEditPlace,
+                    placeholder: city.name,
+                    isClearable: true,
+                    styles: {
+                      control: (provided) => ({
+                        ...provided,
+                        height: '40px',
+                        minHeight: '40px',
+                        borderRadius: '0.5rem',
+                        borderWidth: '1px',
+                        borderColor: '#E5E7EB',
+                        backgroundColor: 'white',
+                        fontSize: '0.875rem',
+                      }),
+                      menu: (provided) => ({
+                        ...provided,
+                        zIndex: 9999,
+                      }),
+                    },
+                  }}
+                  autocompletionRequest={{
+                    types: ['(cities)'],
+                  }}
+                />
+              </div>
+            ) : (
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="h-10 flex-1 bg-white border-gray-200 text-gray-900 placeholder:text-gray-500"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSave();
+                  if (e.key === "Escape") handleCancel();
+                }}
+              />
+            )}
             <Input
               type="number"
               min="1"
@@ -247,14 +285,29 @@ const CityCard = ({ city, index, onRemove, onUpdate }) => {
 };
 
 const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
+  const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  
+  console.log('🚀 [TripBuilder] Component rendering');
+  console.log('🔑 [TripBuilder] API Key from env:', googleMapsApiKey ? `${googleMapsApiKey.substring(0, 20)}...` : 'MISSING!');
+  
+  const isGoogleMapsLoaded = useGoogleMaps(googleMapsApiKey);
+  
+  console.log('📊 [TripBuilder] isGoogleMapsLoaded:', isGoogleMapsLoaded);
+  
   const [startDate, setStartDate] = useState(
     tripData?.startDate ? new Date(tripData.startDate) : null
   );
   const [cities, setCities] = useState(tripData?.cities || []);
   const [newCityName, setNewCityName] = useState("");
+  const [selectedPlace, setSelectedPlace] = useState(null);
   const [newCityDays, setNewCityDays] = useState("3");
   const [showAddForm, setShowAddForm] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState(null);
+
+  // Log when Google Maps load state changes
+  React.useEffect(() => {
+    console.log('🔄 [TripBuilder] Google Maps loaded state changed:', isGoogleMapsLoaded);
+  }, [isGoogleMapsLoaded]);
 
   // Update local state when tripData changes
   React.useEffect(() => {
@@ -282,16 +335,18 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
   };
 
   const addCity = () => {
-    if (newCityName.trim() && newCityDays) {
+    const cityName = selectedPlace?.label || newCityName.trim();
+    if (cityName && newCityDays) {
       const newCity = {
         id: Date.now().toString(),
-        name: newCityName.trim(),
+        name: cityName,
         days: Number.parseInt(newCityDays) || 1,
       };
       const newCities = [...cities, newCity];
       setCities(newCities);
       persistData(startDate, newCities);
       setNewCityName("");
+      setSelectedPlace(null);
       setNewCityDays("3");
       setShowAddForm(false);
     }
@@ -412,6 +467,7 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
                       index={index}
                       onRemove={removeCity}
                       onUpdate={updateCity}
+                      isGoogleMapsLoaded={isGoogleMapsLoaded}
                     />
                   </div>
                 ))}
@@ -420,14 +476,80 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
                   <Card className="p-4 bg-gradient-to-r from-blue-50 to-pink-50 border-2 border-dashed border-blue-200 hover:bg-gradient-to-r hover:from-blue-100/80 hover:to-pink-100/80 hover:backdrop-blur-sm transition-all duration-300">
                     <div className="flex flex-col gap-3 sm:flex-row">
                       <div className="flex-1">
-                        <Input
-                          placeholder="City name (e.g., Paris, Tokyo)"
-                          value={newCityName}
-                          onChange={(e) => setNewCityName(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && addCity()}
-                          className="h-12 text-base bg-white/80 backdrop-blur-sm border-gray-200 text-gray-900 placeholder:text-gray-500 focus:bg-white transition-all duration-200"
-                          autoFocus
-                        />
+                        {(() => {
+                          console.log('🎨 [TripBuilder] Rendering autocomplete, isGoogleMapsLoaded:', isGoogleMapsLoaded);
+                          return isGoogleMapsLoaded ? (
+                          <GooglePlacesAutocomplete
+                            selectProps={{
+                              value: selectedPlace,
+                              onChange: setSelectedPlace,
+                              placeholder: "Search for a city or destination...",
+                              isClearable: true,
+                              styles: {
+                                control: (provided) => ({
+                                  ...provided,
+                                  height: '48px',
+                                  minHeight: '48px',
+                                  borderRadius: '0.5rem',
+                                  borderWidth: '1px',
+                                  borderColor: '#E5E7EB',
+                                  backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                                  backdropFilter: 'blur(4px)',
+                                  fontSize: '1rem',
+                                  '&:hover': {
+                                    borderColor: '#93C5FD',
+                                  },
+                                  '&:focus-within': {
+                                    backgroundColor: 'white',
+                                    borderColor: '#3B82F6',
+                                    boxShadow: '0 0 0 2px rgba(59, 130, 246, 0.1)',
+                                  },
+                                }),
+                                input: (provided) => ({
+                                  ...provided,
+                                  color: '#111827',
+                                }),
+                                placeholder: (provided) => ({
+                                  ...provided,
+                                  color: '#6B7280',
+                                }),
+                                singleValue: (provided) => ({
+                                  ...provided,
+                                  color: '#111827',
+                                }),
+                                menu: (provided) => ({
+                                  ...provided,
+                                  borderRadius: '0.5rem',
+                                  overflow: 'hidden',
+                                  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                                  zIndex: 9999,
+                                }),
+                                option: (provided, state) => ({
+                                  ...provided,
+                                  backgroundColor: state.isSelected ? '#3B82F6' : state.isFocused ? '#DBEAFE' : 'white',
+                                  color: state.isSelected ? 'white' : '#111827',
+                                  cursor: 'pointer',
+                                  '&:active': {
+                                    backgroundColor: '#2563EB',
+                                  },
+                                }),
+                              },
+                            }}
+                            autocompletionRequest={{
+                              types: ['(cities)'],
+                            }}
+                          />
+                        ) : (
+                          <Input
+                            placeholder="City name (e.g., Paris, Tokyo)"
+                            value={newCityName}
+                            onChange={(e) => setNewCityName(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && addCity()}
+                            className="h-12 text-base bg-white/80 backdrop-blur-sm border-gray-200 text-gray-900 placeholder:text-gray-500 focus:bg-white transition-all duration-200"
+                            autoFocus
+                          />
+                        );
+                        })()}
                       </div>
                       <div className="w-full sm:w-36">
                         <Input
@@ -445,7 +567,7 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
                         <Button
                           onClick={addCity}
                           className="h-12 gap-2 px-6 bg-gradient-to-r from-blue-500 to-pink-500 hover:from-blue-600 hover:to-pink-600 text-white border-0 transition-all duration-300"
-                          disabled={!newCityName.trim()}
+                          disabled={!selectedPlace && !newCityName.trim()}
                         >
                           <Check className="h-5 w-5" />
                           Add
@@ -455,6 +577,7 @@ const TripBuilder = ({ onStartPlanning, tripData, updateTripData }) => {
                           onClick={() => {
                             setShowAddForm(false);
                             setNewCityName("");
+                            setSelectedPlace(null);
                             setNewCityDays("3");
                           }}
                           className="h-12 px-4 border-gray-300 text-gray-600 hover:bg-white/80 hover:backdrop-blur-sm transition-all duration-200"
