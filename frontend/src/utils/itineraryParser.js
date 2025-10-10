@@ -124,6 +124,9 @@ function extractRating(text) {
  * Check if a message contains an itinerary
  */
 export function containsItinerary(message) {
+  if (!message || typeof message !== 'string') {
+    return false;
+  }
   return message.includes('# 🗺️') && 
          message.includes('-Day') && 
          message.includes('Itinerary');

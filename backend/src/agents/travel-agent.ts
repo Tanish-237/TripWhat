@@ -1,12 +1,12 @@
 import { StateGraph, Annotation } from '@langchain/langgraph';
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, AIMessage, SystemMessage, BaseMessage } from '@langchain/core/messages';
-import { openTripMapAPI } from '../mcp-servers/places/api.js';
 import { itineraryBuilder } from '../services/itineraryBuilder.js';
 import { intentDetector } from './intent-detector.js';
 import { toolRegistry } from './tool-registry.js';
 import { TRAVEL_AGENT_SYSTEM_PROMPT } from './prompts.js';
-import { formatCategoriesForAPI, getCategoryDisplayName } from '../config/opentripmap-categories.js';
+import { getPlaceTypeDisplayName } from '../config/google-places-types.js';
+import { googlePlacesAPI } from '../services/googlePlacesAPI.js';
 import type { AgentConfig } from './types.js';
 import type { Destination } from '../mcp-servers/places/types.js';
 import type { Itinerary } from '../types/itinerary.js';
@@ -145,7 +145,7 @@ export class TravelAgent {
       
       console.log('🎯 [PLANNER] Detected intent:', detectedIntent.primary_intent);
       console.log('🔧 [PLANNER] Tools to call:', detectedIntent.tools_to_call);
-      console.log('🏷️  [PLANNER] Categories:', detectedIntent.entities.opentripmap_kinds);
+      console.log('🏷️  [PLANNER] Place Types:', detectedIntent.entities.google_place_types);
       console.log('📊 [PLANNER] Confidence:', detectedIntent.confidence);
       console.log('💭 [PLANNER] Reasoning:', detectedIntent.reasoning);
 
@@ -154,7 +154,7 @@ export class TravelAgent {
 
       return {
         intent: intentString,
-        searchResults: detectedIntent.entities.opentripmap_kinds as any, // Store categories temporarily
+        searchResults: detectedIntent.entities.google_place_types as any, // Store place types temporarily
         messages: [new AIMessage(`Understood: ${detectedIntent.reasoning}`)],
       };
     } catch (error) {
@@ -174,8 +174,8 @@ export class TravelAgent {
     try {
       const { intent, userQuery } = state;
       
-      // Extract detected categories (stored temporarily in searchResults by planner)
-      const detectedCategories = (state.searchResults as any) || [];
+      // Extract detected place types (stored temporarily in searchResults by planner)
+      const detectedPlaceTypes = (state.searchResults as any) || [];
       
       // Map intent to new naming convention if needed
       const normalizedIntent = intent?.toLowerCase().replace('_', '_') || 'unknown';
@@ -186,41 +186,22 @@ export class TravelAgent {
           // Extract destination from query
           const destination = this.extractDestination(userQuery);
           
-          // Use detected categories or fallback to extractCategory
-          const categories = detectedCategories.length > 0 
-            ? detectedCategories 
-            : [this.extractCategory(userQuery)].filter(Boolean);
+          // Use detected place types
+          const placeTypes = detectedPlaceTypes.length > 0 
+            ? detectedPlaceTypes 
+            : ['tourist_attraction', 'museum', 'park'];
           
-          console.log(`🔍 [TOOL] Searching for ${categories.join(', ') || 'attractions'} in ${destination}`);
+          console.log(`🔍 [TOOL] Searching for ${placeTypes.join(', ')} in ${destination}`);
           
-          if (categories.length > 0) {
-            // Use the search_by_category tool with detected categories
-            const categoryKinds = formatCategoriesForAPI(categories);
-            
-            const result = await toolRegistry.executeTool('search_by_category', {
-              location: destination,
-              category: categoryKinds,
-              limit: 10,
-            });
-            
-            const categoryResults = result.content?.[0]?.text ? 
-              JSON.parse(result.content[0].text).places : [];
-            
-            console.log(`✅ [TOOL] Got ${categoryResults.length} results for categories: ${categories.map(getCategoryDisplayName).join(', ')}`);
-            return { searchResults: categoryResults };
-          } else {
-            // Generic search
-            const result = await toolRegistry.executeTool('search_destinations', {
-              query: destination,
-              limit: 10,
-            });
-            
-            const searchResults = result.content?.[0]?.text ? 
-              JSON.parse(result.content[0].text).destinations : [];
-            
-            console.log(`✅ [TOOL] Got ${searchResults.length} results`);
-            return { searchResults };
-          }
+          // Use Google Places API to search
+          const results = await googlePlacesAPI.searchPlacesByTypes(
+            destination,
+            placeTypes,
+            10
+          );
+          
+          console.log(`✅ [TOOL] Got ${results.length} results for place types: ${placeTypes.map(getPlaceTypeDisplayName).join(', ')}`);
+          return { searchResults: results };
         }
 
         case 'search_restaurants': {
@@ -326,33 +307,36 @@ export class TravelAgent {
 
   /**
    * Response Formatter Node: Creates conversational response from tool results
+   * Uses LLM to generate natural, tailored responses based on user query and data
    */
   private async responseFormatterNode(state: AgentState): Promise<Partial<AgentState>> {
     console.log('\n✍️  [FORMATTER] Generating response...');
     try {
-      const { intent, searchResults, nearbyAttractions, placeDetails, itinerary, error } = state;
+      const { searchResults, nearbyAttractions, placeDetails, itinerary, error, userQuery } = state;
 
       // Handle errors
       if (error) {
         return { response: `I apologize, but ${error}` };
       }
 
-      // Format response based on what data we have
+      // Format response using LLM for natural conversation
       let formattedResponse = '';
 
       if (itinerary) {
+        // For itineraries, use structured format (already detailed enough)
         formattedResponse = this.formatItinerary(itinerary);
       } else if (searchResults && searchResults.length > 0) {
-        formattedResponse = this.formatSearchResults(searchResults);
+        // Use LLM to create personalized response from search results
+        formattedResponse = await this.formatSearchResultsWithLLM(userQuery, searchResults);
       } else if (nearbyAttractions && nearbyAttractions.length > 0) {
-        formattedResponse = this.formatNearbyAttractions(nearbyAttractions);
+        formattedResponse = await this.formatNearbyWithLLM(userQuery, nearbyAttractions);
       } else if (placeDetails) {
-        formattedResponse = this.formatPlaceDetails(placeDetails);
+        formattedResponse = await this.formatDetailsWithLLM(userQuery, placeDetails);
       } else {
         // No tool results, use LLM to generate conversational response
         const messages = [
           new SystemMessage(TRAVEL_AGENT_SYSTEM_PROMPT),
-          new HumanMessage(state.userQuery),
+          new HumanMessage(userQuery),
         ];
         console.log('🤖 [FORMATTER] Calling GPT-4o-mini for conversational response...');
         const response = await this.model.invoke(messages);
@@ -366,6 +350,110 @@ export class TravelAgent {
       return {
         response: 'I had trouble formatting the response. Please try asking again.',
       };
+    }
+  }
+
+  /**
+   * Format search results using LLM for natural, personalized response
+   */
+  private async formatSearchResultsWithLLM(userQuery: string, results: any[]): Promise<string> {
+    try {
+      // Prepare structured data for LLM
+      const placesData = results.slice(0, 5).map((place, index) => ({
+        rank: index + 1,
+        name: place.name || 'Unknown Place',
+        address: place.address || 'Address not available',
+        location: place.location ? `${place.location.latitude.toFixed(4)}, ${place.location.longitude.toFixed(4)}` : 'Location not available',
+        categories: place.category?.slice(0, 3).join(', ') || 'Not categorized',
+        rating: place.rating ? `${place.rating}/5` : 'No rating',
+        priceLevel: place.priceLevel || 'Price not available',
+      }));
+
+      const systemPrompt = `You are a friendly, knowledgeable travel assistant. 
+
+The user asked: "${userQuery}"
+
+Here are the places I found (in JSON format):
+${JSON.stringify(placesData, null, 2)}
+
+Your task:
+1. Create a warm, conversational response that directly addresses the user's query
+2. Highlight the TOP 3-4 most relevant places based on the query
+3. Include key details: name, what makes it special, rating, location
+4. Use a friendly, enthusiastic tone
+5. End with a helpful follow-up question or suggestion
+6. Keep it concise (2-3 short paragraphs max)
+7. Use emojis sparingly for visual appeal
+
+Format your response in a natural, flowing way - NOT as a numbered list unless it makes sense contextually.`;
+
+      console.log('🤖 [FORMATTER] Using LLM to personalize search results...');
+      
+      const response = await this.model.invoke([
+        new SystemMessage(systemPrompt),
+        new HumanMessage('Create a personalized response based on the data provided.'),
+      ]);
+
+      return response.content as string;
+    } catch (error) {
+      console.error('LLM formatting error:', error);
+      // Fallback to basic formatting
+      return this.formatSearchResults(results);
+    }
+  }
+
+  /**
+   * Format nearby attractions using LLM
+   */
+  private async formatNearbyWithLLM(userQuery: string, attractions: any[]): Promise<string> {
+    try {
+      const placesData = attractions.slice(0, 5).map((place, index) => ({
+        rank: index + 1,
+        name: place.name,
+        distance: place.distance ? `${place.distance}m` : 'nearby',
+        categories: place.category?.join(', ') || 'attraction',
+      }));
+
+      const systemPrompt = `You are a helpful travel assistant. The user asked: "${userQuery}"
+
+Here are nearby places:
+${JSON.stringify(placesData, null, 2)}
+
+Create a brief, friendly response highlighting the best nearby options. Mention distances and what makes them interesting.`;
+
+      const response = await this.model.invoke([
+        new SystemMessage(systemPrompt),
+        new HumanMessage('Format this into a natural response.'),
+      ]);
+
+      return response.content as string;
+    } catch (error) {
+      console.error('LLM formatting error:', error);
+      return this.formatNearbyAttractions(attractions);
+    }
+  }
+
+  /**
+   * Format place details using LLM
+   */
+  private async formatDetailsWithLLM(userQuery: string, details: any): Promise<string> {
+    try {
+      const systemPrompt = `You are a travel expert. The user asked: "${userQuery}"
+
+Place details:
+${JSON.stringify(details, null, 2)}
+
+Provide a compelling, informative description of this place. Include its highlights, what visitors love about it, and any practical information.`;
+
+      const response = await this.model.invoke([
+        new SystemMessage(systemPrompt),
+        new HumanMessage('Create an engaging description.'),
+      ]);
+
+      return response.content as string;
+    } catch (error) {
+      console.error('LLM formatting error:', error);
+      return this.formatPlaceDetails(details);
     }
   }
 
@@ -442,75 +530,29 @@ export class TravelAgent {
   }
 
   /**
-   * Helper: Extract category/type from query
-   * Maps user-friendly terms to OpenTripMap category codes
-   */
-  private extractCategory(query: string): string | null {
-    const queryLower = query.toLowerCase();
-    
-    const categoryMap: { [key: string]: string } = {
-      'beach': 'beaches',
-      'beaches': 'beaches',
-      'restaurant': 'foods',
-      'restaurants': 'foods',
-      'food': 'foods',
-      'dining': 'foods',
-      'eat': 'foods',
-      'museum': 'museums',
-      'museums': 'museums',
-      'park': 'natural',
-      'parks': 'natural',
-      'nature': 'natural',
-      'natural': 'natural',
-      'garden': 'natural',
-      'gardens': 'natural',
-      'monument': 'monuments',
-      'monuments': 'monuments',
-      'church': 'religion',
-      'churches': 'religion',
-      'temple': 'religion',
-      'temples': 'religion',
-      'mosque': 'religion',
-      'mosques': 'religion',
-      'shopping': 'shops',
-      'shop': 'shops',
-      'mall': 'shops',
-      'hotel': 'accomodations',
-      'hotels': 'accomodations',
-      'stay': 'accomodations',
-      'nightlife': 'nightlife',
-      'bar': 'nightlife',
-      'bars': 'nightlife',
-      'club': 'nightlife',
-      'clubs': 'nightlife',
-    };
-
-    for (const [keyword, category] of Object.entries(categoryMap)) {
-      if (queryLower.includes(keyword)) {
-        return category;
-      }
-    }
-
-    return null;
-  }
-
-  /**
    * Helper: Format search results into readable text
    */
   private formatSearchResults(results: any[]): string {
     const count = results.length;
     let response = `I found ${count} amazing places! Here are the highlights:\n\n`;
-
+    
     results.slice(0, 5).forEach((place, index) => {
-      response += `${index + 1}. **${place.name}**\n`;
-      response += `   📍 Location: ${place.location.latitude.toFixed(4)}, ${place.location.longitude.toFixed(4)}\n`;
+      response += `${index + 1}. **${place.name || 'Unknown Place'}**\n`;
+      
+      if (place.location && place.location.latitude && place.location.longitude) {
+        response += `   📍 Location: ${place.location.latitude.toFixed(4)}, ${place.location.longitude.toFixed(4)}\n`;
+      }
+      
+      if (place.address) {
+        response += `   📍 ${place.address}\n`;
+      }
       
       if (place.category && place.category.length > 0) {
         response += `   🏷️  Categories: ${place.category.slice(0, 3).join(', ')}\n`;
       }
       
       if (place.rating) {
-        response += `   ⭐ Rating: ${place.rating}/7\n`;
+        response += `   ⭐ Rating: ${place.rating}/5\n`;
       }
       
       response += '\n';

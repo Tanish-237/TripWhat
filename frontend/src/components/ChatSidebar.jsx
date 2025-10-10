@@ -52,7 +52,12 @@ export function ChatSidebar({ isOpen, onClose, onItineraryUpdate }) {
             );
 
             if (response.data.messages && response.data.messages.length > 0) {
-              setMessages(response.data.messages);
+              // Ensure all messages have timestamps
+              const messagesWithTimestamps = response.data.messages.map(msg => ({
+                ...msg,
+                timestamp: msg.timestamp || new Date().toISOString()
+              }));
+              setMessages(messagesWithTimestamps);
 
               // Look for any itineraries in the messages
               const botMessages = response.data.messages.filter(
@@ -86,14 +91,19 @@ export function ChatSidebar({ isOpen, onClose, onItineraryUpdate }) {
   // Process incoming messages from socket
   useEffect(() => {
     if (lastMessage) {
+      // Extract the actual message content from the object
+      const messageContent = typeof lastMessage === 'string' 
+        ? lastMessage 
+        : lastMessage.message;
+      
       // Add the message to the chat
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: lastMessage },
+        { role: "assistant", content: messageContent, timestamp: new Date().toISOString() },
       ]);
 
       // Look for itinerary data
-      const extractedItinerary = parseItineraryFromMarkdown(lastMessage);
+      const extractedItinerary = parseItineraryFromMarkdown(messageContent);
       if (extractedItinerary && onItineraryUpdate) {
         onItineraryUpdate(extractedItinerary);
       }
@@ -103,12 +113,17 @@ export function ChatSidebar({ isOpen, onClose, onItineraryUpdate }) {
     }
 
     if (lastError) {
+      // Extract the actual error message from the object
+      const errorContent = typeof lastError === 'string' 
+        ? lastError 
+        : lastError.error || "I'm sorry, I couldn't send your message. Please check your connection and try again.";
+      
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content:
-            "I'm sorry, I couldn't send your message. Please check your connection and try again.",
+          content: errorContent,
+          timestamp: new Date().toISOString(),
         },
       ]);
       clearLastError();
@@ -126,7 +141,7 @@ export function ChatSidebar({ isOpen, onClose, onItineraryUpdate }) {
     if (!message.trim() || isLoading) return;
 
     // Add user message to the chat immediately
-    setMessages((prev) => [...prev, { role: "user", content: message }]);
+    setMessages((prev) => [...prev, { role: "user", content: message, timestamp: new Date().toISOString() }]);
     setIsLoading(true);
 
     try {
@@ -162,6 +177,7 @@ export function ChatSidebar({ isOpen, onClose, onItineraryUpdate }) {
           role: "assistant",
           content:
             "I'm sorry, I couldn't send your message. Please check your connection and try again.",
+          timestamp: new Date().toISOString(),
         },
       ]);
       setIsLoading(false);
@@ -282,8 +298,9 @@ export function ChatSidebar({ isOpen, onClose, onItineraryUpdate }) {
             {messages.map((message, index) => (
               <MessageBubble
                 key={index}
-                message={message.content}
-                isUser={message.role === "user"}
+                role={message.role}
+                content={message.content}
+                timestamp={message.timestamp}
               />
             ))}
             {isLoading && <TypingIndicator />}

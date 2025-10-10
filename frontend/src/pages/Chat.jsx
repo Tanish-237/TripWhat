@@ -3,12 +3,12 @@ import { useSocket } from '../hooks/useSocket.js';
 import { MessageBubble } from '../components/Chat/MessageBubble.jsx';
 import { TypingIndicator } from '../components/Chat/TypingIndicator.jsx';
 import { MessageInput } from '../components/Chat/MessageInput.jsx';
-import { Map } from '../components/Map.jsx';
+import { ItineraryMap } from '../components/ItineraryMap.jsx';
 import { ItineraryOverlay } from '../components/ItineraryOverlay.jsx';
 import { parseItineraryFromMarkdown } from '../utils/itineraryParser.js';
 import Navbar from '../components/Navbar.jsx';
 import axios from 'axios';
-import { Plane, MapPin } from 'lucide-react';
+import { Plane, MapPin, Calendar, Eye, EyeOff } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
 
@@ -104,11 +104,16 @@ export function Chat() {
   // Process incoming messages from socket
   useEffect(() => {
     if (lastMessage) {
+      // Extract the actual message content from the object
+      const messageContent = typeof lastMessage === 'string' 
+        ? lastMessage 
+        : lastMessage.message;
+      
       // Add the message to the chat
-      setMessages(prev => [...prev, { role: 'assistant', content: lastMessage }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: messageContent }]);
       
       // Look for itinerary data
-      const extractedItinerary = parseItineraryFromMarkdown(lastMessage);
+      const extractedItinerary = parseItineraryFromMarkdown(messageContent);
       if (extractedItinerary) {
         setCurrentItinerary(extractedItinerary);
         
@@ -135,9 +140,14 @@ export function Chat() {
     }
     
     if (lastError) {
+      // Extract the actual error message from the object
+      const errorContent = typeof lastError === 'string' 
+        ? lastError 
+        : lastError.error || "I'm sorry, I encountered an error while processing your request. Please try again.";
+      
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: "I'm sorry, I encountered an error while processing your request. Please try again." 
+        content: errorContent
       }]);
       clearLastError();
       setIsLoading(false);
@@ -174,64 +184,78 @@ export function Chat() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900">
+    <div className="flex flex-col h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
       {/* Navbar */}
       <Navbar />
       
-      {/* Connection Status */}
-      <div className="bg-white dark:bg-gray-800 px-6 py-2 border-b border-gray-200 dark:border-gray-700">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-            {isConnected ? 'Connected to chat' : 'Disconnected'}
-          </p>
-          
-          {conversationId && (
-            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-              <MapPin size={16} />
-              <span className="hidden sm:inline">Session: {conversationId.slice(0, 8)}...</span>
+      {/* Header */}
+      <div className="bg-white/80 backdrop-blur-sm border-b border-gray-200/50 shadow-sm">
+        <div className="max-w-7xl mx-auto px-6 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center shadow-md">
+                <Plane className="text-white" size={20} />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold text-gray-900">Trip Planning Assistant</h1>
+                <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+                  {isConnected ? 'Connected' : 'Disconnected'}
+                  {conversationId && <span className="ml-2 text-gray-400">• Session: {conversationId.slice(0, 8)}</span>}
+                </p>
+              </div>
             </div>
-          )}
+            
+            {currentItinerary && (
+              <button
+                onClick={() => setIsItineraryOpen(!isItineraryOpen)}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg shadow-md hover:shadow-lg transition-all hover:scale-105 text-sm font-medium"
+              >
+                {isItineraryOpen ? <EyeOff size={16} /> : <Eye size={16} />}
+                {isItineraryOpen ? 'Hide Itinerary' : 'View Itinerary'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Split View: Chat + Map */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Chat Panel - 35% */}
-        <div className="w-[35%] flex flex-col bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">
+        {/* Chat Panel - 40% */}
+        <div className="w-[40%] flex flex-col bg-white/95 backdrop-blur-sm border-r border-gray-200/50 shadow-lg">
           <div className="flex-1 overflow-y-auto px-6 py-6">
           {messages.length === 0 ? (
             // Welcome Screen
             <div className="text-center py-12">
-              <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center">
-                <Plane className="text-white" size={32} />
+              <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center shadow-xl">
+                <Plane className="text-white" size={40} />
               </div>
-              <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3">
-                Where would you like to go?
+              <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-3">
+                Where to next?
               </h2>
-              <p className="text-gray-600 dark:text-gray-400 mb-8 max-w-md mx-auto">
-                Tell me your travel plans and I'll help you create the perfect itinerary with local recommendations.
+              <p className="text-gray-600 mb-8 max-w-md mx-auto">
+                Tell me your travel plans and I'll create a personalized itinerary with interactive maps and local recommendations.
               </p>
-              <div className="space-y-2">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Try asking:</p>
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-gray-500">✨ Try asking:</p>
                 <div className="space-y-2">
                   <button 
                     onClick={() => handleSendMessage("Plan a weekend trip to Paris for a couple interested in art and fine dining.")}
-                    className="block w-full py-2 px-4 bg-gray-100 dark:bg-gray-700 rounded-lg text-left text-sm text-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    className="block w-full py-3 px-4 bg-white border border-purple-200 rounded-xl text-left text-sm text-gray-700 hover:border-purple-300 hover:shadow-md transition-all"
                   >
-                    "Plan a weekend trip to Paris for a couple interested in art and fine dining."
+                    💜 "Plan a weekend trip to Paris for art lovers"
                   </button>
                   <button 
                     onClick={() => handleSendMessage("I want to take my family to Tokyo for 5 days. We love anime and traditional culture.")}
-                    className="block w-full py-2 px-4 bg-gray-100 dark:bg-gray-700 rounded-lg text-left text-sm text-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    className="block w-full py-3 px-4 bg-white border border-purple-200 rounded-xl text-left text-sm text-gray-700 hover:border-purple-300 hover:shadow-md transition-all"
                   >
-                    "I want to take my family to Tokyo for 5 days. We love anime and traditional culture."
+                    🗾 "Family trip to Tokyo with anime & culture"
                   </button>
                   <button 
                     onClick={() => handleSendMessage("What are the must-visit places in New York City for a first-time visitor?")}
-                    className="block w-full py-2 px-4 bg-gray-100 dark:bg-gray-700 rounded-lg text-left text-sm text-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    className="block w-full py-3 px-4 bg-white border border-purple-200 rounded-xl text-left text-sm text-gray-700 hover:border-purple-300 hover:shadow-md transition-all"
                   >
-                    "What are the must-visit places in New York City for a first-time visitor?"
+                    🗽 "First-time visitor to New York City"
                   </button>
                 </div>
               </div>
@@ -241,8 +265,10 @@ export function Chat() {
               {messages.map((message, index) => (
                 <MessageBubble
                   key={index}
-                  message={message.content}
-                  isUser={message.role === 'user'}
+                  role={message.role}
+                  content={message.content}
+                  timestamp={message.timestamp || new Date()}
+                  onViewItinerary={currentItinerary && message.role === 'assistant' ? () => setIsItineraryOpen(true) : null}
                 />
               ))}
               {isLoading && <TypingIndicator />}
@@ -252,28 +278,28 @@ export function Chat() {
           </div>
           
           {/* Message Input */}
-          <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-            <MessageInput 
-              onSendMessage={handleSendMessage} 
-              isLoading={isLoading}
-              isDisabled={!isConnected}
-              placeholder={!isConnected ? "Connecting to chat server..." : "Type your message..."}
-            />
-          </div>
+          <MessageInput 
+            onSend={handleSendMessage} 
+            disabled={isLoading || !isConnected}
+            placeholder={!isConnected ? "Connecting to chat server..." : "Ask me about your next trip..."}
+          />
         </div>
         
-        {/* Map Panel - 65% */}
-        <div className="w-[65%] relative">
-          <Map locations={mapLocations} />
-          
-          {/* Itinerary Overlay Button */}
-          {currentItinerary && (
-            <button
-              onClick={() => setIsItineraryOpen(!isItineraryOpen)}
-              className="absolute top-4 right-4 z-10 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-            >
-              {isItineraryOpen ? "Hide Itinerary" : "View Itinerary"}
-            </button>
+        {/* Map Panel - 60% */}
+        <div className="w-[60%] relative bg-white">
+          {currentItinerary ? (
+            <ItineraryMap 
+              itinerary={currentItinerary}
+              selectedDay={null}
+            />
+          ) : (
+            <div className="h-full flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50">
+              <div className="text-center p-8">
+                <MapPin className="w-16 h-16 text-purple-300 mx-auto mb-4" />
+                <p className="text-gray-500 text-lg font-medium">Your itinerary map will appear here</p>
+                <p className="text-gray-400 text-sm mt-2">Start chatting to plan your trip</p>
+              </div>
+            </div>
           )}
           
           {/* Itinerary Overlay */}

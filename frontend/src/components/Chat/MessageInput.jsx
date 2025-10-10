@@ -34,7 +34,7 @@ export function MessageInput({ onSend, disabled, placeholder }) {
   };
 
   return (
-    <div className="border-t border-gray-200  bg-white p-4">
+    <div className="border-t border-gray-200/50 bg-white/95 backdrop-blur-sm p-4">
       {/* Suggested Prompts */}
       {showSuggestions && message.length === 0 && (
         <motion.div
@@ -46,7 +46,7 @@ export function MessageInput({ onSend, disabled, placeholder }) {
             <button
               key={index}
               onClick={() => handleSuggestionClick(prompt)}
-              className="text-xs px-3 py-1.5 rounded-full border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors flex items-center gap-1.5"
+              className="text-xs px-3 py-1.5 rounded-full border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 hover:border-purple-300 transition-all flex items-center gap-1.5 shadow-sm hover:shadow"
             >
               <Sparkles size={12} />
               {prompt}
@@ -56,7 +56,7 @@ export function MessageInput({ onSend, disabled, placeholder }) {
       )}
 
       {/* Input Box */}
-      <div className="flex gap-2 items-end">
+      <div className="flex gap-3 items-end">
         <div className="flex-1 relative">
           <textarea
             value={message}
@@ -65,7 +65,7 @@ export function MessageInput({ onSend, disabled, placeholder }) {
             placeholder={placeholder || "Ask me about your next trip..."}
             disabled={disabled}
             rows={1}
-            className="w-full px-4 py-3 pr-12 rounded-2xl border border-gray-300  bg-gray-50  text-gray-900  placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-shadow focus:shadow-md"
             style={{
               minHeight: "48px",
               maxHeight: "120px",
@@ -77,21 +77,15 @@ export function MessageInput({ onSend, disabled, placeholder }) {
         <button
           onClick={handleSend}
           disabled={disabled || !message.trim()}
-          className="flex-shrink-0 w-12 h-12 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg transition-all hover:scale-105 active:scale-95"
+          className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg transition-all hover:scale-105 active:scale-95 shadow-md"
         >
           <Send size={20} />
         </button>
       </div>
 
       {/* Helper Text */}
-      <p className="text-xs text-gray-500 mt-2 text-center">
-        Press{" "}
-        <kbd className="px-1.5 py-0.5 rounded bg-gray-200 font-mono">Enter</kbd>{" "}
-        to send,{" "}
-        <kbd className="px-1.5 py-0.5 rounded bg-gray-200  font-mono">
-          Shift+Enter
-        </kbd>{" "}
-        for new line
+      <p className="text-xs text-gray-400 mt-2 text-center">
+        Press <kbd className="px-1.5 py-0.5 rounded bg-gray-100 border border-gray-200 font-mono text-gray-600">Enter</kbd> to send, <kbd className="px-1.5 py-0.5 rounded bg-gray-100 border border-gray-200 font-mono text-gray-600">Shift+Enter</kbd> for new line
       </p>
     </div>
   );

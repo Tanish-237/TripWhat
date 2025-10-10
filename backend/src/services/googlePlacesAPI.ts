@@ -98,6 +98,76 @@ export class GooglePlacesAPI {
   }
 
   /**
+   * Search for places by place types (NEW - Google Places API based)
+   * @param location - Location name or coordinates
+   * @param placeTypes - Array of Google Places API place types
+   * @param maxResults - Maximum number of results to return
+   */
+  async searchPlacesByTypes(
+    location: string | { lat: number; lng: number },
+    placeTypes: string[],
+    maxResults: number = 10
+  ): Promise<any[]> {
+    if (!this.apiKey) {
+      console.warn('⚠️  Google Places API key not set. Returning empty results.');
+      return [];
+    }
+
+    try {
+      // Build query combining location with place types
+      const typeQuery = placeTypes.length > 0 ? placeTypes.join(' OR ') : '';
+      const locationStr = typeof location === 'string' ? location : `${location.lat},${location.lng}`;
+      const query = `${typeQuery} in ${locationStr}`;
+
+      console.log(`🔍 [Google Places] Searching: "${query}"`);
+
+      const response = await axios.post(
+        `${PLACES_API_BASE}/places:searchText`,
+        {
+          textQuery: query,
+          maxResultCount: Math.min(maxResults, 20), // API limit
+          ...(typeof location !== 'string' && {
+            locationBias: {
+              circle: {
+                center: { latitude: location.lat, longitude: location.lng },
+                radius: 50000 // 50km
+              }
+            }
+          }),
+          includedType: placeTypes[0], // Use first type as primary filter
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': this.apiKey,
+            'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.regularOpeningHours,places.photos,places.editorialSummary,places.types,places.websiteUri'
+          }
+        }
+      );
+
+      const places = (response.data.places || []).map(this.formatPlace.bind(this));
+      
+      console.log(`✅ [Google Places] Found ${places.length} results`);
+      
+      // Convert to format compatible with existing code
+      return places.map((place: PlaceDetails) => ({
+        id: place.id,
+        name: place.displayName,
+        location: place.location,
+        category: place.types,
+        rating: place.rating,
+        address: place.formattedAddress,
+        photos: place.photos,
+        priceLevel: place.priceLevel,
+        openingHours: place.openingHours,
+      }));
+    } catch (error: any) {
+      console.error('❌ Google Places type search error:', error.response?.data || error.message);
+      return [];
+    }
+  }
+
+  /**
    * Get detailed information about a specific place
    */
   async getPlaceDetails(placeId: string): Promise<PlaceDetails | null> {

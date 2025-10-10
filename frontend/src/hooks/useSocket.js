@@ -46,14 +46,15 @@ export function useSocket(conversationId) {
     socket.on('agent:response', (data) => {
       console.log('[SOCKET] Received agent:response for conversation:', data.conversationId);
       setAgentStatus(null);
-      // Store conversationId with the message for filtering
-      setLastMessage(JSON.stringify({ message: data.message, conversationId: data.conversationId }));
+      // Store the data object directly (not stringified)
+      setLastMessage({ message: data.message, conversationId: data.conversationId });
     });
 
     socket.on('agent:error', (data) => {
       console.log('[SOCKET] Received agent:error for conversation:', data.conversationId);
       setAgentStatus(null);
-      setLastError(JSON.stringify({ error: data.error, conversationId: data.conversationId }));
+      // Store the data object directly (not stringified)
+      setLastError({ error: data.error, conversationId: data.conversationId });
     });
 
     // Cleanup only on unmount

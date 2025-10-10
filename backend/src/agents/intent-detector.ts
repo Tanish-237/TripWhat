@@ -1,6 +1,6 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
-import { getCategoriesFromQuery } from '../config/opentripmap-categories.js';
+import { mapUserCategoryToPlaceTypes, PLACE_TYPE_DETECTION_PROMPT } from '../config/google-places-types.js';
 
 /**
  * Intent schema for structured output
@@ -26,19 +26,19 @@ export const IntentSchema = z.object({
   ]).describe('The primary intent of the user query'),
   
   entities: z.object({
-    location: z.string().optional().describe('Main location/destination mentioned'),
-    origin: z.string().optional().describe('Starting location for travel'),
-    destination: z.string().optional().describe('Destination for travel'),
+    location: z.string().nullable().optional().describe('Main location/destination mentioned'),
+    origin: z.string().nullable().optional().describe('Starting location for travel'),
+    destination: z.string().nullable().optional().describe('Destination for travel'),
     dates: z.object({
       start: z.string().optional(),
       end: z.string().optional(),
-    }).optional().describe('Travel dates in ISO format'),
-    duration: z.number().optional().describe('Number of days for the trip'),
-    budget: z.enum(['budget', 'mid-range', 'luxury']).optional().describe('Budget preference'),
-    number_of_people: z.number().optional().describe('Number of travelers'),
+    }).nullable().optional().describe('Travel dates in ISO format'),
+    duration: z.number().nullable().optional().describe('Number of days for the trip'),
+    budget: z.enum(['budget', 'mid-range', 'luxury']).nullable().optional().describe('Budget preference'),
+    number_of_people: z.number().nullable().optional().describe('Number of travelers'),
     preferences: z.array(z.string()).optional().describe('User preferences like adventure, culture, food, etc.'),
-    category: z.string().optional().describe('Category of interest like museums, parks, restaurants'),
-    opentripmap_kinds: z.array(z.string()).optional().describe('OpenTripMap category codes detected from query'),
+    category: z.string().nullable().optional().describe('Category of interest like museums, parks, restaurants'),
+    google_place_types: z.array(z.string()).optional().describe('Google Places API place types detected from query'),
     query_terms: z.array(z.string()).optional().describe('Key search terms'),
   }).describe('Extracted entities from the query'),
   
@@ -68,7 +68,7 @@ export class IntentDetector {
   /**
    * Detect user intent from query with category extraction
    */
-  async detectIntent(userQuery: string, conversationHistory?: string[], travelType?: string): Promise<DetectedIntent> {
+  async detectIntent(userQuery: string, conversationHistory?: string[]): Promise<DetectedIntent> {
     try {
       const systemPrompt = this.buildSystemPrompt();
       const userPrompt = this.buildUserPrompt(userQuery, conversationHistory);
@@ -89,14 +89,14 @@ export class IntentDetector {
       const parsed = JSON.parse(jsonMatch[0]);
       const validated = IntentSchema.parse(parsed);
 
-      // Extract OpenTripMap categories from the query
-      const detectedCategories = getCategoriesFromQuery(userQuery, travelType);
-      validated.entities.opentripmap_kinds = detectedCategories;
+      // Detect Google Places types using LLM
+      const placeTypes = await this.detectPlaceTypes(userQuery, validated.entities.category ?? undefined);
+      validated.entities.google_place_types = placeTypes;
 
       console.log('🎯 [INTENT DETECTOR] Detected:', {
         intent: validated.primary_intent,
         tools: validated.tools_to_call,
-        categories: detectedCategories,
+        place_types: placeTypes,
         confidence: validated.confidence,
       });
 
@@ -105,8 +105,39 @@ export class IntentDetector {
       console.error('Intent detection error:', error);
       
       // Fallback to simple keyword-based detection
-      return this.fallbackDetection(userQuery, travelType);
+      return this.fallbackDetection(userQuery);
     }
+  }
+
+  /**
+   * Detect Google Places types using LLM
+   */
+  private async detectPlaceTypes(userQuery: string, category?: string): Promise<string[]> {
+    try {
+      const prompt = `${PLACE_TYPE_DETECTION_PROMPT}\n\nUser query: "${userQuery}"`;
+      
+      const response = await this.model.invoke([
+        { role: 'user', content: prompt },
+      ]);
+
+      const content = response.content as string;
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return parsed.place_types || [];
+      }
+    } catch (error) {
+      console.error('Place type detection error:', error);
+    }
+
+    // Fallback: use category mapping
+    if (category) {
+      return mapUserCategoryToPlaceTypes(category);
+    }
+
+    // Default fallback
+    return ['tourist_attraction', 'restaurant', 'park'];
   }
 
   /**
@@ -190,27 +221,31 @@ Respond with ONLY a valid JSON object matching this schema:
   /**
    * Fallback intent detection using simple keyword matching
    */
-  private fallbackDetection(userQuery: string, travelType?: string): DetectedIntent {
+  private fallbackDetection(userQuery: string): DetectedIntent {
     const query = userQuery.toLowerCase();
     let intent: DetectedIntent['primary_intent'] = 'unknown';
     let tools: string[] = [];
 
-    // Extract categories regardless of intent
-    const detectedCategories = getCategoriesFromQuery(userQuery, travelType);
+    // Detect Google Places types based on keywords
+    let placeTypes: string[] = [];
 
     // Simple keyword matching
     if (query.includes('hotel') || query.includes('accommodation') || query.includes('stay')) {
       intent = 'search_hotels';
       tools = ['search_hotels'];
+      placeTypes = ['hotel', 'lodging', 'resort_hotel'];
     } else if (query.includes('flight') || query.includes('fly')) {
       intent = 'search_flights';
       tools = ['search_flights'];
+      placeTypes = ['airport'];
     } else if (query.includes('restaurant') || query.includes('food') || query.includes('eat')) {
       intent = 'search_restaurants';
       tools = ['search_restaurants', 'search_attractions'];
+      placeTypes = ['restaurant', 'cafe', 'bar'];
     } else if (query.includes('plan') && query.includes('trip')) {
       intent = 'plan_trip';
       tools = ['search_destinations', 'search_attractions', 'search_hotels', 'search_restaurants'];
+      placeTypes = ['tourist_attraction', 'restaurant', 'hotel', 'park'];
     } else if (query.includes('weather')) {
       intent = 'get_weather';
       tools = ['get_weather'];
@@ -220,9 +255,22 @@ Respond with ONLY a valid JSON object matching this schema:
     } else if (query.includes('nearby') || query.includes('near')) {
       intent = 'find_nearby';
       tools = ['get_nearby_attractions'];
+    } else if (query.includes('museum')) {
+      intent = 'search_attractions';
+      tools = ['search_attractions'];
+      placeTypes = ['museum', 'art_gallery', 'historical_landmark'];
+    } else if (query.includes('beach')) {
+      intent = 'search_attractions';
+      tools = ['search_attractions'];
+      placeTypes = ['beach'];
+    } else if (query.includes('park')) {
+      intent = 'search_attractions';
+      tools = ['search_attractions'];
+      placeTypes = ['park', 'national_park', 'botanical_garden'];
     } else if (query.includes('search') || query.includes('find') || query.includes('show')) {
       intent = 'search_attractions';
       tools = ['search_attractions', 'search_destinations'];
+      placeTypes = ['tourist_attraction', 'museum', 'park'];
     } else {
       intent = 'casual_chat';
       tools = [];
@@ -232,11 +280,11 @@ Respond with ONLY a valid JSON object matching this schema:
       primary_intent: intent,
       entities: {
         query_terms: userQuery.split(' ').filter(word => word.length > 3),
-        opentripmap_kinds: detectedCategories,
+        google_place_types: placeTypes.length > 0 ? placeTypes : ['tourist_attraction'],
       },
       tools_to_call: tools,
       confidence: 0.6,
-      reasoning: 'Fallback keyword-based detection with category extraction',
+      reasoning: 'Fallback keyword-based detection with Google Places type mapping',
     };
   }
 }
