@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTrip } from "@/contexts/TripContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSocket } from "@/hooks/useSocket";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -51,7 +52,7 @@ import {
 
 const ItineraryPage = () => {
   const navigate = useNavigate();
-  const { tripData } = useTrip();
+  const { tripData, updateTripData } = useTrip();
   const { isAuthenticated, user } = useAuth();
   const [activeTab, setActiveTab] = useState("timeline");
   const [selectedDay, setSelectedDay] = useState(1);
@@ -68,6 +69,10 @@ const ItineraryPage = () => {
   const [isChatOpen, setIsChatOpen] = useState(false);
   
   const scrollContainerRef = React.useRef(null);
+
+  // Socket for real-time itinerary updates
+  const conversationId = localStorage.getItem('tripwhat_conversation_id');
+  const { lastItineraryUpdate, clearLastItineraryUpdate } = useSocket(conversationId);
 
   // Handle different data structures for itinerary
   const itinerary =
@@ -92,6 +97,24 @@ const ItineraryPage = () => {
       console.log("✅ Itinerary data exists!");
     }
   }, [itinerary]);
+
+  // Listen for real-time itinerary updates from chat modifications
+  useEffect(() => {
+    if (lastItineraryUpdate) {
+      console.log('🔄 [ITINERARY PAGE] Received itinerary update from socket');
+      
+      // Update the TripContext with the modified itinerary
+      if (lastItineraryUpdate.updatedItinerary) {
+        updateTripData({
+          generatedItinerary: lastItineraryUpdate.updatedItinerary
+        });
+        
+        toast.success(lastItineraryUpdate.modification?.message || 'Itinerary updated!');
+      }
+      
+      clearLastItineraryUpdate();
+    }
+  }, [lastItineraryUpdate, updateTripData, clearLastItineraryUpdate]);
 
   // Check if trip is already saved
   useEffect(() => {

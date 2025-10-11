@@ -28,6 +28,10 @@ const AgentStateAnnotation = Annotation.Root({
     reducer: (left, right) => right ?? left,
     default: () => undefined,
   }),
+  detectedIntent: Annotation<DetectedIntent | undefined>({
+    reducer: (left, right) => right ?? left,
+    default: () => undefined,
+  }),
   searchResults: Annotation<Destination[] | undefined>({
     reducer: (left, right) => right ?? left,
     default: () => undefined,
@@ -154,6 +158,7 @@ export class TravelAgent {
 
       return {
         intent: intentString,
+        detectedIntent: detectedIntent, // Store full intent data
         searchResults: detectedIntent.entities.google_place_types as any, // Store place types temporarily
         messages: [new AIMessage(`Understood: ${detectedIntent.reasoning}`)],
       };
@@ -172,7 +177,7 @@ export class TravelAgent {
   private async toolExecutorNode(state: AgentState): Promise<Partial<AgentState>> {
     console.log('\n🔧 [TOOL EXECUTOR] Running tools for intent:', state.intent);
     try {
-      const { intent, userQuery } = state;
+      const { intent, userQuery, detectedIntent } = state;
       
       // Extract detected place types (stored temporarily in searchResults by planner)
       const detectedPlaceTypes = (state.searchResults as any) || [];
@@ -291,6 +296,26 @@ export class TravelAgent {
           }
           
           return { itinerary };
+        }
+
+        case 'add_activity':
+        case 'remove_activity':
+        case 'replace_activity':
+        case 'move_activity':
+        case 'find_and_add':
+        case 'add_day':
+        case 'remove_day':
+        case 'modify_activity': {
+          console.log(`🔧 [TOOL] Handling itinerary modification: ${intent}`);
+          
+          // For now, return a message indicating feature is being implemented
+          // We'll handle this in the route where we have access to the current itinerary
+          if (detectedIntent) {
+            return { 
+              response: await this.handleItineraryModificationIntent(detectedIntent, userQuery)
+            };
+          }
+          return { error: 'Could not detect intent for modification' };
         }
 
         default:
@@ -677,6 +702,7 @@ Provide a compelling, informative description of this place. Include its highlig
         conversationId,
         timestamp: new Date(),
         intent: undefined,
+        detectedIntent: undefined,
         searchResults: undefined,
         nearbyAttractions: undefined,
         placeDetails: undefined,
@@ -1022,6 +1048,90 @@ Provide a compelling, informative description of this place. Include its highlig
     response += `👥 Perfect for: **${tripContext.people} ${tripContext.people === 1 ? 'person' : 'people'}**\n\n`;
 
     return response;
+  }
+
+  /**
+   * Handle itinerary modification intents
+   */
+  private async handleItineraryModificationIntent(
+    intentData: DetectedIntent,
+    userQuery: string
+  ): Promise<string> {
+    const intent = intentData.primary_intent;
+    const entities = intentData.entities;
+
+    // Build a helpful response based on the intent
+    switch (intent) {
+      case 'add_activity':
+        if (entities.place_name) {
+          return `I can help you add ${entities.place_name} to your itinerary! To do this, I'll need to know:\n\n` +
+                 `1. Which day would you like to add it to?\n` +
+                 `2. What time of day? (morning, afternoon, or evening)\n\n` +
+                 `For example, you could say: "Add ${entities.place_name} to Day 2 morning"`;
+        }
+        return `I can help you add activities to your itinerary! Please specify:\n\n` +
+               `1. What would you like to add?\n` +
+               `2. Which day?\n` +
+               `3. What time? (morning, afternoon, or evening)\n\n` +
+               `For example: "Add the Eiffel Tower to Day 2 morning"`;
+
+      case 'remove_activity':
+        if (entities.activity_name) {
+          return `I can remove ${entities.activity_name} from your itinerary. ` +
+                 `${entities.target_day ? `From Day ${entities.target_day}?` : 'Which day is it on?'}`;
+        }
+        return `I can help you remove activities! Please tell me:\n\n` +
+               `1. Which activity to remove?\n` +
+               `2. Which day is it on?\n\n` +
+               `For example: "Remove the museum visit from Day 1"`;
+
+      case 'replace_activity':
+        return `I can help you replace activities! Please tell me:\n\n` +
+               `1. What activity do you want to replace?\n` +
+               `2. Which day is it on?\n` +
+               `3. What should I replace it with?\n\n` +
+               `For example: "Replace the shopping on Day 2 with a museum visit"`;
+
+      case 'move_activity':
+        return `I can move activities between days! Please tell me:\n\n` +
+               `1. Which activity to move?\n` +
+               `2. From which day?\n` +
+               `3. To which day and time?\n\n` +
+               `For example: "Move the Louvre from Day 1 to Day 2 afternoon"`;
+
+      case 'find_and_add':
+        if (entities.preferences && entities.preferences.length > 0) {
+          return `Great! I can find ${entities.preferences.join(' and ')} activities for you. ` +
+                 `${entities.target_day ? `I'll add them to Day ${entities.target_day}. ` : 'Which day would you like these on? '}` +
+                 `Let me search for the best options!`;
+        }
+        return `I can find and add activities based on your interests! What are you interested in?\n\n` +
+               `For example: "I love art, add some museums to Day 3"`;
+
+      case 'add_day':
+        return `I can add another day to your trip! This will create a new day with morning, afternoon, and evening time slots. ` +
+               `Would you like me to go ahead and add Day ${entities.duration ? entities.duration + 1 : 'X + 1'}?`;
+
+      case 'remove_day':
+        if (entities.target_day) {
+          return `I can remove Day ${entities.target_day} from your itinerary. ` +
+                 `⚠️ This will delete all activities planned for that day. Are you sure?`;
+        }
+        return `Which day would you like to remove from your itinerary?`;
+
+      case 'modify_activity':
+        return `I can modify activity details like time or duration. What would you like to change?\n\n` +
+               `For example: "Move the museum visit to the afternoon" or "Extend the park time to 2 hours"`;
+
+      default:
+        return `I can help you modify your itinerary! You can:\n\n` +
+               `• Add activities: "Add the Eiffel Tower to Day 2"\n` +
+               `• Remove activities: "Remove shopping from Day 1"\n` +
+               `• Find & add: "I love art, add museums to Day 3"\n` +
+               `• Move activities: "Move Louvre to Day 2"\n` +
+               `• Add/remove days: "Add another day to my trip"\n\n` +
+               `What would you like to do?`;
+    }
   }
 }
 
