@@ -738,6 +738,7 @@ Provide a compelling, informative description of this place. Include its highlig
       
       const { TRAVEL_TYPE_PREFERENCES, calculateDailyBudget } = await import('../types/tripContext.js');
       const { enhancedItineraryBuilder } = await import('../services/enhancedItineraryBuilder.js');
+      const { flightService } = await import('../services/flightService.js');
       
       // Calculate total days from cities
       const totalDays = tripContext.cities.reduce((sum: number, city: any) => sum + city.days, 0);
@@ -757,11 +758,82 @@ Provide a compelling, informative description of this place. Include its highlig
       console.log('🗓️ Total days:', totalDays);
       console.log('🏙️ Cities:', tripContext.cities.map((c: any) => `${c.name} (${c.days} days)`));
       
+      // Get IATA codes for all cities
+      console.log('\n✈️ [FLIGHTS] Looking up IATA codes for cities...');
+      const cityIATACodes = new Map<string, string>();
+      for (const city of tripContext.cities) {
+        try {
+          const iataCode = await flightService.getCityIATACode(city.name);
+          if (iataCode) {
+            cityIATACodes.set(city.name, iataCode);
+            console.log(`   ✅ ${city.name} → ${iataCode}`);
+          } else {
+            console.log(`   ⚠️  ${city.name} → No IATA code found`);
+          }
+        } catch (error) {
+          console.log(`   ❌ ${city.name} → IATA lookup failed`);
+        }
+      }
+      
       // Build itineraries for each city using enhanced builder
       const allDays: any[] = [];
-      let currentDayNumber = 1;
+      let currentDayNumber = 0; // Start at 0 for departure day
       
-      for (const city of tripContext.cities) {
+      // Add departure flight if origin city is specified and first destination has IATA
+      if (tripContext.origin && tripContext.cities.length > 0) {
+        const firstCity = tripContext.cities[0];
+        const destIATA = cityIATACodes.get(firstCity.name);
+        
+        if (destIATA) {
+          try {
+            console.log(`\n✈️ [FLIGHTS] Searching departure flight: ${tripContext.origin} → ${firstCity.name}`);
+            
+            // Get origin IATA
+            const originIATA = await flightService.getCityIATACode(tripContext.origin);
+            
+            if (originIATA) {
+              const departureDate = new Date(tripContext.startDate);
+              const departureFlight = await flightService.getBestFlight({
+                origin: originIATA,
+                destination: destIATA,
+                departureDate: departureDate.toISOString().split('T')[0],
+                adults: tripContext.people || 1,
+              });
+              
+              if (departureFlight) {
+                console.log(`   ✅ Found departure flight: $${departureFlight.price.amount} ${departureFlight.price.currency}`);
+                console.log(`      Duration: ${flightService.formatDuration(departureFlight.duration)}`);
+                console.log(`      Carrier: ${departureFlight.provider}`);
+                
+                // Add departure day (Day 0)
+                allDays.push({
+                  dayNumber: 0,
+                  title: 'Departure Day',
+                  city: tripContext.origin,
+                  date: departureDate.toISOString().split('T')[0],
+                  travel: departureFlight,
+                  timeSlots: [{
+                    label: 'travel',
+                    activities: [{
+                      ...departureFlight,
+                      name: `Flight to ${firstCity.name}`,
+                    }]
+                  }]
+                });
+              } else {
+                console.log(`   ⚠️  No flights found for departure`);
+              }
+            }
+          } catch (error) {
+            console.error(`   ❌ Error searching departure flight:`, error);
+          }
+        }
+      }
+      
+      currentDayNumber = 1;
+      
+      for (let i = 0; i < tripContext.cities.length; i++) {
+        const city = tripContext.cities[i];
         console.log(`\n🌐 [WEB SEARCH] Processing ${city.name} (${city.days} days)`);
         
         // Use enhanced builder with web search + Google Places
@@ -787,8 +859,107 @@ Provide a compelling, informative description of this place. Include its highlig
           });
           
           console.log(`✅ Generated ${cityItinerary.days.length} days for ${city.name}`);
+          
+          // Check if there's a next city for inter-city travel
+          if (i < tripContext.cities.length - 1) {
+            const nextCity = tripContext.cities[i + 1];
+            const currentIATA = cityIATACodes.get(city.name);
+            const nextIATA = cityIATACodes.get(nextCity.name);
+            
+            if (currentIATA && nextIATA) {
+              try {
+                console.log(`\n✈️ [FLIGHTS] Searching inter-city transport: ${city.name} → ${nextCity.name}`);
+                
+                const travelDate = new Date(tripContext.startDate);
+                travelDate.setDate(travelDate.getDate() + currentDayNumber);
+                
+                const interCityFlight = await flightService.getBestFlight({
+                  origin: currentIATA,
+                  destination: nextIATA,
+                  departureDate: travelDate.toISOString().split('T')[0],
+                  adults: tripContext.people || 1,
+                });
+                
+                if (interCityFlight) {
+                  console.log(`   ✅ Found inter-city flight: $${interCityFlight.price.amount} ${interCityFlight.price.currency}`);
+                  console.log(`      Duration: ${flightService.formatDuration(interCityFlight.duration)}`);
+                  
+                  // Add travel day
+                  allDays.push({
+                    dayNumber: currentDayNumber++,
+                    title: `Travel Day: ${city.name} → ${nextCity.name}`,
+                    city: city.name,
+                    date: travelDate.toISOString().split('T')[0],
+                    travel: interCityFlight,
+                    timeSlots: [{
+                      label: 'travel',
+                      activities: [{
+                        ...interCityFlight,
+                        name: `Flight to ${nextCity.name}`,
+                      }]
+                    }]
+                  });
+                } else {
+                  console.log(`   ⚠️  No flights found for ${city.name} → ${nextCity.name}`);
+                }
+              } catch (error) {
+                console.error(`   ❌ Error searching inter-city flight:`, error);
+              }
+            }
+          }
         } else {
           console.error(`❌ Failed to generate itinerary for ${city.name}`);
+        }
+      }
+      
+      // Add return flight
+      if (tripContext.origin && tripContext.cities.length > 0) {
+        const lastCity = tripContext.cities[tripContext.cities.length - 1];
+        const lastIATA = cityIATACodes.get(lastCity.name);
+        
+        if (lastIATA) {
+          try {
+            console.log(`\n✈️ [FLIGHTS] Searching return flight: ${lastCity.name} → ${tripContext.origin}`);
+            
+            const originIATA = await flightService.getCityIATACode(tripContext.origin);
+            
+            if (originIATA) {
+              const returnDate = new Date(tripContext.startDate);
+              returnDate.setDate(returnDate.getDate() + totalDays);
+              
+              const returnFlight = await flightService.getBestFlight({
+                origin: lastIATA,
+                destination: originIATA,
+                departureDate: returnDate.toISOString().split('T')[0],
+                adults: tripContext.people || 1,
+              });
+              
+              if (returnFlight) {
+                console.log(`   ✅ Found return flight: $${returnFlight.price.amount} ${returnFlight.price.currency}`);
+                console.log(`      Duration: ${flightService.formatDuration(returnFlight.duration)}`);
+                
+                // Add return day
+                allDays.push({
+                  dayNumber: currentDayNumber++,
+                  title: 'Return Day',
+                  city: lastCity.name,
+                  date: returnDate.toISOString().split('T')[0],
+                  travel: returnFlight,
+                  timeSlots: [{
+                    label: 'travel',
+                    activities: [{
+                      ...returnFlight,
+                      name: `Flight to ${tripContext.origin}`,
+                    }]
+                  }]
+                });
+              } else {
+                console.log(`   ⚠️  No return flights found`);
+              }
+            }
+          } catch (error) {
+            console.error(`   ❌ Error searching return flight:`, error);
+          }
         }
       }
       
@@ -1005,15 +1176,23 @@ Provide a compelling, informative description of this place. Include its highlig
       if (Object.keys(daysByCity).length > 1) {
         response += `# 🏙️ ${city}\n\n`;
       }
-
+      
       (cityDays as any[]).forEach((day) => {
         response += `## 📅 Day ${day.dayNumber}: ${day.title}\n\n`;
 
         day.timeSlots.forEach((slot: any) => {
           if (slot.activities.length === 0) return;
 
-          const emoji = slot.period === 'morning' ? '☀️' : slot.period === 'afternoon' ? '🌆' : '🌙';
-          response += `### ${emoji} ${slot.period.charAt(0).toUpperCase() + slot.period.slice(1)} (${slot.startTime}-${slot.endTime})\n\n`;
+          // Handle travel/flight slots differently
+          if (slot.label === 'travel') {
+            response += `### ✈️ Travel\n\n`;
+          } else {
+            const period = slot.period || slot.timeOfDay || 'Activity';
+            const emoji = period === 'morning' ? '☀️' : period === 'afternoon' ? '🌆' : '🌙';
+            const periodLabel = period.charAt(0).toUpperCase() + period.slice(1);
+            const timeRange = slot.startTime && slot.endTime ? ` (${slot.startTime}-${slot.endTime})` : '';
+            response += `### ${emoji} ${periodLabel}${timeRange}\n\n`;
+          }
 
           slot.activities.forEach((activity: any, idx: number) => {
             response += `**${idx + 1}. ${activity.name}**\n`;
