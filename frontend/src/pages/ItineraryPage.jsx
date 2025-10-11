@@ -1659,28 +1659,64 @@ const ItineraryPage = () => {
                       cities={
                         itinerary?.days
                           ? itinerary.days.map((day, index) => {
-                              // Try to extract city from the first activity's location or title
-                              const firstActivity =
-                                day.timeSlots?.[0]?.activities?.[0];
-                              let cityName = day.city || day.title;
+                              // Prioritize tripData.cities for clean city names
+                              let cityName;
 
-                              // If no city name found, try to get from activity location or fallback to tripData cities
-                              if (
-                                !cityName ||
-                                cityName.includes("Explore") ||
-                                cityName.includes("Day")
-                              ) {
-                                if (firstActivity?.location?.address) {
-                                  cityName =
-                                    firstActivity.location.address.split(
-                                      ","
-                                    )[0];
-                                } else if (tripData?.cities?.[index]) {
-                                  cityName =
-                                    tripData.cities[index].name ||
-                                    tripData.cities[index];
-                                } else {
-                                  cityName = `City ${index + 1}`;
+                              // Debug: Log tripData.cities structure
+                              if (index === 0) {
+                                console.log(
+                                  "🏨 Debug tripData.cities:",
+                                  tripData?.cities
+                                );
+                              }
+
+                              // First, try to get clean city name from tripData.cities
+                              if (tripData?.cities?.[index]) {
+                                cityName =
+                                  tripData.cities[index].name ||
+                                  tripData.cities[index];
+                                console.log(
+                                  `🏨 Day ${index + 1} from tripData.cities:`,
+                                  cityName
+                                );
+                              }
+
+                              // If not found, try to extract from day structure
+                              if (!cityName) {
+                                const firstActivity =
+                                  day.timeSlots?.[0]?.activities?.[0];
+                                cityName = day.city || day.title;
+
+                                // Clean up descriptive titles to extract city names
+                                if (cityName) {
+                                  // Remove common prefixes and extract city name
+                                  cityName = cityName
+                                    .replace(
+                                      /^(Travel to|Arrival &|Return to|Explore|Day \d+:?\s*)/i,
+                                      ""
+                                    )
+                                    .replace(
+                                      /,\s*(India|France|USA|United States|UK|United Kingdom|Germany|Italy|Spain|Japan|Australia|Canada|Brazil|China|UAE|Singapore|Malaysia|Thailand).*$/i,
+                                      ""
+                                    )
+                                    .replace(
+                                      /\s+(First Impressions|and.*)/i,
+                                      ""
+                                    )
+                                    .split(",")[0]
+                                    .trim();
+                                }
+
+                                // If still no good city name, try activity location
+                                if (!cityName || cityName.length < 2) {
+                                  if (firstActivity?.location?.address) {
+                                    cityName =
+                                      firstActivity.location.address.split(
+                                        ","
+                                      )[0];
+                                  } else {
+                                    cityName = `City ${index + 1}`;
+                                  }
                                 }
                               }
 
