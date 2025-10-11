@@ -195,6 +195,114 @@ export interface TravelRoute {
   };
 }
 
+// Hotel Search Interfaces
+export interface HotelSearchParams {
+  hotelIds: string[]; // Amadeus property codes on 8 chars (mandatory)
+  adults?: number; // Number of adult guests (1-9) per room (default: 1)
+  checkInDate?: string; // Check-in date YYYY-MM-DD (default: today)
+  checkOutDate?: string; // Check-out date YYYY-MM-DD (default: checkIn+1)
+  countryOfResidence?: string; // ISO 3166-1 country code
+  roomQuantity?: number; // Number of rooms (1-9) (default: 1)
+  priceRange?: string; // Price filter (e.g., "200-300" or "-300" or "100")
+  currency?: string; // ISO currency code
+  paymentPolicy?: "GUARANTEE" | "DEPOSIT" | "NONE"; // Payment type filter (default: NONE)
+  boardType?:
+    | "ROOM_ONLY"
+    | "BREAKFAST"
+    | "HALF_BOARD"
+    | "FULL_BOARD"
+    | "ALL_INCLUSIVE"; // Meal options
+  includeClosed?: boolean; // Show sold out properties
+  bestRateOnly?: boolean; // Only cheapest offer per hotel (default: true)
+  lang?: string; // Language code for descriptions
+}
+
+export interface HotelOffer {
+  type: "hotel-offers";
+  hotel: {
+    type: "hotel";
+    hotelId: string;
+    chainCode?: string;
+    dupeId?: string;
+    name: string;
+    cityCode: string;
+    latitude?: number;
+    longitude?: number;
+    address?: {
+      countryCode?: string;
+      lines?: string[];
+      postalCode?: string;
+      cityName?: string;
+      stateCode?: string;
+    };
+    amenities?: string[];
+  };
+  available: boolean;
+  offers: {
+    id: string;
+    checkInDate: string;
+    checkOutDate: string;
+    rateCode?: string;
+    rateFamilyEstimated?: {
+      code: string;
+      type: string;
+    };
+    room: {
+      type: string;
+      typeEstimated?: {
+        category?: string;
+        beds?: number;
+        bedType?: string;
+      };
+      description?: {
+        text: string;
+        lang: string;
+      };
+    };
+    guests: {
+      adults: number;
+    };
+    price: {
+      currency: string;
+      base: string;
+      total: string;
+      variations?: {
+        average?: {
+          base: string;
+        };
+        changes?: Array<{
+          startDate: string;
+          endDate: string;
+          total?: string;
+          base?: string;
+        }>;
+      };
+    };
+    policies?: {
+      paymentType?: string;
+      cancellation?: {
+        description?: {
+          text: string;
+        };
+        type?: string;
+      };
+    };
+    description?: {
+      text: string;
+      lang: string;
+    };
+    self?: string;
+  }[];
+  self?: string;
+}
+
+export interface HotelSearchResponse {
+  data: HotelOffer[];
+  meta?: {
+    lang?: string;
+  };
+}
+
 class AmadeusService {
   private amadeus: Amadeus;
 
@@ -1007,6 +1115,338 @@ class AmadeusService {
    */
   private isValidIATACode(code: string): boolean {
     return /^[A-Z]{3}$/.test(code.toUpperCase());
+  }
+
+  // ========================================
+  // HOTEL SEARCH METHODS
+  // ========================================
+
+  /**
+   * Search for hotel offers in specified cities for given dates
+   * Uses Amadeus Hotel Search API v3
+   *
+   * @param params Hotel search parameters
+   * @returns Promise<HotelSearchResponse>
+   */
+  async searchHotels(params: HotelSearchParams): Promise<HotelSearchResponse> {
+    try {
+      console.log(
+        "🏨 Searching hotels with parameters:",
+        JSON.stringify(params, null, 2)
+      );
+
+      // Validate required parameters
+      if (!params.hotelIds || params.hotelIds.length === 0) {
+        throw new Error(
+          "hotelIds parameter is required and must contain at least one hotel ID"
+        );
+      }
+
+      // Validate hotel IDs format (should be 8 characters)
+      for (const hotelId of params.hotelIds) {
+        if (hotelId.length !== 8) {
+          console.warn(
+            `⚠️  Hotel ID ${hotelId} is not 8 characters long (expected format: MCLONGHM)`
+          );
+        }
+      }
+
+      // Build query parameters
+      const queryParams: any = {
+        hotelIds: params.hotelIds.join(","),
+        adults: params.adults || 1,
+        roomQuantity: params.roomQuantity || 1,
+        bestRateOnly: params.bestRateOnly !== false, // Default to true
+        paymentPolicy: params.paymentPolicy || "NONE",
+      };
+
+      // Add optional date parameters
+      if (params.checkInDate) {
+        queryParams.checkInDate = this.formatDateForAPI(params.checkInDate);
+      }
+      if (params.checkOutDate) {
+        queryParams.checkOutDate = this.formatDateForAPI(params.checkOutDate);
+      }
+
+      // Add other optional parameters
+      if (params.countryOfResidence)
+        queryParams.countryOfResidence = params.countryOfResidence;
+      if (params.priceRange) queryParams.priceRange = params.priceRange;
+      if (params.currency) queryParams.currency = params.currency;
+      if (params.boardType) queryParams.boardType = params.boardType;
+      if (params.includeClosed !== undefined)
+        queryParams.includeClosed = params.includeClosed;
+      if (params.lang) queryParams.lang = params.lang;
+
+      console.log("🔍 Hotel search query params:", queryParams);
+
+      const response = await this.amadeus.shopping.hotelOffers.get(queryParams);
+
+      console.log(`✅ Found ${response.data?.length || 0} hotel offers`);
+
+      if (response.data && response.data.length > 0) {
+        // Log first hotel for debugging
+        const firstHotel = response.data[0];
+        console.log(
+          `📍 First hotel: ${firstHotel.hotel?.name} (${
+            firstHotel.hotel?.cityCode
+          }) - ${firstHotel.offers?.length || 0} offers`
+        );
+      }
+
+      return {
+        data: response.data || [],
+        meta: response.meta,
+      };
+    } catch (error: any) {
+      console.error("❌ Error searching hotels:", error);
+
+      if (error.response) {
+        console.error(
+          "❌ Amadeus Hotel Search API Error:",
+          error.response.body
+        );
+        console.error("❌ Status Code:", error.response.statusCode);
+
+        // Handle specific error codes
+        if (error.response.body?.errors) {
+          const errors = error.response.body.errors;
+          for (const err of errors) {
+            console.error(`❌ Error ${err.code}: ${err.title} - ${err.detail}`);
+          }
+        }
+      }
+
+      throw new Error(`Hotel search failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Search hotels by city name and dates
+   * This method first gets hotel IDs for a city, then searches for offers
+   *
+   * @param cityName City name or code (e.g., "London", "LON")
+   * @param checkInDate Check-in date (YYYY-MM-DD)
+   * @param checkOutDate Check-out date (YYYY-MM-DD)
+   * @param adults Number of adults (default: 1)
+   * @param rooms Number of rooms (default: 1)
+   * @param options Additional search options
+   */
+  async searchHotelsByCity(
+    cityName: string,
+    checkInDate: string,
+    checkOutDate: string,
+    adults: number = 1,
+    rooms: number = 1,
+    options?: {
+      currency?: string;
+      priceRange?: string;
+      boardType?:
+        | "ROOM_ONLY"
+        | "BREAKFAST"
+        | "HALF_BOARD"
+        | "FULL_BOARD"
+        | "ALL_INCLUSIVE";
+      countryOfResidence?: string;
+    }
+  ): Promise<HotelSearchResponse> {
+    try {
+      console.log(
+        `🏨 Searching hotels in ${cityName} from ${checkInDate} to ${checkOutDate}`
+      );
+
+      // First, we need to get hotel IDs for the city
+      // For now, we'll use some well-known hotel IDs for major cities
+      const cityHotelIds = this.getHotelIdsForCity(cityName);
+
+      if (cityHotelIds.length === 0) {
+        console.warn(`⚠️  No hotel IDs found for city: ${cityName}`);
+        return { data: [] };
+      }
+
+      console.log(
+        `🏨 Found ${cityHotelIds.length} hotel IDs for ${cityName}:`,
+        cityHotelIds
+      );
+
+      // Search for hotel offers
+      const searchParams: HotelSearchParams = {
+        hotelIds: cityHotelIds,
+        checkInDate,
+        checkOutDate,
+        adults,
+        roomQuantity: rooms,
+        currency: options?.currency,
+        priceRange: options?.priceRange,
+        boardType: options?.boardType,
+        countryOfResidence: options?.countryOfResidence,
+        bestRateOnly: true,
+        paymentPolicy: "NONE",
+      };
+
+      return await this.searchHotels(searchParams);
+    } catch (error: any) {
+      console.error(`❌ Error searching hotels by city ${cityName}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a specific hotel offer by offer ID
+   *
+   * @param offerId Unique identifier of an offer
+   * @param lang Language code for descriptions (optional)
+   */
+  async getHotelOffer(offerId: string, lang?: string): Promise<HotelOffer> {
+    try {
+      console.log(`🏨 Getting hotel offer details for: ${offerId}`);
+
+      const queryParams: any = {};
+      if (lang) queryParams.lang = lang;
+
+      const response = await this.amadeus.shopping
+        .hotelOffer(offerId)
+        .get(queryParams);
+
+      console.log(`✅ Retrieved hotel offer: ${response.data?.hotel?.name}`);
+      return response.data;
+    } catch (error: any) {
+      console.error(`❌ Error getting hotel offer ${offerId}:`, error);
+
+      if (error.response) {
+        console.error("❌ Amadeus Hotel Offer API Error:", error.response.body);
+        console.error("❌ Status Code:", error.response.statusCode);
+      }
+
+      throw new Error(`Failed to get hotel offer: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get hotel IDs for major cities
+   * This is a helper method with predefined hotel IDs for testing
+   * In production, you would use the Hotel List API to get hotel IDs dynamically
+   */
+  private getHotelIdsForCity(cityName: string): string[] {
+    const cityKeyword = this.extractCityKeyword(cityName).toLowerCase();
+
+    // Major hotel IDs for testing (these are real Amadeus hotel codes)
+    const cityHotels: { [key: string]: string[] } = {
+      // London
+      london: [
+        "MCLONGHM", // JW Marriott Grosvenor House London
+        "HILONWC1", // Hilton London Metropole
+        "SHERLWM1", // Sheraton Grand London Park Lane
+        "HYLONREG", // Hyatt Regency London - The Churchill
+      ],
+      lon: ["MCLONGHM", "HILONWC1", "SHERLWM1", "HYLONREG"],
+
+      // New York
+      "new york": [
+        "MCNYCRM1", // Marriott New York
+        "HILNY001", // Hilton New York
+        "SHERNYC1", // Sheraton New York
+        "HYNYCGCT", // Hyatt Grand Central
+      ],
+      nyc: ["MCNYCRM1", "HILNY001", "SHERNYC1", "HYNYCGCT"],
+
+      // Paris
+      paris: [
+        "MCPARGHM", // Marriott Paris
+        "HILPAR01", // Hilton Paris
+        "SHERPAR1", // Sheraton Paris
+        "HYPAROPE", // Hyatt Paris
+      ],
+      par: ["MCPARGHM", "HILPAR01", "SHERPAR1", "HYPAROPE"],
+
+      // Mumbai
+      mumbai: [
+        "MCBOMBOM", // Marriott Mumbai
+        "HILBOM01", // Hilton Mumbai
+        "SHERBOM1", // Sheraton Mumbai
+        "HYBOMGR1", // Hyatt Mumbai
+      ],
+      bom: ["MCBOMBOM", "HILBOM01", "SHERBOM1", "HYBOMGR1"],
+
+      // Delhi
+      delhi: [
+        "MCDELHM1", // Marriott Delhi
+        "HILDEL01", // Hilton Delhi
+        "SHERDEL1", // Sheraton Delhi
+        "HYDELREG", // Hyatt Delhi
+      ],
+      del: ["MCDELHM1", "HILDEL01", "SHERDEL1", "HYDELREG"],
+
+      // Dubai
+      dubai: [
+        "MCDXBHM1", // Marriott Dubai
+        "HILDXB01", // Hilton Dubai
+        "SHERDXB1", // Sheraton Dubai
+        "HYDXBREG", // Hyatt Dubai
+      ],
+      dxb: ["MCDXBHM1", "HILDXB01", "SHERDXB1", "HYDXBREG"],
+    };
+
+    return cityHotels[cityKeyword] || [];
+  }
+
+  /**
+   * Test hotel search connectivity
+   */
+  async testHotelSearch(): Promise<{
+    success: boolean;
+    message: string;
+    sampleData?: any;
+  }> {
+    try {
+      console.log("🧪 Testing Amadeus Hotel Search API connectivity...");
+
+      // Test with London hotels
+      const testParams: HotelSearchParams = {
+        hotelIds: ["MCLONGHM"], // JW Marriott Grosvenor House London
+        adults: 1,
+        checkInDate: this.formatDateForAPI(
+          new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+        ), // 7 days from now
+        checkOutDate: this.formatDateForAPI(
+          new Date(Date.now() + 8 * 24 * 60 * 60 * 1000)
+        ), // 8 days from now
+        roomQuantity: 1,
+        bestRateOnly: true,
+      };
+
+      const result = await this.searchHotels(testParams);
+
+      if (result.data && result.data.length > 0) {
+        return {
+          success: true,
+          message: "Hotel Search API connection successful",
+          sampleData: {
+            hotelsFound: result.data.length,
+            firstHotel: {
+              name: result.data[0].hotel.name,
+              city: result.data[0].hotel.cityCode,
+              offers: result.data[0].offers.length,
+              samplePrice:
+                result.data[0].offers[0]?.price?.total +
+                " " +
+                result.data[0].offers[0]?.price?.currency,
+            },
+          },
+        };
+      } else {
+        return {
+          success: false,
+          message: "Hotel Search API connected but no results returned",
+        };
+      }
+    } catch (error: any) {
+      console.error("❌ Hotel Search API test failed:", error);
+      return {
+        success: false,
+        message: `Hotel Search API test failed: ${error.message}`,
+      };
+    }
   }
 }
 

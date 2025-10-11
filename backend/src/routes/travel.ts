@@ -434,4 +434,345 @@ router.get("/test-inspiration", authenticateToken, async (_req, res) => {
   }
 });
 
+// ========================================
+// HOTEL SEARCH ROUTES
+// ========================================
+
+/**
+ * Search hotels by hotel IDs
+ * POST /api/travel/hotels/search
+ */
+router.post("/hotels/search", authenticateToken, async (req, res) => {
+  try {
+    const {
+      hotelIds,
+      adults,
+      checkInDate,
+      checkOutDate,
+      countryOfResidence,
+      roomQuantity,
+      priceRange,
+      currency,
+      paymentPolicy,
+      boardType,
+      includeClosed,
+      bestRateOnly,
+      lang,
+    } = req.body;
+
+    // Validate required fields
+    if (!hotelIds || !Array.isArray(hotelIds) || hotelIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required field: hotelIds (array of hotel IDs)",
+      });
+    }
+
+    const hotelSearchParams = {
+      hotelIds,
+      adults: adults ? parseInt(adults) : 1,
+      roomQuantity: roomQuantity ? parseInt(roomQuantity) : 1,
+      checkInDate,
+      checkOutDate,
+      countryOfResidence,
+      priceRange,
+      currency,
+      paymentPolicy,
+      boardType,
+      includeClosed:
+        includeClosed !== undefined ? Boolean(includeClosed) : undefined,
+      bestRateOnly: bestRateOnly !== undefined ? Boolean(bestRateOnly) : true,
+      lang,
+    };
+
+    const hotels = await amadeusService.searchHotels(hotelSearchParams);
+
+    return res.json({
+      success: true,
+      data: {
+        hotels: hotels.data,
+        searchParams: hotelSearchParams,
+        totalResults: hotels.data.length,
+        meta: hotels.meta,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error searching hotels:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to search hotels",
+      error: handleError(error),
+    });
+  }
+});
+
+/**
+ * Search hotels by city name
+ * POST /api/travel/hotels/city
+ */
+router.post("/hotels/city", authenticateToken, async (req, res) => {
+  try {
+    const {
+      cityName,
+      checkInDate,
+      checkOutDate,
+      adults,
+      rooms,
+      currency,
+      priceRange,
+      boardType,
+      countryOfResidence,
+    } = req.body;
+
+    // Validate required fields
+    if (!cityName || !checkInDate || !checkOutDate) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: cityName, checkInDate, checkOutDate",
+      });
+    }
+
+    // Validate dates
+    const checkIn = new Date(checkInDate);
+    const checkOut = new Date(checkOutDate);
+    const today = new Date();
+
+    if (checkIn <= today) {
+      return res.status(400).json({
+        success: false,
+        message: "Check-in date must be in the future",
+      });
+    }
+
+    if (checkOut <= checkIn) {
+      return res.status(400).json({
+        success: false,
+        message: "Check-out date must be after check-in date",
+      });
+    }
+
+    const options = {
+      currency,
+      priceRange,
+      boardType,
+      countryOfResidence,
+    };
+
+    const hotels = await amadeusService.searchHotelsByCity(
+      cityName,
+      checkInDate,
+      checkOutDate,
+      adults ? parseInt(adults) : 1,
+      rooms ? parseInt(rooms) : 1,
+      options
+    );
+
+    return res.json({
+      success: true,
+      data: {
+        city: cityName,
+        checkInDate,
+        checkOutDate,
+        hotels: hotels.data,
+        totalResults: hotels.data.length,
+        searchOptions: options,
+        meta: hotels.meta,
+      },
+    });
+  } catch (error) {
+    console.error(`❌ Error searching hotels in ${req.body.cityName}:`, error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to search hotels by city",
+      error: handleError(error),
+    });
+  }
+});
+
+/**
+ * Get specific hotel offer details
+ * GET /api/travel/hotels/offer/:offerId
+ */
+router.get("/hotels/offer/:offerId", authenticateToken, async (req, res) => {
+  try {
+    const { offerId } = req.params;
+    const { lang } = req.query;
+
+    if (!offerId) {
+      return res.status(400).json({
+        success: false,
+        message: "Hotel offer ID is required",
+      });
+    }
+
+    const hotelOffer = await amadeusService.getHotelOffer(
+      offerId,
+      lang as string
+    );
+
+    return res.json({
+      success: true,
+      data: hotelOffer,
+    });
+  } catch (error) {
+    console.error(`❌ Error getting hotel offer ${req.params.offerId}:`, error);
+
+    const errorMessage = handleError(error);
+    if (errorMessage.includes("not found") || errorMessage.includes("404")) {
+      return res.status(404).json({
+        success: false,
+        message: "Hotel offer not found",
+        error: errorMessage,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get hotel offer",
+      error: errorMessage,
+    });
+  }
+});
+
+/**
+ * Search hotels for multiple cities (for itinerary)
+ * POST /api/travel/hotels/multi-city
+ */
+router.post("/hotels/multi-city", authenticateToken, async (req, res) => {
+  try {
+    const { cities, adults, rooms, currency, priceRange, boardType } = req.body;
+
+    // Validate required fields
+    if (!cities || !Array.isArray(cities) || cities.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Missing required field: cities (array of city search requests)",
+      });
+    }
+
+    // Validate each city request
+    for (const city of cities) {
+      if (!city.cityName || !city.checkInDate || !city.checkOutDate) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Each city must have cityName, checkInDate, and checkOutDate",
+        });
+      }
+    }
+
+    const hotelResults = [];
+
+    // Search hotels for each city
+    for (const city of cities) {
+      try {
+        console.log(`🏨 Searching hotels for ${city.cityName}`);
+
+        const options = {
+          currency,
+          priceRange,
+          boardType,
+        };
+
+        const cityHotels = await amadeusService.searchHotelsByCity(
+          city.cityName,
+          city.checkInDate,
+          city.checkOutDate,
+          adults ? parseInt(adults) : 1,
+          rooms ? parseInt(rooms) : 1,
+          options
+        );
+
+        hotelResults.push({
+          city: city.cityName,
+          checkInDate: city.checkInDate,
+          checkOutDate: city.checkOutDate,
+          hotels: cityHotels.data,
+          totalResults: cityHotels.data.length,
+          success: true,
+        });
+      } catch (cityError) {
+        console.error(
+          `❌ Error searching hotels for ${city.cityName}:`,
+          cityError
+        );
+        hotelResults.push({
+          city: city.cityName,
+          checkInDate: city.checkInDate,
+          checkOutDate: city.checkOutDate,
+          hotels: [],
+          totalResults: 0,
+          success: false,
+          error: handleError(cityError),
+        });
+      }
+    }
+
+    const totalHotels = hotelResults.reduce(
+      (sum, city) => sum + city.totalResults,
+      0
+    );
+    const successfulCities = hotelResults.filter((city) => city.success).length;
+
+    return res.json({
+      success: true,
+      data: {
+        cities: hotelResults,
+        summary: {
+          totalCities: cities.length,
+          successfulCities,
+          totalHotels,
+          searchParams: {
+            adults: adults || 1,
+            rooms: rooms || 1,
+            currency,
+            priceRange,
+            boardType,
+          },
+        },
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error searching hotels for multiple cities:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to search hotels for multiple cities",
+      error: handleError(error),
+    });
+  }
+});
+
+/**
+ * Test Hotel Search API connectivity
+ * GET /api/travel/hotels/test
+ */
+router.get("/hotels/test", authenticateToken, async (_req, res) => {
+  try {
+    console.log("🧪 Testing Hotel Search API...");
+
+    const testResult = await amadeusService.testHotelSearch();
+
+    if (testResult.success) {
+      return res.json({
+        success: true,
+        message: testResult.message,
+        data: testResult.sampleData,
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: testResult.message,
+      });
+    }
+  } catch (error) {
+    console.error("❌ Hotel Search API test failed:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Hotel Search API test failed",
+      error: handleError(error),
+    });
+  }
+});
+
 export default router;

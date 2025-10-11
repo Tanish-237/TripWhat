@@ -9,6 +9,8 @@ import { ItineraryMap } from "@/components/ItineraryMap";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { TimelineItinerary } from "@/components/TimelineItinerary";
 import TravelRouteDisplay from "@/components/TravelRouteDisplay";
+import HotelSearch from "@/components/HotelSearch";
+import HotelDisplay from "@/components/HotelDisplay";
 import {
   apiSaveTrip,
   apiCheckTripSaved,
@@ -58,6 +60,7 @@ import {
   Thermometer,
   Droplets,
   Plane,
+  Hotel,
 } from "lucide-react";
 
 const ItineraryPage = () => {
@@ -78,6 +81,8 @@ const ItineraryPage = () => {
   const [isSaved, setIsSaved] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [selectedTravelRoutes, setSelectedTravelRoutes] = useState({});
+  const [hotelResults, setHotelResults] = useState([]);
+  const [isHotelLoading, setIsHotelLoading] = useState(false);
 
   const scrollContainerRef = React.useRef(null);
   const [weatherData, setWeatherData] = useState(null);
@@ -775,6 +780,12 @@ const ItineraryPage = () => {
                       color: "green",
                     },
                     {
+                      id: "hotels",
+                      icon: Hotel,
+                      label: "Hotels",
+                      color: "orange",
+                    },
+                    {
                       id: "calendar",
                       icon: Calendar,
                       label: "Overview",
@@ -793,6 +804,8 @@ const ItineraryPage = () => {
                             ? "bg-blue-500 text-white shadow-md"
                             : tab.color === "green"
                             ? "bg-green-500 text-white shadow-md"
+                            : tab.color === "orange"
+                            ? "bg-orange-500 text-white shadow-md"
                             : tab.color === "purple"
                             ? "bg-purple-500 text-white shadow-md"
                             : "bg-pink-500 text-white shadow-md"
@@ -1622,6 +1635,148 @@ const ItineraryPage = () => {
                                 • Include starting location in your trip details
                               </li>
                               <li>• Enable travel planning features</li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Hotels Tab */}
+              {activeTab === "hotels" && (
+                <div className="p-8">
+                  <div className="max-w-6xl mx-auto">
+                    <div className="flex items-center justify-between mb-8">
+                      <h2 className="text-3xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">
+                        Hotel Search & Booking
+                      </h2>
+                    </div>
+
+                    {/* Hotel Search Component */}
+                    <HotelSearch
+                      cities={
+                        itinerary?.days
+                          ? itinerary.days.map((day, index) => {
+                              // Try to extract city from the first activity's location or title
+                              const firstActivity =
+                                day.timeSlots?.[0]?.activities?.[0];
+                              let cityName = day.city || day.title;
+
+                              // If no city name found, try to get from activity location or fallback to tripData cities
+                              if (
+                                !cityName ||
+                                cityName.includes("Explore") ||
+                                cityName.includes("Day")
+                              ) {
+                                if (firstActivity?.location?.address) {
+                                  cityName =
+                                    firstActivity.location.address.split(
+                                      ","
+                                    )[0];
+                                } else if (tripData?.cities?.[index]) {
+                                  cityName =
+                                    tripData.cities[index].name ||
+                                    tripData.cities[index];
+                                } else {
+                                  cityName = `City ${index + 1}`;
+                                }
+                              }
+
+                              return {
+                                name: cityName,
+                                cityName: cityName,
+                                checkInDate: day.date,
+                                checkOutDate:
+                                  index < itinerary.days.length - 1
+                                    ? itinerary.days[index + 1].date
+                                    : (() => {
+                                        const nextDay = new Date(day.date);
+                                        nextDay.setDate(nextDay.getDate() + 1);
+                                        return nextDay
+                                          .toISOString()
+                                          .split("T")[0];
+                                      })(),
+                              };
+                            })
+                          : tripData?.cities?.map((city, index) => ({
+                              name: city.name || city,
+                              cityName: city.name || city,
+                              checkInDate:
+                                tripData?.startDate ||
+                                new Date().toISOString().split("T")[0],
+                              checkOutDate: (() => {
+                                const start = new Date(
+                                  tripData?.startDate || new Date()
+                                );
+                                start.setDate(
+                                  start.getDate() + (city.days || 1)
+                                );
+                                return start.toISOString().split("T")[0];
+                              })(),
+                            })) || []
+                      }
+                      onHotelResults={(results) => {
+                        setHotelResults(results.cities || []);
+                        setIsHotelLoading(false);
+                      }}
+                    />
+
+                    {/* Hotel Results Display */}
+                    {hotelResults.length > 0 && (
+                      <div className="mt-8">
+                        <h3 className="text-2xl font-semibold text-gray-800 mb-6">
+                          Your Hotel Options
+                        </h3>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          {hotelResults.map((cityResult, index) => (
+                            <Card key={index} className="overflow-hidden">
+                              <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white p-4">
+                                <h4 className="text-lg font-semibold flex items-center">
+                                  <MapPin className="w-5 h-5 mr-2" />
+                                  {cityResult.city}
+                                </h4>
+                                <p className="text-orange-100 text-sm flex items-center mt-1">
+                                  <Calendar className="w-4 h-4 mr-1" />
+                                  {cityResult.checkInDate} to{" "}
+                                  {cityResult.checkOutDate}
+                                </p>
+                              </div>
+                              <div className="p-4">
+                                <HotelDisplay
+                                  hotels={cityResult.hotels || []}
+                                  city={cityResult.city}
+                                  checkInDate={cityResult.checkInDate}
+                                  checkOutDate={cityResult.checkOutDate}
+                                />
+                              </div>
+                            </Card>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Empty State for Hotels */}
+                    {!isHotelLoading && hotelResults.length === 0 && (
+                      <div className="text-center py-16">
+                        <div className="bg-orange-50 rounded-lg p-12">
+                          <Hotel className="h-16 w-16 text-orange-400 mx-auto mb-6" />
+                          <h3 className="text-xl font-semibold text-gray-900 mb-4">
+                            Find Your Perfect Stay
+                          </h3>
+                          <p className="text-gray-600 mb-6 max-w-md mx-auto">
+                            Search for hotels in your destination cities. We'll
+                            help you find accommodations that match your budget
+                            and preferences.
+                          </p>
+                          <div className="text-sm text-gray-500">
+                            <p>Hotel search includes:</p>
+                            <ul className="mt-2 space-y-1">
+                              <li>• Real-time availability and pricing</li>
+                              <li>• Multiple room types and amenities</li>
+                              <li>• Best rate guarantees</li>
+                              <li>• Flexible booking options</li>
                             </ul>
                           </div>
                         </div>
