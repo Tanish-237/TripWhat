@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { travelPlanSchema } from "./TravelPlan.js";
 
 const citySchema = new mongoose.Schema(
   {
@@ -47,6 +48,25 @@ const tripSchema = new mongoose.Schema(
     people: { type: Number, required: true, min: 1 },
     travelType: { type: String, required: true },
     budget: { type: budgetSchema, required: true },
+    travelPlan: {
+      type: travelPlanSchema,
+      default: null,
+    },
+    includeTravelMeans: {
+      type: Boolean,
+      default: true,
+    },
+    travelPreferences: {
+      preferredAirlines: [{ type: String }],
+      travelClass: {
+        type: String,
+        enum: ["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"],
+        default: "ECONOMY",
+      },
+      maxStops: { type: Number, default: 2 },
+      preferDirectFlights: { type: Boolean, default: false },
+      preferGroundTransport: { type: Boolean, default: false },
+    },
   },
   { timestamps: true }
 );

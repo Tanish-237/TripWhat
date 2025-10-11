@@ -9,6 +9,7 @@ import { connectDB } from "./config/database.js";
 import chatRoutes from "./routes/chat.js";
 import authRoutes from "./routes/auth.js";
 import itineraryRoutes from "./routes/itinerary.js";
+import travelRoutes from "./routes/travel.js";
 import savedTripRoutes from "../routes/savedTripRoutes.js";
 import placesRoutes from "../routes/placesRoutes.js";
 import { authenticateToken } from "./middleware/auth.js";
@@ -68,6 +69,7 @@ app.use("/api/places", placesRoutes);
 // Protected routes
 app.use("/api/chat", authenticateToken, chatRoutes);
 app.use("/api/itinerary", authenticateToken, itineraryRoutes);
+app.use("/api/travel", travelRoutes);
 app.use("/api/saved-trips", savedTripRoutes);
 
 // Set Socket.io instance for chat controller

@@ -14,26 +14,42 @@ export interface TripMetadata {
   travelType?: string; // e.g., "cultural", "leisure", "adventure"
   localTips?: string[]; // Local tips from web search
   bestSeason?: string; // Best time to visit
+  startLocation?: string; // Starting point for multi-city trips
+  travelMeans?: {
+    routes: any[]; // TravelRoute array
+    totalCost: {
+      min: number;
+      max: number;
+      currency: string;
+    };
+    totalTravelTime: string;
+    recommendations: any[]; // TravelRecommendation array
+  };
 }
 
 export interface Activity {
   id: string;
-  name: string;
-  location?: {
-    lat?: number;
-    lon?: number;
-    latitude?: number;
-    longitude?: number;
-    address?: string;
+  title: string; // Changed from 'name' to match the activity structure
+  name?: string; // Keep for backward compatibility
+  type: string; // e.g., "attraction", "restaurant", "hotel", "transport", "travel"
+  location: {
+    name: string;
+    address: string;
+    coordinates: {
+      lat: number;
+      lng: number;
+    };
   };
   duration: string; // e.g., "2h", "1.5h"
-  estimatedCost?: string; // e.g., "$20", "€15", "Free"
-  category: string; // e.g., "attraction", "restaurant", "hotel", "transport"
+  cost: {
+    amount: number;
+    currency: string;
+    category: string; // e.g., "entrance", "transport", "food"
+  };
   description?: string;
   rating?: number; // 1-5 stars (Google Places uses 1-5)
   imageUrl?: string;
-  kinds?: string[]; // tags like "museums", "historic", "architecture"
-  tags?: string[]; // Additional tags from web search
+  tags?: string[]; // Tags from web search
   xid?: string; // OpenTripMap ID for fetching more details
   openingHours?: string[]; // e.g., ["Mon: 9AM-5PM", "Tue: 9AM-5PM"]
   isOpen?: boolean; // Currently open?
@@ -42,23 +58,40 @@ export interface Activity {
   distanceToNext?: string; // e.g., "500m (5 min walk)"
   mustVisit?: boolean; // Is this a must-visit attraction?
   bestTimeToVisit?: string; // Best time to visit this place
+  bookingRequired?: boolean; // Whether booking is required
+  travelInfo?: {
+    mode: "FLIGHT" | "GROUND" | "MIXED";
+    flights?: any[]; // FlightOffer array
+    groundTransport?: any[]; // GroundTransportOption array
+    estimatedDuration: string;
+    cost: {
+      min: number;
+      max: number;
+      currency: string;
+    };
+  };
 }
 
 export interface TimeSlot {
-  period: 'morning' | 'afternoon' | 'evening' | 'night';
+  id: string;
+  period: "morning" | "afternoon" | "evening" | "night";
   startTime: string; // "09:00"
   endTime: string; // "12:00"
-  activities: Activity[];
+  activity: Activity; // Changed from activities array to single activity
 }
 
 export interface DayPlan {
+  id: string;
   dayNumber: number;
-  date?: string; // ISO format: "2024-05-15"
+  date: string; // ISO format: "2024-05-15"
   title: string; // e.g., "Historic Paris", "Montmartre & Art"
-  description?: string;
+  subtitle?: string;
+  location: string; // Main location for the day
+  weather?: any; // Weather information
   timeSlots: TimeSlot[];
-  localTip?: string; // Tip specific to this day
-  city?: string; // City name for multi-city trips
+  estimatedCost: number;
+  highlights: string[];
+  tips: string[];
 }
 
 export interface Itinerary {

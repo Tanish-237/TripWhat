@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { ItineraryMap } from "@/components/ItineraryMap";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { TimelineItinerary } from "@/components/TimelineItinerary";
+import TravelRouteDisplay from "@/components/TravelRouteDisplay";
 import {
   apiSaveTrip,
   apiCheckTripSaved,
@@ -56,6 +57,7 @@ import {
   Wind,
   Thermometer,
   Droplets,
+  Plane,
 } from "lucide-react";
 
 const ItineraryPage = () => {
@@ -75,6 +77,7 @@ const ItineraryPage = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [selectedTravelRoutes, setSelectedTravelRoutes] = useState({});
 
   const scrollContainerRef = React.useRef(null);
   const [weatherData, setWeatherData] = useState(null);
@@ -309,6 +312,8 @@ const ItineraryPage = () => {
         budget: tripData.budget,
         budgetMode: tripData.budgetMode || "capped",
         generatedItinerary,
+        startLocation: tripData.startLocation,
+        travelMeans: generatedItinerary?.travelMeans,
         tags: [
           tripData.travelType,
           ...(tripData.cities?.map((c) => c.name) || []),
@@ -409,6 +414,8 @@ const ItineraryPage = () => {
         budget: tripData.budget,
         budgetMode: tripData.budgetMode || "capped",
         generatedItinerary,
+        startLocation: tripData.startLocation,
+        travelMeans: generatedItinerary?.travelMeans,
         tags: [
           tripData.travelType,
           ...(tripData.cities?.map((c) => c.name) || []),
@@ -762,6 +769,12 @@ const ItineraryPage = () => {
                       color: "blue",
                     },
                     {
+                      id: "travel",
+                      icon: Plane,
+                      label: "Travel",
+                      color: "green",
+                    },
+                    {
                       id: "calendar",
                       icon: Calendar,
                       label: "Overview",
@@ -778,6 +791,8 @@ const ItineraryPage = () => {
                             ? "bg-indigo-500 text-white shadow-md"
                             : tab.color === "blue"
                             ? "bg-blue-500 text-white shadow-md"
+                            : tab.color === "green"
+                            ? "bg-green-500 text-white shadow-md"
                             : tab.color === "purple"
                             ? "bg-purple-500 text-white shadow-md"
                             : "bg-pink-500 text-white shadow-md"
@@ -1136,6 +1151,34 @@ const ItineraryPage = () => {
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* Travel Routes */}
+              {activeTab === "travel" && (
+                <div className="p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    Travel Information
+                  </h3>
+                  {itinerary?.tripMetadata?.travelMeans ? (
+                    <div className="space-y-4">
+                      <p className="text-sm text-gray-600">
+                        Review and select your preferred travel options for this
+                        trip.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <Plane className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <h4 className="text-lg font-medium text-gray-900 mb-2">
+                        No Travel Information
+                      </h4>
+                      <p className="text-gray-600 text-sm">
+                        Travel routes and flight information are not available
+                        for this itinerary.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1530,6 +1573,60 @@ const ItineraryPage = () => {
                         </div>
                       ))}
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Travel Tab */}
+              {activeTab === "travel" && (
+                <div className="p-8">
+                  <div className="max-w-6xl mx-auto">
+                    <div className="flex items-center justify-between mb-8">
+                      <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-green-600 bg-clip-text text-transparent">
+                        Travel Routes & Flights
+                      </h2>
+                    </div>
+
+                    {itinerary?.tripMetadata?.travelMeans ? (
+                      <TravelRouteDisplay
+                        travelMeans={itinerary.tripMetadata.travelMeans}
+                        onSelectRoute={(routeIndex, type, selection) => {
+                          setSelectedTravelRoutes((prev) => ({
+                            ...prev,
+                            [routeIndex]: {
+                              ...prev[routeIndex],
+                              [type]: selection,
+                            },
+                          }));
+                        }}
+                        selectedRoutes={selectedTravelRoutes}
+                      />
+                    ) : (
+                      <div className="text-center py-16">
+                        <div className="bg-gray-50 rounded-lg p-12">
+                          <Plane className="h-16 w-16 text-gray-400 mx-auto mb-6" />
+                          <h3 className="text-xl font-semibold text-gray-900 mb-4">
+                            No Travel Information Available
+                          </h3>
+                          <p className="text-gray-600 mb-6 max-w-md mx-auto">
+                            This itinerary doesn't include flight and travel
+                            route information. Travel means are typically
+                            available for multi-city trips generated with our
+                            enhanced planning features.
+                          </p>
+                          <div className="text-sm text-gray-500">
+                            <p>To get travel information:</p>
+                            <ul className="mt-2 space-y-1">
+                              <li>• Generate a new multi-city itinerary</li>
+                              <li>
+                                • Include starting location in your trip details
+                              </li>
+                              <li>• Enable travel planning features</li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

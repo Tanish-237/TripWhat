@@ -67,6 +67,17 @@ const tripMetadataSchema = new mongoose.Schema(
         travel: { type: Number },
       },
     },
+    startLocation: { type: String }, // Starting point for travel
+    travelMeans: {
+      routes: { type: mongoose.Schema.Types.Mixed, default: [] },
+      totalCost: {
+        min: { type: Number },
+        max: { type: Number },
+        currency: { type: String, default: "USD" },
+      },
+      totalTravelTime: { type: String },
+      recommendations: { type: mongoose.Schema.Types.Mixed, default: [] },
+    },
   },
   { _id: false }
 );
@@ -98,6 +109,7 @@ const savedTripSchema = new mongoose.Schema(
     },
     // Original trip data
     startDate: { type: Date, required: true },
+    startLocation: { type: String }, // Starting location for travel
     cities: {
       type: [citySchema],
       validate: (v) => Array.isArray(v) && v.length > 0,
