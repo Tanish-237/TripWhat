@@ -2,7 +2,7 @@
 
 AI-powered travel planner built with **Model Context Protocol (MCP)**, **LangGraph**, and intelligent agents. Now with **LLM-based intent detection** and **10+ integrated tools**!
 
-## 🆕 What's New in Phase 1.5
+## 🆕 What's New
 
 - 🧠 **LLM-Based Intent Detection**: 90%+ accuracy vs keyword matching
 - 🔧 **10+ Tools**: Web search, distance calculation, restaurant finder, and more
