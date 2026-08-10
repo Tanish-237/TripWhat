@@ -12,6 +12,7 @@ import itineraryRoutes from "./routes/itinerary.js";
 import travelRoutes from "./routes/travel.js";
 import flightRoutes from "./routes/flights.js";
 import hotelRoutes from "./routes/hotels.js";
+import calendarRoutes from "./routes/calendar.js";
 import savedTripRoutes from "../routes/savedTripRoutes.js";
 import placesRoutes from "../routes/placesRoutes.js";
 import { authenticateToken } from "./middleware/auth.js";
@@ -72,6 +73,9 @@ app.use("/api/saved-trips", savedTripRoutes);
 // Flights routes (public for now - can add auth later)
 app.use("/api/flights", flightRoutes);
 app.use("/api/hotels", hotelRoutes);
+
+// Google Calendar routes
+app.use("/api/google", calendarRoutes);
 
 // Set Socket.io instance for chat controller
 setSocketIO(io);
