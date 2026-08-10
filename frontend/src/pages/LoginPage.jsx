@@ -2,8 +2,6 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { Mail, Lock } from "lucide-react";
-import { GrainOverlay } from "../components/GrainOverlay.jsx";
-import { AmbientBlobs } from "../components/AmbientBlobs.jsx";
 
 export default function LoginPage() {
   const [formData, setFormData] = useState({ email: "", password: "" });
@@ -48,9 +46,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] relative flex items-center justify-center p-4">
-      <GrainOverlay />
-      <AmbientBlobs />
+    <div className="min-h-screen relative flex items-center justify-center p-4">
       <div className="w-full max-w-md relative z-10">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-[var(--ink)] tracking-tight">

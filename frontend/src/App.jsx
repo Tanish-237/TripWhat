@@ -9,8 +9,6 @@ import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { AuthProvider, useAuth } from "./contexts/AuthContext.jsx";
 
-import { GrainOverlay } from "./components/GrainOverlay.jsx";
-import { AmbientBlobs } from "./components/AmbientBlobs.jsx";
 import Navbar from "./components/Navbar.jsx";
 import LandingPage from "./pages/LandingPage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
@@ -38,9 +36,7 @@ function AppContent() {
   const { user } = useAuth();
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--ink)] relative">
-      <GrainOverlay />
-      <AmbientBlobs />
+    <div className="min-h-screen text-[var(--ink)]">
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />

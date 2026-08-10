@@ -6,13 +6,13 @@
   --font-sans: "Outfit", system-ui, sans-serif;
   --font-accent: "Reenie Beanie", cursive;
 
-  --bg: #FDFCF8;
-  --sage: #E8EFE8;
-  --lavender: #EFEDF4;
-  --peach: #FFB7B2;
-  --ink: #292524;
+  --bg: #0C0A09;
+  --sage: #1C1917;
+  --lavender: #292524;
+  --peach: #F97316;
+  --ink: #FAFAF9;
   --muted: #78716C;
-  --surface: #FFFFFF;
+  --surface: #1C1917;
 
   font-family: var(--font-sans);
   line-height: 1.5;
@@ -23,12 +23,21 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+html {
+  background: var(--bg);
+}
+
 body {
   margin: 0;
   padding: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: var(--bg);
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(ellipse 800px 400px at 50% 0%, #44403C 0%, transparent 70%),
+    radial-gradient(circle 600px at 0% 100%, #292524 0%, transparent 70%),
+    radial-gradient(circle 500px at 100% 50%, #1C1917 0%, transparent 70%);
+  background-attachment: fixed;
   color: var(--ink);
 }
 
@@ -47,7 +56,7 @@ input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0px 1000px var(--bg) inset !important;
+  -webkit-box-shadow: 0 0 0px 1000px var(--surface) inset !important;
   -webkit-text-fill-color: var(--ink) !important;
   transition: background-color 5000s ease-in-out 0s;
 }

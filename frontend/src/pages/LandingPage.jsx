@@ -1,7 +1,5 @@
 import { Link } from "react-router-dom";
 import { MapPin, Plane, Sparkles } from "lucide-react";
-import { GrainOverlay } from "../components/GrainOverlay.jsx";
-import { AmbientBlobs } from "../components/AmbientBlobs.jsx";
 import { useReveal } from "../hooks/useReveal";
 
 export default function LandingPage() {
@@ -9,10 +7,7 @@ export default function LandingPage() {
   const { ref: featuresRef, visible: featuresVisible } = useReveal();
 
   return (
-    <main className="min-h-screen bg-[var(--bg)] relative">
-      <GrainOverlay />
-      <AmbientBlobs />
-
+    <main className="min-h-screen relative">
       {/* Header */}
       <header className="relative z-10 max-w-6xl mx-auto flex items-center justify-between px-6 py-5">
         <div className="flex items-center gap-2 text-xl font-bold text-[var(--ink)]">
@@ -47,18 +42,18 @@ export default function LandingPage() {
           transition: "opacity 0.8s ease-out, transform 0.8s ease-out",
         }}
       >
-        <div className="max-w-3xl mx-auto space-y-6">
-          <p className="text-sm text-[var(--muted)]" style={{ fontFamily: "var(--font-accent)" }}>
+        <div className="max-w-4xl mx-auto space-y-8">
+          <h2 className="text-3xl md:text-5xl font-normal text-[var(--muted)] tracking-tight" style={{ fontFamily: "var(--font-accent)" }}>
             your digital living room for travel
-          </p>
-          <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-[var(--ink)] leading-tight">
+          </h2>
+          <h1 className="text-6xl md:text-8xl font-bold tracking-tight text-[var(--ink)] leading-[1.05]">
             Plan your perfect journey
           </h1>
           <p className="text-lg md:text-xl text-[var(--muted)] leading-relaxed max-w-2xl mx-auto">
             Chat with an AI travel companion that builds personalized itineraries
             with real-time weather, optimal routes, and local recommendations.
           </p>
-          <div className="flex flex-col sm:flex-row justify-center gap-4 pt-4">
+          <div className="flex flex-col sm:flex-row justify-center gap-4 pt-8">
             <Link
               to="/signup"
               className="px-8 py-3.5 rounded-[1.25rem] bg-[var(--peach)] text-white text-base font-medium hover:opacity-90 transition-opacity duration-300"
@@ -67,8 +62,7 @@ export default function LandingPage() {
             </Link>
             <Link
               to="/login"
-              className="px-8 py-3.5 rounded-[1.25rem] bg-[var(--surface)] text-[var(--ink)] text-base font-medium hover:bg-[var(--sage)] transition-colors duration-300"
-              style={{ boxShadow: "0 4px 20px -2px rgba(0,0,0,0.05)" }}
+              className="px-8 py-3.5 rounded-[1.25rem] border border-[var(--lavender)] text-[var(--ink)] text-base font-medium hover:bg-[var(--sage)] transition-colors duration-300"
             >
               I have an account
             </Link>
@@ -107,10 +101,9 @@ export default function LandingPage() {
             ].map((card, idx) => (
               <div
                 key={idx}
-                className="rounded-[2rem] bg-[var(--surface)] p-8"
-                style={{ boxShadow: "0 4px 20px -2px rgba(0,0,0,0.05)" }}
+                className="rounded-[2rem] bg-[var(--surface)] border border-[var(--lavender)] p-8 hover:border-[var(--muted)] transition-colors duration-300"
               >
-                <div className="w-12 h-12 rounded-[1.25rem] bg-[var(--sage)] flex items-center justify-center mb-4">
+                <div className="w-12 h-12 rounded-[1.25rem] bg-[var(--lavender)] flex items-center justify-center mb-4">
                   {card.icon}
                 </div>
                 <h3 className="text-lg font-semibold text-[var(--ink)] mb-2">
