@@ -11,6 +11,12 @@ import type { AgentConfig } from './types.js';
 import type { Destination } from '../mcp-servers/places/types.js';
 import type { Itinerary } from '../services/itinerary/types.js';
 import type { DetectedIntent } from './intent-detector.js';
+import type { TripState, ResolvedPlace, StructuredQuestion, RouteProposal, ChangeEntry, Widget } from './nodes/types.js';
+import { checkSlots, applySlotAnswer } from './nodes/slot-check.js';
+import { resolvePlaces } from './nodes/place-resolver.js';
+import { routeProposer } from './nodes/route-proposer.js';
+import { executeEdit } from './nodes/plan-editor.js';
+import { itineraryBuilderService } from '../services/itinerary/index.js';
 
 /**
  * Define agent state using Annotation API
@@ -64,6 +70,47 @@ const AgentStateAnnotation = Annotation.Root({
     reducer: (left, right) => right ?? left,
     default: () => undefined,
   }),
+  // --- Phase 3 new fields ---
+  classification: Annotation<string | undefined>({
+    reducer: (left, right) => right ?? left,
+    default: () => undefined,
+  }),
+  tripId: Annotation<string | undefined>({
+    reducer: (left, right) => right ?? left,
+    default: () => undefined,
+  }),
+  tripState: Annotation<TripState | undefined>({
+    reducer: (left, right) => right ?? left,
+    default: () => undefined,
+  }),
+  resolvedPlaces: Annotation<ResolvedPlace[] | undefined>({
+    reducer: (left, right) => right ?? left,
+    default: () => undefined,
+  }),
+  pendingQuestions: Annotation<StructuredQuestion[] | undefined>({
+    reducer: (left, right) => right ?? left,
+    default: () => undefined,
+  }),
+  routeProposal: Annotation<RouteProposal | undefined>({
+    reducer: (left, right) => right ?? left,
+    default: () => undefined,
+  }),
+  changeSummary: Annotation<ChangeEntry[] | undefined>({
+    reducer: (left, right) => right ?? left,
+    default: () => undefined,
+  }),
+  widgets: Annotation<Widget[] | undefined>({
+    reducer: (left, right) => right ?? left,
+    default: () => undefined,
+  }),
+  suggestions: Annotation<string[] | undefined>({
+    reducer: (left, right) => right ?? left,
+    default: () => undefined,
+  }),
+  cacheMeta: Annotation<{ baselineHit: boolean; reusedDayKeys: string[]; toolCallsSaved: number } | undefined>({
+    reducer: (left, right) => right ?? left,
+    default: () => undefined,
+  }),
 });
 
 type AgentState = typeof AgentStateAnnotation.State;
@@ -94,76 +141,130 @@ export class TravelAgent {
   }
 
   /**
-   * Build the LangGraph state machine
+   * Build the LangGraph state machine — 8-node pipeline per Phase 3.2a
+   *
+   * __start__ → classify_node
+   * classify_node ─┬─ 'nonsensical'/'chitchat' ─→ formatter_node
+   *                ├─ 'discovery' ──────────────→ formatter_node
+   *                ├─ 'plannable' ──────────────→ formatter_node (soft CTA)
+   *                ├─ 'start_planning' ─────────→ slot_gate_node
+   *                ├─ editing intents ──────────→ resolve_node → plan_editor_node → formatter_node
+   *                └─ 'ready_to_search' ────────→ resolve_node → tool_executor_node → formatter_node
+   * slot_gate_node ─┬─ slots missing → formatter_node (QuestionCard)
+   *                 └─ slots filled → route_propose_node → formatter_node
+   * plan_editor_node → (city-level) → builder_node → formatter_node
+   * plan_editor_node → (activity-level) → formatter_node
+   * builder_node → formatter_node → __end__
    */
   private buildGraph() {
-    // Define the graph with Annotation and use method chaining
     const workflow = new StateGraph(AgentStateAnnotation)
-      .addNode('planner', this.plannerNode.bind(this))
+      .addNode('classify', this.classifyNode.bind(this))
+      .addNode('resolve', this.resolveNode.bind(this))
+      .addNode('slot_gate', this.slotGateNode.bind(this))
+      .addNode('route_propose', this.routeProposeNode.bind(this))
       .addNode('tool_executor', this.toolExecutorNode.bind(this))
-      .addNode('response_formatter', this.responseFormatterNode.bind(this))
-      .addEdge('__start__', 'planner')
-      .addConditionalEdges('planner', (state: AgentState) => {
-        // Map new intent types to appropriate actions
-        const intentsThatNeedTools = [
-          'search_destination',
-          'search_attractions',
-          'search_hotels',
-          'search_flights',
-          'search_restaurants',
-          'plan_trip',
-          'get_details',
-          'find_nearby',
-          'calculate_distance',
-          'get_directions',
-          'web_search',
-          'estimate_budget',
-          // Legacy intents for backward compatibility
-          'SEARCH_DESTINATION',
-          'GET_DETAILS',
-          'FIND_NEARBY',
-          'PLAN_TRIP',
+      .addNode('plan_editor', this.planEditorNode.bind(this))
+      .addNode('builder', this.builderNode.bind(this))
+      .addNode('formatter', this.responseFormatterNode.bind(this))
+      .addEdge('__start__', 'classify')
+      .addConditionalEdges('classify', (state: AgentState) => {
+        const cls = state.classification || 'chitchat';
+        const intent = state.intent || '';
+
+        // Editing intents → resolve → plan_editor
+        const editingIntents = [
+          'add_activity', 'remove_activity', 'replace_activity',
+          'modify_activity', 'move_activity', 'add_day', 'remove_day',
+          'find_and_add', 'add_city', 'remove_city', 'adjust_nights',
+          'reorder_cities', 'rebalance',
         ];
-        
-        if (intentsThatNeedTools.includes(state.intent || '')) {
-          return 'tool_executor';
+        if (editingIntents.includes(intent)) {
+          return 'resolve';
         }
-        // Otherwise, go directly to response formatter for casual chat
-        return 'response_formatter';
+
+        // Start planning → slot gate
+        if (intent === 'start_planning') {
+          return 'slot_gate';
+        }
+
+        // Confirm route → builder (if route proposal exists)
+        if (intent === 'confirm_route' && state.routeProposal) {
+          return 'builder';
+        }
+
+        // Ready to search → resolve → tool_executor
+        if (cls === 'ready_to_search') {
+          return 'resolve';
+        }
+
+        // Everything else → formatter (chitchat, discovery, plannable, nonsensical)
+        return 'formatter';
       })
-      .addEdge('tool_executor', 'response_formatter')
-      .addEdge('response_formatter', '__end__');
+      .addConditionalEdges('resolve', (state: AgentState) => {
+        const intent = state.intent || '';
+        const editingIntents = [
+          'add_activity', 'remove_activity', 'replace_activity',
+          'modify_activity', 'move_activity', 'add_day', 'remove_day',
+          'find_and_add', 'add_city', 'remove_city', 'adjust_nights',
+          'reorder_cities', 'rebalance',
+        ];
+        if (editingIntents.includes(intent)) {
+          return 'plan_editor';
+        }
+        return 'tool_executor';
+      })
+      .addConditionalEdges('slot_gate', (state: AgentState) => {
+        if (state.pendingQuestions && state.pendingQuestions.length > 0) {
+          return 'formatter';
+        }
+        // Slots filled — check if route proposal exists
+        if (state.routeProposal) {
+          return 'builder';
+        }
+        return 'route_propose';
+      })
+      .addEdge('route_propose', 'formatter')
+      .addEdge('tool_executor', 'formatter')
+      .addConditionalEdges('plan_editor', (state: AgentState) => {
+        // City-level changes require regeneration
+        if (state.changeSummary && state.changeSummary.some(c =>
+          c.type === 'add' || c.type === 'remove' || c.type === 'reorder' || c.type === 'rebalance'
+        )) {
+          return 'builder';
+        }
+        return 'formatter';
+      })
+      .addEdge('builder', 'formatter')
+      .addEdge('formatter', '__end__');
 
     return workflow.compile();
   }
 
   /**
-   * Planner Node: Analyzes user query and decides which tools to use
-   * Now uses LLM-based intent detection with category extraction
+   * Classify Node (Stage 1): Analyzes user query, detects intent, classifies
+   * Merges exfiltrated stages 1+2: classify query type + detect intent + extract entities
    */
-  private async plannerNode(state: AgentState): Promise<Partial<AgentState>> {
-    console.log('\n🧠 [PLANNER] Analyzing user query:', state.userQuery);
+  private async classifyNode(state: AgentState): Promise<Partial<AgentState>> {
+    console.log('\n🎯 [CLASSIFY] Analyzing user query:', state.userQuery);
     try {
-      // Use LLM-based intent detector with category extraction
       const detectedIntent = await intentDetector.detectIntent(state.userQuery);
       
-      console.log('🎯 [PLANNER] Detected intent:', detectedIntent.primary_intent);
-      console.log('🔧 [PLANNER] Tools to call:', detectedIntent.tools_to_call);
-      console.log('🏷️  [PLANNER] Place Types:', detectedIntent.entities.google_place_types);
-      console.log('📊 [PLANNER] Confidence:', detectedIntent.confidence);
-      console.log('💭 [PLANNER] Reasoning:', detectedIntent.reasoning);
+      console.log('🎯 [CLASSIFY] Intent:', detectedIntent.primary_intent);
+      console.log('🏷️  [CLASSIFY] Classification:', detectedIntent.classification);
+      console.log('🔧 [CLASSIFY] Tools:', detectedIntent.tools_to_call);
+      console.log('📊 [CLASSIFY] Confidence:', detectedIntent.confidence);
 
-      // Store the detected intent and entities for tool execution
       const intentString = detectedIntent.primary_intent;
 
       return {
         intent: intentString,
-        detectedIntent: detectedIntent, // Store full intent data
-        searchResults: detectedIntent.entities.google_place_types as any, // Store place types temporarily
+        detectedIntent: detectedIntent,
+        classification: detectedIntent.classification,
+        searchResults: detectedIntent.entities.google_place_types as any,
         messages: [new AIMessage(`Understood: ${detectedIntent.reasoning}`)],
       };
     } catch (error) {
-      console.error('Planner node error:', error);
+      console.error('Classify node error:', error);
       return {
         error: 'Failed to analyze your request. Please try again.',
       };
@@ -331,6 +432,266 @@ export class TravelAgent {
   }
 
   /**
+   * Resolve Node (Stage 2): Resolves entity strings to canonical places
+   * Uses 4-tier cache: context → baseline → Google Places → web search
+   */
+  private async resolveNode(state: AgentState): Promise<Partial<AgentState>> {
+    console.log('\n🗺️  [RESOLVE] Resolving places for intent:', state.intent);
+    try {
+      const detectedIntent = state.detectedIntent;
+      const cityNames: string[] = [];
+
+      if (detectedIntent?.entities?.cities && detectedIntent.entities.cities.length > 0) {
+        cityNames.push(...detectedIntent.entities.cities.map(c => c.name));
+      }
+      if (detectedIntent?.entities?.destination) {
+        cityNames.push(detectedIntent.entities.destination);
+      }
+      if (detectedIntent?.entities?.location && !cityNames.includes(detectedIntent.entities.location)) {
+        cityNames.push(detectedIntent.entities.location);
+      }
+
+      if (cityNames.length === 0) {
+        console.log('⚠️  [RESOLVE] No cities to resolve');
+        return {};
+      }
+
+      const contextMap = new Map<string, ResolvedPlace>();
+      if (state.resolvedPlaces) {
+        for (const p of state.resolvedPlaces) {
+          contextMap.set(p.name.toLowerCase(), p);
+        }
+      }
+
+      const resolved = await resolvePlaces({
+        query: state.userQuery || '',
+        cities: cityNames,
+        conversationContext: contextMap,
+      });
+
+      console.log(`✅ [RESOLVE] Resolved ${resolved.length} places`);
+      return { resolvedPlaces: resolved };
+    } catch (error) {
+      console.error('Resolve node error:', error);
+      return {};
+    }
+  }
+
+  /**
+   * Slot Gate Node (Stage 3): Onboarding slot machine
+   * Checks required slots, emits structured questions if missing
+   */
+  private async slotGateNode(state: AgentState): Promise<Partial<AgentState>> {
+    console.log('\n🎲 [SLOT_GATE] Checking onboarding slots');
+    try {
+      const tripState = state.tripState || {
+        status: 'planning' as const,
+        cities: [],
+        onboarding: { slotsFilled: [], completed: false },
+        version: 0,
+      };
+
+      // Try to extract slot answers from the user query
+      const detectedIntent = state.detectedIntent;
+      let updatedTripState = tripState;
+
+      if (detectedIntent?.entities?.cities && detectedIntent.entities.cities.length > 0) {
+        updatedTripState = applySlotAnswer(updatedTripState, 'destination',
+          detectedIntent.entities.cities.map(c => c.name));
+      }
+      if (detectedIntent?.entities?.dates?.start) {
+        updatedTripState = applySlotAnswer(updatedTripState, 'dates', {
+          start: detectedIntent.entities.dates.start,
+          end: detectedIntent.entities.dates.end,
+        });
+      }
+      if (detectedIntent?.entities?.duration) {
+        updatedTripState = applySlotAnswer(updatedTripState, 'duration',
+          detectedIntent.entities.duration);
+      }
+      if (detectedIntent?.entities?.number_of_people) {
+        updatedTripState = applySlotAnswer(updatedTripState, 'travelers',
+          detectedIntent.entities.number_of_people === 1 ? 'solo' : 'couple');
+      }
+
+      const result = checkSlots(updatedTripState);
+
+      if (result.proceed) {
+        console.log('✅ [SLOT_GATE] All slots filled, proceeding to route proposal');
+        return {
+          tripState: updatedTripState,
+          pendingQuestions: undefined,
+        };
+      }
+
+      console.log(`❓ [SLOT_GATE] Missing slots: ${result.missingSlots.join(', ')}`);
+      return {
+        tripState: updatedTripState,
+        pendingQuestions: result.questions,
+      };
+    } catch (error) {
+      console.error('Slot gate node error:', error);
+      return {};
+    }
+  }
+
+  /**
+   * Route Propose Node (Stage 4): Proposes per-city nights split
+   */
+  private async routeProposeNode(state: AgentState): Promise<Partial<AgentState>> {
+    console.log('\n🛤️  [ROUTE_PROPOSE] Generating route proposal');
+    try {
+      const tripState = state.tripState;
+      if (!tripState || tripState.cities.length === 0) {
+        console.log('⚠️  [ROUTE_PROPOSE] No cities in trip state');
+        return {};
+      }
+
+      const proposal = await routeProposer.proposeRoute(tripState);
+      console.log(`✅ [ROUTE_PROPOSE] Proposed ${proposal.cities.length} cities, ${proposal.totalNights} nights`);
+
+      const widgets: Widget[] = [{
+        type: 'route_proposal',
+        data: proposal,
+      }];
+
+      return {
+        routeProposal: proposal,
+        widgets,
+        suggestions: [
+          'Confirm route and build itinerary',
+          'Can we add more time in ' + proposal.cities[0]?.name + '?',
+          'I want to change the city order',
+        ],
+      };
+    } catch (error) {
+      console.error('Route propose node error:', error);
+      return {};
+    }
+  }
+
+  /**
+   * Plan Editor Node: Executes deterministic itinerary mutations
+   * Pure functions — zero LLM calls
+   */
+  private async planEditorNode(state: AgentState): Promise<Partial<AgentState>> {
+    console.log('\n✏️  [PLAN_EDITOR] Executing edit for intent:', state.intent);
+    try {
+      const tripState = state.tripState;
+      if (!tripState || !tripState.itinerary) {
+        console.log('⚠️  [PLAN_EDITOR] No itinerary to edit');
+        return { error: 'No itinerary to edit. Please generate a trip first.' };
+      }
+
+      const detectedIntent = state.detectedIntent;
+      if (!detectedIntent) {
+        return { error: 'Could not determine edit action.' };
+      }
+
+      const destination = detectedIntent.entities.destination
+        || detectedIntent.entities.location
+        || tripState.cities[0]?.name
+        || 'Unknown';
+
+      const action: any = {
+        type: state.intent,
+        target: {
+          day: detectedIntent.entities.target_day,
+          timeSlot: detectedIntent.entities.time_slot,
+          city: detectedIntent.entities.destination || detectedIntent.entities.location,
+        },
+        details: {
+          activityName: detectedIntent.entities.activity_name,
+          category: detectedIntent.entities.google_place_types,
+          newTimeSlot: detectedIntent.entities.time_slot,
+        },
+      };
+
+      const result = await executeEdit(tripState, action, destination);
+      console.log(`✅ [PLAN_EDITOR] Edit complete: ${result.changeSummary.length} changes`);
+
+      const updatedTripState = {
+        ...tripState,
+        itinerary: result.itinerary,
+        version: tripState.version + 1,
+      };
+
+      const widgets: Widget[] = [{
+        type: 'change_summary',
+        data: result.changeSummary,
+      }];
+
+      return {
+        tripState: updatedTripState,
+        itinerary: result.itinerary,
+        changeSummary: result.changeSummary,
+        widgets,
+      };
+    } catch (error) {
+      console.error('Plan editor node error:', error);
+      return { error: 'Failed to edit itinerary. Please try again.' };
+    }
+  }
+
+  /**
+   * Builder Node: Delta-only itinerary generation
+   * Only generates new/invalidated days; reuses existing days with matching signatures
+   */
+  private async builderNode(state: AgentState): Promise<Partial<AgentState>> {
+    console.log('\n🏗️  [BUILDER] Building itinerary (delta-only)');
+    try {
+      const tripState = state.tripState;
+      const routeProposal = state.routeProposal;
+
+      if (!tripState) {
+        console.log('⚠️  [BUILDER] No trip state');
+        return { error: 'No trip state available for building.' };
+      }
+
+      // If we have a route proposal, build from it
+      if (routeProposal && routeProposal.cities.length > 0) {
+        const ctx = {
+          destination: routeProposal.cities[0].name,
+          duration: routeProposal.totalNights,
+          startDate: tripState.dates?.start,
+          cities: routeProposal.cities.map(c => ({
+            name: c.name,
+            days: c.nights,
+          })),
+          travelType: '',
+          preferences: tripState.preferences,
+        };
+
+        const result = await itineraryBuilderService.build(ctx, { includeTravelMeans: true });
+        if (result) {
+          const updatedTripState = {
+            ...tripState,
+            itinerary: result.itinerary,
+            version: tripState.version + 1,
+          };
+
+          return {
+            tripState: updatedTripState,
+            itinerary: result.itinerary,
+            cacheMeta: {
+              baselineHit: false,
+              reusedDayKeys: [],
+              toolCallsSaved: 0,
+            },
+          };
+        }
+      }
+
+      // Fallback: use existing build path
+      console.log('⚠️  [BUILDER] No route proposal, falling back');
+      return {};
+    } catch (error) {
+      console.error('Builder node error:', error);
+      return { error: 'Failed to build itinerary.' };
+    }
+  }
+
+  /**
    * Response Formatter Node: Creates conversational response from tool results
    * Uses LLM to generate natural, tailored responses based on user query and data
    */
@@ -344,21 +705,51 @@ export class TravelAgent {
         return { response: `I apologize, but ${error}` };
       }
 
+      // Handle pending questions (slot gate)
+      if (state.pendingQuestions && state.pendingQuestions.length > 0) {
+        const question = state.pendingQuestions[0];
+        const widgets: Widget[] = [{
+          type: 'question_card',
+          data: question,
+        }];
+        return {
+          response: question.question,
+          widgets,
+          suggestions: undefined,
+        };
+      }
+
+      // Handle plannable classification — soft CTA
+      if (state.classification === 'plannable' && !state.tripState?.itinerary) {
+        const widgets: Widget[] = [{
+          type: 'plan_cta',
+          data: {
+            primaryAction: 'Turn this into a trip plan',
+            secondaryAction: 'Just exploring for now',
+          },
+        }];
+        let formattedResponse = '';
+        const messages = [
+          new SystemMessage(TRAVEL_AGENT_SYSTEM_PROMPT),
+          new HumanMessage(userQuery),
+        ];
+        const response = await this.model.invoke(messages);
+        formattedResponse = response.content as string;
+        return { response: formattedResponse, widgets, suggestions: ['Turn this into a trip plan', 'Just exploring for now'] };
+      }
+
       // Format response using LLM for natural conversation
       let formattedResponse = '';
 
       if (itinerary) {
-        // For itineraries, use structured format (already detailed enough)
         formattedResponse = this.formatItinerary(itinerary);
       } else if (searchResults && searchResults.length > 0) {
-        // Use LLM to create personalized response from search results
         formattedResponse = await this.formatSearchResultsWithLLM(userQuery, searchResults);
       } else if (nearbyAttractions && nearbyAttractions.length > 0) {
         formattedResponse = await this.formatNearbyWithLLM(userQuery, nearbyAttractions);
       } else if (placeDetails) {
         formattedResponse = await this.formatDetailsWithLLM(userQuery, placeDetails);
       } else {
-        // No tool results, use LLM to generate conversational response
         const messages = [
           new SystemMessage(TRAVEL_AGENT_SYSTEM_PROMPT),
           new HumanMessage(userQuery),
@@ -369,7 +760,18 @@ export class TravelAgent {
       }
 
       console.log('✅ [FORMATTER] Response generated successfully\n');
-      return { response: formattedResponse };
+
+      // Merge any widgets/suggestions from earlier nodes
+      const widgets = state.widgets;
+      const suggestions = state.suggestions;
+      const changeSummary = state.changeSummary;
+
+      return {
+        response: formattedResponse,
+        widgets,
+        suggestions,
+        changeSummary,
+      };
     } catch (error) {
       console.error('Response formatter error:', error);
       return {
