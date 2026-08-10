@@ -2,6 +2,8 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -29,24 +31,64 @@ console.log("  - OPENAI_API_KEY:", process.env.OPENAI_API_KEY ? "✅ Loaded" : "
 console.log("  - OPENTRIPMAP_API_KEY:", process.env.OPENTRIPMAP_API_KEY ? "✅ Loaded" : "❌ Missing");
 console.log("  - SERPAPI_API_KEY:", process.env.SERPAPI_API_KEY ? "✅ Loaded" : "⚠️  Missing (optional)");
 
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    origin: FRONTEND_URL,
     credentials: true,
   },
+});
+
+// Security: helmet headers
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "https://maps.googleapis.com"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        imgSrc: ["'self'", "data:", "https:", "blob:"],
+        connectSrc: ["'self'", "https://maps.googleapis.com", "ws:", "wss:"],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+  })
+);
+
+// Rate limiting
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // 100 requests per window per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10, // 10 auth attempts per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many authentication attempts, please try again later." },
 });
 
 // Middleware
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    origin: FRONTEND_URL,
     credentials: true,
   })
 );
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// Apply rate limiting to API routes
+app.use("/api/", apiLimiter);
+app.use("/api/auth/", authLimiter);
 
 // Health check
 app.get("/health", (req, res) => {

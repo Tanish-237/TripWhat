@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc",
+    "build": "tsc --skipLibCheck",
     "start": "node server.js",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -34,7 +34,9 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.6.2",
     "googleapis": "^162.0.0",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.19.1",
     "openai": "^4.67.0",
