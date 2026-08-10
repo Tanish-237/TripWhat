@@ -4,7 +4,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import type { Itinerary, DayPlan, TimeSlot, Activity, TripMetadata } from '../types/itinerary.js';
+import type { Itinerary, DayPlan, TimeSlot, Activity, TripMetadata } from './itinerary/types.js';
 import type { Destination } from '../mcp-servers/places/types.js';
 import { getOpenTripMapAPI } from '../mcp-servers/places/api.js';
 

@@ -9,7 +9,7 @@ import { getPlaceTypeDisplayName } from '../config/google-places-types.js';
 import { googlePlacesAPI } from '../services/googlePlacesAPI.js';
 import type { AgentConfig } from './types.js';
 import type { Destination } from '../mcp-servers/places/types.js';
-import type { Itinerary } from '../types/itinerary.js';
+import type { Itinerary } from '../services/itinerary/types.js';
 import type { DetectedIntent } from './intent-detector.js';
 
 /**

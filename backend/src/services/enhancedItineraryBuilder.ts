@@ -5,13 +5,13 @@ import {
   travelMeansService,
   type TravelMeansRequest,
   type TravelMeansResponse,
-} from "./travelMeansService.js";
+} from "../services/travelMeansService.js";
 import type {
   Itinerary,
   DayPlan,
   TimeSlot,
   Activity,
-} from "../types/itinerary.js";
+} from "./itinerary/types.js";
 
 /**
  * Enhanced Itinerary Builder
