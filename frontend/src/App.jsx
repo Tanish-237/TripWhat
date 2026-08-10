@@ -8,170 +8,69 @@ import {
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { AuthProvider, useAuth } from "./contexts/AuthContext.jsx";
-import { TripProvider, useTrip } from "./contexts/TripContext.jsx";
 
+import { GrainOverlay } from "./components/GrainOverlay.jsx";
+import { AmbientBlobs } from "./components/AmbientBlobs.jsx";
+import Navbar from "./components/Navbar.jsx";
 import LandingPage from "./pages/LandingPage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import SignupPage from "./pages/SignupPage.jsx";
-import OnboardingPage from "./pages/OnboardingPage.jsx";
-import TripPlannerPage from "./pages/TripPlannerPage.jsx";
-import BudgetPage from "./pages/BudgetPage.jsx";
-import PreferencesPage from "./pages/PreferencesPage.jsx";
-import ResultsPage from "./pages/ResultsPage.jsx";
-import ItineraryPage from "./pages/ItineraryPage.jsx";
-import SavedTripsPage from "./pages/SavedTripsPage.jsx";
-import UpcomingTripsPage from "./pages/UpcomingTripsPage.jsx";
-import CompletedTripsPage from "./pages/CompletedTripsPage.jsx";
-import SearchPage from "./pages/SearchPage.jsx";
+import TripsPage from "./pages/TripsPage.tsx";
+import TripWorkspacePage from "./pages/TripWorkspacePage.tsx";
+import NewTripPage from "./pages/NewTripPage.tsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
-import Home from "./pages/Home.jsx";
-import { Chat } from "./pages/Chat.jsx";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
 
-  if (loading)
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
-        Loading...
+      <div className="min-h-screen flex items-center justify-center bg-[var(--bg)] text-[var(--muted)]">
+        <div className="animate-pulse text-lg">Loading...</div>
       </div>
     );
+  }
   if (!user) return <Navigate to="/login" />;
-
-  return <>{children}</>;
-}
-
-function TripPlanningRoute({ children, condition, redirectTo = "/plan" }) {
-  const { user, loading } = useAuth();
-
-  if (loading)
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
-        Loading...
-      </div>
-    );
-  if (!user) return <Navigate to="/login" />;
-  if (condition !== undefined && !condition)
-    return <Navigate to={redirectTo} replace />;
-
   return <>{children}</>;
 }
 
 function AppContent() {
   const { user } = useAuth();
-  const { tripData } = useTrip();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+    <div className="min-h-screen bg-[var(--bg)] text-[var(--ink)] relative">
+      <GrainOverlay />
+      <AmbientBlobs />
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
 
         <Route
-          path="/onboarding"
+          path="/trips"
           element={
             <ProtectedRoute>
-              <OnboardingPage />
+              <Navbar />
+              <TripsPage />
             </ProtectedRoute>
           }
         />
 
         <Route
-          path="/plan"
+          path="/trip/:id"
           element={
             <ProtectedRoute>
-              <TripPlannerPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/plan/preferences"
-          element={
-            <TripPlanningRoute
-              condition={tripData?.cities?.length > 0 && tripData?.startDate}
-            >
-              <PreferencesPage />
-            </TripPlanningRoute>
-          }
-        />
-        <Route
-          path="/plan/budget"
-          element={
-            <TripPlanningRoute
-              condition={tripData?.people && tripData?.travelType}
-            >
-              <BudgetPage />
-            </TripPlanningRoute>
-          }
-        />
-        <Route
-          path="/plan/results"
-          element={
-            <TripPlanningRoute condition={tripData?.budget?.total}>
-              <ResultsPage />
-            </TripPlanningRoute>
-          }
-        />
-
-        <Route
-          path="/home"
-          element={
-            <ProtectedRoute>
-              <Home />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/itinerary"
-          element={
-            <ProtectedRoute>
-              <ItineraryPage />
+              <TripWorkspacePage />
             </ProtectedRoute>
           }
         />
 
         <Route
-          path="/saved-trips"
+          path="/new"
           element={
             <ProtectedRoute>
-              <SavedTripsPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/upcoming-trips"
-          element={
-            <ProtectedRoute>
-              <UpcomingTripsPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/completed-trips"
-          element={
-            <ProtectedRoute>
-              <CompletedTripsPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/chat"
-          element={
-            <ProtectedRoute>
-              <Chat />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/search"
-          element={
-            <ProtectedRoute>
-              <SearchPage />
+              <Navbar />
+              <NewTripPage />
             </ProtectedRoute>
           }
         />
@@ -180,6 +79,7 @@ function AppContent() {
           path="/profile"
           element={
             <ProtectedRoute>
+              <Navbar />
               <ProfilePage />
             </ProtectedRoute>
           }
@@ -188,7 +88,7 @@ function AppContent() {
         <Route
           path="*"
           element={
-            user ? <Navigate to="/chat" replace /> : <Navigate to="/" replace />
+            user ? <Navigate to="/trips" replace /> : <Navigate to="/" replace />
           }
         />
       </Routes>
@@ -211,11 +111,9 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <TripProvider>
-        <Router>
-          <AppContent />
-        </Router>
-      </TripProvider>
+      <Router>
+        <AppContent />
+      </Router>
     </AuthProvider>
   );
 }
