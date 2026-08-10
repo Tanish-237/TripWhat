@@ -18,7 +18,7 @@ export function AuthProvider({ children }) {
 
   const fetchUser = async () => {
     try {
-      const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
+      const API_URL = import.meta.env.VITE_API_URL || "";
       const token = localStorage.getItem("tripwhat_token");
 
       console.log(
@@ -60,7 +60,7 @@ export function AuthProvider({ children }) {
   };
 
   const login = async (email, password) => {
-    const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
+    const API_URL = import.meta.env.VITE_API_URL || "";
 
     console.log("[AUTH] Attempting login for email:", email);
 
@@ -93,7 +93,7 @@ export function AuthProvider({ children }) {
   };
 
   const signup = async (email, password, userData) => {
-    const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
+    const API_URL = import.meta.env.VITE_API_URL || "";
 
     const response = await fetch(`${API_URL}/api/auth/register`, {
       method: "POST",
