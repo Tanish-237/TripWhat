@@ -14,7 +14,7 @@ import flightRoutes from "./routes/flights.js";
 import hotelRoutes from "./routes/hotels.js";
 import calendarRoutes from "./routes/calendar.js";
 import tripsRoutes from "./routes/trips.js";
-import placesRoutes from "../routes/placesRoutes.js";
+import placesRoutes from "./routes/places.js";
 import { authenticateToken } from "./middleware/auth.js";
 import { setSocketIO } from "./controllers/chatController.js";
 
