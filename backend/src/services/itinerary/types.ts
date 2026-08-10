@@ -156,6 +156,8 @@ export interface ItineraryAction {
 export interface EditorResult {
   itinerary: Itinerary;
   message: string;
+  removedActivity?: Activity;
+  addedActivity?: Activity;
   changeSummary?: {
     action: ItineraryActionType;
     target: string;

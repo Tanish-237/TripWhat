@@ -3,7 +3,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
 import { Conversation } from '../models/Conversation.js';
 import { travelAgent } from '../agents/travel-agent.js';
-import { itineraryService, type ItineraryAction } from '../services/itineraryService.js';
+import { itineraryEditor, type ItineraryAction } from '../services/itinerary/index.js';
 import { intentDetector } from '../agents/intent-detector.js';
 
 /**
@@ -408,7 +408,7 @@ export async function modifyItinerary(req: Request, res: Response) {
     try {
       switch (detectedIntent.primary_intent) {
         case 'add_activity':
-          result = await itineraryService.addActivity(
+          result = await itineraryEditor.addActivity(
             conversation.itinerary,
             action,
             destination
@@ -417,7 +417,7 @@ export async function modifyItinerary(req: Request, res: Response) {
           break;
 
         case 'remove_activity':
-          result = itineraryService.removeActivity(
+          result = itineraryEditor.removeActivity(
             conversation.itinerary,
             action
           );
@@ -425,7 +425,7 @@ export async function modifyItinerary(req: Request, res: Response) {
           break;
 
         case 'replace_activity':
-          result = await itineraryService.replaceActivity(
+          result = await itineraryEditor.replaceActivity(
             conversation.itinerary,
             action,
             destination
@@ -434,7 +434,7 @@ export async function modifyItinerary(req: Request, res: Response) {
           break;
 
         case 'move_activity':
-          result = itineraryService.moveActivity(
+          result = itineraryEditor.moveActivity(
             conversation.itinerary,
             action
           );
@@ -442,7 +442,7 @@ export async function modifyItinerary(req: Request, res: Response) {
           break;
 
         case 'find_and_add':
-          result = await itineraryService.findAndAdd(
+          result = await itineraryEditor.findAndAdd(
             conversation.itinerary,
             action,
             destination
@@ -451,13 +451,13 @@ export async function modifyItinerary(req: Request, res: Response) {
           break;
 
         case 'add_day':
-          result = itineraryService.addDay(conversation.itinerary);
+          result = itineraryEditor.addDay(conversation.itinerary);
           modificationType = 'added';
           break;
 
         case 'remove_day':
           const dayNumber = detectedIntent.entities.target_day || 1;
-          result = itineraryService.removeDay(conversation.itinerary, dayNumber);
+          result = itineraryEditor.removeDay(conversation.itinerary, dayNumber);
           modificationType = 'removed';
           break;
 
@@ -479,8 +479,17 @@ export async function modifyItinerary(req: Request, res: Response) {
 
       await conversation.save();
 
-      // Emit modification event
+      // Emit trip:updated event with change summary
       if (io) {
+        io.emit('trip:updated', {
+          conversationId,
+          trip: result.itinerary,
+          changeSummary: result.changeSummary || {
+            action: modificationType,
+            target: result.message,
+          },
+        });
+        // Legacy event for backward compatibility
         io.emit('itinerary:modified', {
           conversationId,
           updatedItinerary: result.itinerary,
@@ -490,7 +499,7 @@ export async function modifyItinerary(req: Request, res: Response) {
             details: result,
           },
         });
-        console.log('📡 [MODIFY] Emitted itinerary:modified event');
+        console.log('📡 [MODIFY] Emitted trip:updated event');
       }
 
       // Return success

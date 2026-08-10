@@ -1,6 +1,6 @@
 import express from "express";
 import { TravelAgent } from "../agents/travel-agent.js";
-import { enhancedItineraryBuilder } from "../services/enhancedItineraryBuilder.js";
+import { itineraryBuilderService } from "../services/itinerary/index.js";
 import type { TripContext } from "../types/tripContext.js";
 
 const router = express.Router();
@@ -157,23 +157,23 @@ router.post("/generate-with-travel", async (req, res) => {
       travelType: tripContext.travelType,
     });
 
-    // Use enhanced itinerary builder with travel means
-    const result = await enhancedItineraryBuilder.buildItineraryWithTravelMeans(
-      tripContext.startLocation,
-      tripContext.cities,
-      new Date(tripContext.startDate),
-      tripContext.totalDays ||
-        tripContext.cities.reduce((sum, c) => sum + c.days, 0),
+    // Use unified itinerary builder with travel means
+    const result = await itineraryBuilderService.build(
       {
+        destination: tripContext.cities[0]?.name || "",
+        duration: tripContext.totalDays || tripContext.cities.reduce((sum, c) => sum + c.days, 0),
+        startDate: tripContext.startDate,
+        cities: tripContext.cities,
+        startLocation: tripContext.startLocation,
         travelType: tripContext.travelType,
         preferences: tripContext.preferences || [],
-        dailyBudget:
-          (tripContext.budget?.total || 1000) / (tripContext.totalDays || 7),
+        dailyBudget: (tripContext.budget?.total || 1000) / (tripContext.totalDays || 7),
         activityLevel: tripContext.activityLevel || "medium",
         pacing: tripContext.pacing || "moderate",
         numberOfPeople: tripContext.people,
         travelPreferences: tripContext.travelPreferences,
-      }
+      },
+      { includeTravelMeans: true }
     );
 
     if (!result) {
