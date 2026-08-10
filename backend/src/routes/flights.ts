@@ -1,12 +1,9 @@
 import express from 'express';
-import { flightService } from '../services/flightService';
+import { getFlightProvider } from '../services/inventory';
+import { FlightQuerySchema } from '../services/inventory/types';
 
 const router = express.Router();
 
-/**
- * GET /api/flights/search
- * Search for flights
- */
 router.get('/search', async (req, res) => {
   try {
     const {
@@ -16,47 +13,47 @@ router.get('/search', async (req, res) => {
       returnDate,
       adults = '1',
       children = '0',
-      travelClass = 'ECONOMY',
-      nonStop = 'false',
-      maxResults = '5'
+      travelClass = 'economy',
+      maxPrice,
+      currency = 'USD',
+      deepSearch = 'false',
     } = req.query;
 
     if (!origin || !destination || !departureDate) {
       return res.status(400).json({
-        error: 'Missing required parameters: origin, destination, departureDate'
+        error: 'Missing required parameters: origin, destination, departureDate',
       });
     }
 
-    const flights = await flightService.searchFlights({
+    const provider = getFlightProvider();
+    const query = FlightQuerySchema.parse({
       origin: origin as string,
       destination: destination as string,
       departureDate: departureDate as string,
       returnDate: returnDate as string | undefined,
       adults: parseInt(adults as string),
-      children: parseInt(children as string) || undefined,
-      travelClass: travelClass as any,
-      nonStop: nonStop === 'true',
-      maxResults: parseInt(maxResults as string)
+      children: parseInt(children as string),
+      travelClass: travelClass as string,
+      maxPrice: maxPrice ? parseInt(maxPrice as string) : undefined,
+      currency: currency as string,
+      deepSearch: deepSearch === 'true',
     });
+
+    const flights = await provider.searchOffers(query);
 
     return res.json({
       success: true,
       count: flights.length,
-      flights
+      flights,
     });
-
   } catch (error: any) {
     console.error('Flight search error:', error);
     return res.status(500).json({
-      error: error.message || 'Failed to search flights'
+      error: error.message || 'Failed to search flights',
     });
   }
 });
 
-/**
- * GET /api/flights/best
- * Get the best (cheapest) flight
- */
 router.get('/best', async (req, res) => {
   try {
     const {
@@ -66,74 +63,70 @@ router.get('/best', async (req, res) => {
       returnDate,
       adults = '1',
       children = '0',
+      travelClass = 'economy',
+      currency = 'USD',
     } = req.query;
 
     if (!origin || !destination || !departureDate) {
       return res.status(400).json({
-        error: 'Missing required parameters: origin, destination, departureDate'
+        error: 'Missing required parameters: origin, destination, departureDate',
       });
     }
 
-    const bestFlight = await flightService.getBestFlight({
+    const provider = getFlightProvider();
+    const query = FlightQuerySchema.parse({
       origin: origin as string,
       destination: destination as string,
       departureDate: departureDate as string,
       returnDate: returnDate as string | undefined,
       adults: parseInt(adults as string),
-      children: parseInt(children as string) || undefined,
+      children: parseInt(children as string),
+      travelClass: travelClass as string,
+      currency: currency as string,
     });
+
+    const flights = await provider.searchOffers(query);
+    const bestFlight = flights.find((f) => f.isBest) || flights[0];
 
     if (!bestFlight) {
       return res.status(404).json({
-        error: 'No flights found'
+        error: 'No flights found',
       });
     }
 
     return res.json({
       success: true,
-      flight: bestFlight
+      flight: bestFlight,
     });
-
   } catch (error: any) {
     console.error('Best flight error:', error);
     return res.status(500).json({
-      error: error.message || 'Failed to find best flight'
+      error: error.message || 'Failed to find best flight',
     });
   }
 });
 
-/**
- * GET /api/flights/iata
- * Get IATA code for a city
- */
-router.get('/iata', async (req, res) => {
+router.get('/autocomplete', async (req, res) => {
   try {
-    const { city } = req.query;
+    const { term } = req.query;
 
-    if (!city) {
+    if (!term) {
       return res.status(400).json({
-        error: 'Missing required parameter: city'
+        error: 'Missing required parameter: term',
       });
     }
 
-    const iataCode = await flightService.getCityIATACode(city as string);
-
-    if (!iataCode) {
-      return res.status(404).json({
-        error: `No IATA code found for: ${city}`
-      });
-    }
+    const provider = getFlightProvider();
+    const suggestions = await provider.autocomplete(term as string);
 
     return res.json({
       success: true,
-      city,
-      iataCode
+      suggestions,
     });
-
   } catch (error: any) {
-    console.error('IATA lookup error:', error);
+    console.error('Autocomplete error:', error);
     return res.status(500).json({
-      error: error.message || 'Failed to lookup IATA code'
+      error: error.message || 'Failed to autocomplete',
     });
   }
 });

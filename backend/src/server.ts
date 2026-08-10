@@ -11,6 +11,7 @@ import authRoutes from "./routes/auth.js";
 import itineraryRoutes from "./routes/itinerary.js";
 import travelRoutes from "./routes/travel.js";
 import flightRoutes from "./routes/flights.js";
+import hotelRoutes from "./routes/hotels.js";
 import savedTripRoutes from "../routes/savedTripRoutes.js";
 import placesRoutes from "../routes/placesRoutes.js";
 import { authenticateToken } from "./middleware/auth.js";
@@ -23,18 +24,9 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 // Debug: Verify env vars are loaded
 console.log("🔑 Environment check:");
-console.log(
-  "  - OPENAI_API_KEY:",
-  process.env.OPENAI_API_KEY ? "✅ Loaded" : "❌ Missing"
-);
-console.log(
-  "  - OPENTRIPMAP_API_KEY:",
-  process.env.OPENTRIPMAP_API_KEY ? "✅ Loaded" : "❌ Missing"
-);
-console.log(
-  "  - AMADEUS_API_KEY:",
-  process.env.AMADEUS_API_KEY ? "✅ Loaded" : "⚠️  Missing (optional)"
-);
+console.log("  - OPENAI_API_KEY:", process.env.OPENAI_API_KEY ? "✅ Loaded" : "❌ Missing");
+console.log("  - OPENTRIPMAP_API_KEY:", process.env.OPENTRIPMAP_API_KEY ? "✅ Loaded" : "❌ Missing");
+console.log("  - SERPAPI_API_KEY:", process.env.SERPAPI_API_KEY ? "✅ Loaded" : "⚠️  Missing (optional)");
 
 const app = express();
 const httpServer = createServer(app);
@@ -79,6 +71,7 @@ app.use("/api/saved-trips", savedTripRoutes);
 
 // Flights routes (public for now - can add auth later)
 app.use("/api/flights", flightRoutes);
+app.use("/api/hotels", hotelRoutes);
 
 // Set Socket.io instance for chat controller
 setSocketIO(io);
@@ -121,7 +114,7 @@ app.use(
   }
 );
 
-const PORT = 5000;
+const PORT = parseInt(process.env.PORT || "5000");
 
 // Start server
 const startServer = async () => {
