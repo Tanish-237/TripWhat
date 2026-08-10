@@ -101,9 +101,10 @@ export async function sendMessage(req: Request, res: Response) {
 
     // Emit progress to Socket.io client (both to room and all connected clients)
     if (io) {
-      io.emit('agent:thinking', { 
+      io.emit('agent:status', {
+        stage: 'classify',
         status: 'Analyzing your request...',
-        conversationId: convId 
+        conversationId: convId,
       });
     }
 
@@ -152,19 +153,28 @@ export async function sendMessage(req: Request, res: Response) {
     // Emit completion (broadcast to all clients - they'll filter by conversationId)
     console.log('📡 [SOCKET] Broadcasting agent:response for conversation:', convId);
     if (io) {
-      io.emit('agent:response', { 
+      io.emit('agent:response', {
         message: aiResponse,
-        conversationId: convId 
+        conversationId: convId,
+        widgets: agentResult.widgets || [],
+        suggestions: agentResult.suggestions || [],
+        changeSummary: agentResult.changeSummary || [],
+        classification: agentResult.classification,
+        tripState: agentResult.tripState,
       });
       console.log('✅ [SOCKET] Event broadcast successfully');
     } else {
       console.error('❌ [SOCKET] Socket.io instance not available!');
     }
 
-    // Return response
+    // Return response with structured payload
     return res.status(200).json({
       conversationId: convId,
       message: aiResponse,
+      widgets: agentResult.widgets || [],
+      suggestions: agentResult.suggestions || [],
+      changeSummary: agentResult.changeSummary || [],
+      classification: agentResult.classification,
       timestamp: new Date(),
     });
 
