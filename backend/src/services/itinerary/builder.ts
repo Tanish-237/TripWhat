@@ -2,6 +2,8 @@ import type {
   BuildContext,
   BuildOptions,
   BuildResult,
+  Itinerary,
+  DayPlan,
 } from './types.js';
 import { createItinerary } from './types.js';
 
@@ -93,6 +95,120 @@ export class ItineraryBuilderService {
       console.error('[ItineraryBuilder] Travel means calculation failed:', error);
       return result;
     }
+  }
+
+  // ─── Delta-only builder (Phase 3.2d) ───
+
+  /**
+   * Compute a signature for a day plan.
+   * Signature = hash of city + date + slot count + pace.
+   * Days with matching signatures are reused verbatim.
+   */
+  computeDaySignature(day: DayPlan): string {
+    const slotCount = day.timeSlots.length;
+    const city = day.location || 'unknown';
+    const date = day.date || '';
+    const pace = day.timeSlots.reduce((sum, ts) => {
+      const actCount = (ts.activities?.length || (ts.activity ? 1 : 0));
+      return sum + actCount;
+    }, 0);
+    return `${city}|${date}|${slotCount}|${pace}`;
+  }
+
+  /**
+   * Delta-only build: reuse existing days with matching signatures,
+   * only generate new/invalidated days.
+   *
+   * @param existingItinerary - current itinerary from trip state
+   * @param requiredDays - day plans needed (from route proposal / slot state)
+   * @param invalidatedCities - cities whose days must be regenerated
+   * @returns updated itinerary + cache metadata
+   */
+  async buildDelta(
+    existingItinerary: Itinerary | null,
+    requiredDays: DayPlan[],
+    invalidatedCities: string[] = []
+  ): Promise<{ itinerary: Itinerary; reusedDayKeys: string[]; newDayKeys: string[] }> {
+    if (!existingItinerary || existingItinerary.days.length === 0) {
+      // No existing itinerary — build fresh
+      const itinerary = createItinerary(
+        requiredDays[0]?.location || 'Unknown',
+        requiredDays.length,
+        requiredDays[0]?.date || undefined
+      );
+      itinerary.days = requiredDays.map((d, i) => {
+        d.signature = this.computeDaySignature(d);
+        return d;
+      });
+      return { itinerary, reusedDayKeys: [], newDayKeys: requiredDays.map(d => d.signature!) };
+    }
+
+    const existingBySignature = new Map<string, DayPlan>();
+    for (const day of existingItinerary.days) {
+      const sig = day.signature || this.computeDaySignature(day);
+      existingBySignature.set(sig, day);
+    }
+
+    const reusedDayKeys: string[] = [];
+    const newDayKeys: string[] = [];
+    const finalDays: DayPlan[] = [];
+
+    for (const requiredDay of requiredDays) {
+      const sig = this.computeDaySignature(requiredDay);
+      const existing = existingBySignature.get(sig);
+      const isInvalidated = invalidatedCities.length === 0
+        ? false
+        : invalidatedCities.includes(requiredDay.location || '');
+
+      if (existing && !isInvalidated) {
+        // Reuse existing day verbatim — preserve pinned activities
+        finalDays.push(existing);
+        reusedDayKeys.push(sig);
+      } else {
+        // New or invalidated day — needs generation
+        requiredDay.signature = sig;
+        finalDays.push(requiredDay);
+        newDayKeys.push(sig);
+      }
+    }
+
+    // Re-pin any pinned activities that were in invalidated days
+    if (invalidatedCities.length > 0 && existingItinerary) {
+      for (const oldDay of existingItinerary.days) {
+        if (invalidatedCities.includes(oldDay.location || '')) {
+          for (const ts of oldDay.timeSlots) {
+            const activities = ts.activities || (ts.activity ? [ts.activity] : []);
+            for (const act of activities) {
+              if (act.metadata?.pinned) {
+                // Find a matching day in finalDays for this city
+                const targetDay = finalDays.find(d => d.location === oldDay.location);
+                if (targetDay && targetDay.timeSlots.length > 0) {
+                  const slot = targetDay.timeSlots[0];
+                  if (slot.activities) {
+                    slot.activities.unshift(act);
+                  } else if (slot.activity) {
+                    slot.activities = [act, slot.activity];
+                  } else {
+                    slot.activity = act;
+                    slot.activities = [act];
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Renumber days
+    finalDays.forEach((d, i) => { d.dayNumber = i + 1; });
+
+    const itinerary: Itinerary = {
+      ...existingItinerary,
+      days: finalDays,
+    };
+
+    return { itinerary, reusedDayKeys, newDayKeys };
   }
 }
 

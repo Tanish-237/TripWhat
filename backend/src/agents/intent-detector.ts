@@ -30,10 +30,34 @@ export const IntentSchema = z.object({
     'add_day',
     'remove_day',
     'find_and_add',
+    // City-level modification intents
+    'add_city',
+    'remove_city',
+    'adjust_nights',
+    'reorder_cities',
+    'rebalance',
+    // Planning flow intents
+    'start_planning',
+    'defer_planning',
+    'propose_route',
+    'confirm_route',
+    'set_dates',
+    'set_travelers',
+    'save_place',
+    'show_bookings',
+    'needs_info',
     'casual_chat',
     'unknown'
   ]).describe('The primary intent of the user query'),
-  
+
+  classification: z.enum([
+    'discovery',
+    'plannable',
+    'ready_to_search',
+    'chitchat',
+    'nonsensical'
+  ]).describe('Query classification for routing: discovery=exploring without planning, plannable=trip-shaped but not opted in, ready_to_search=specific search request, chitchat=general chat, nonsensical=unclear'),
+
   entities: z.object({
     location: z.string().nullable().optional().describe('Main location/destination mentioned'),
     origin: z.string().nullable().optional().describe('Starting location for travel'),
@@ -55,13 +79,20 @@ export const IntentSchema = z.object({
     activity_name: z.string().nullable().optional().describe('Name of activity to add/remove/modify'),
     activity_id: z.string().nullable().optional().describe('ID of activity to modify'),
     place_name: z.string().nullable().optional().describe('Specific place/venue name'),
-    action_type: z.enum(['add', 'remove', 'replace', 'modify', 'move']).nullable().optional().describe('Type of modification'),
+    action_type: z.enum(['add', 'remove', 'replace', 'modify', 'move', 'add_city', 'remove_city', 'adjust_nights', 'reorder_cities', 'rebalance']).nullable().optional().describe('Type of modification'),
+    // Multi-city support
+    cities: z.array(z.object({
+      name: z.string().describe('City name'),
+      nights: z.number().nullable().optional().describe('Nights in this city, if specified'),
+    })).optional().describe('Cities mentioned in a multi-city trip request'),
+    // Change summary target for plan editor
+    change_summary_target: z.string().nullable().optional().describe('What part of the trip the user wants to change (e.g., "osaka nights", "day 3", "tokyo order")'),
   }).describe('Extracted entities from the query'),
-  
+
   tools_to_call: z.array(z.string()).describe('List of tools that should be called to fulfill this request'),
-  
+
   confidence: z.number().min(0).max(1).describe('Confidence score for the intent detection'),
-  
+
   reasoning: z.string().describe('Brief explanation of why this intent was chosen'),
 });
 
@@ -204,8 +235,29 @@ Intent Categories:
 - add_day: User wants to add another day to trip
 - remove_day: User wants to remove a day from trip
 - find_and_add: User wants AI to find places and add them (e.g., "add some museums")
+- add_city: User wants to add a city to their multi-city trip
+- remove_city: User wants to remove a city from their trip
+- adjust_nights: User wants to change number of nights in a city
+- reorder_cities: User wants to change the order of cities visited
+- rebalance: User wants to rebalance days across cities
+- start_planning: User explicitly opts into planning (e.g., "let's plan it", "turn this into a plan")
+- defer_planning: User dismisses planning CTA (e.g., "just exploring", "not ready to plan")
+- propose_route: User wants to see a route proposal
+- confirm_route: User confirms a proposed route
+- set_dates: User is providing travel dates
+- set_travelers: User is providing number of travelers
+- save_place: User wants to save a place for later
+- show_bookings: User wants to see their bookings
+- needs_info: Agent needs more information from the user
 - casual_chat: Just chatting, no specific intent
 - unknown: Cannot determine intent
+
+Classification:
+- discovery: User is exploring/researching without planning intent (e.g., "is October good for Japan?")
+- plannable: User has trip-shaped intent but hasn't opted into planning (e.g., "I want to visit Tokyo")
+- ready_to_search: User has a specific search request (e.g., "find museums in Paris")
+- chitchat: General conversation, greetings, non-travel topics
+- nonsensical: Query is unclear or doesn't make sense
 
 Respond with ONLY a valid JSON object matching this schema:
 {
@@ -226,8 +278,11 @@ Respond with ONLY a valid JSON object matching this schema:
     "activity_name": "name of activity",
     "activity_id": "activity ID if known",
     "place_name": "specific place/venue name",
-    "action_type": "add|remove|replace|modify|move"
+    "action_type": "add|remove|replace|modify|move|add_city|remove_city|adjust_nights|reorder_cities|rebalance",
+    "cities": [{"name": "Tokyo", "nights": 3}, {"name": "Kyoto", "nights": 2}],
+    "change_summary_target": "what part of trip to change"
   },
+  "classification": "discovery|plannable|ready_to_search|chitchat|nonsensical",
   "tools_to_call": ["tool1", "tool2"],
   "confidence": 0.0-1.0,
   "reasoning": "why this intent was chosen"
@@ -323,6 +378,7 @@ Respond with ONLY a valid JSON object matching this schema:
 
     return {
       primary_intent: intent,
+      classification: (intent as string === 'casual_chat' || intent as string === 'unknown') ? 'chitchat' : 'ready_to_search',
       entities: {
         query_terms: userQuery.split(' ').filter(word => word.length > 3),
         google_place_types: placeTypes.length > 0 ? placeTypes : ['tourist_attraction'],
