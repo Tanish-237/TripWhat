@@ -1,0 +1,106 @@
+import mongoose from 'mongoose';
+
+const citySchema = new mongoose.Schema({
+  name: { type: String, required: true, trim: true },
+  days: { type: Number, required: true, min: 1 },
+}, { _id: false });
+
+const budgetSchema = new mongoose.Schema({
+  total: { type: Number, required: true, min: 0 },
+  travel: { type: Number, required: true, min: 0 },
+  accommodation: { type: Number, required: true, min: 0 },
+  food: { type: Number, required: true, min: 0 },
+  events: { type: Number, required: true, min: 0 },
+  mode: { type: String, enum: ['capped', 'flexible'], default: 'capped' },
+}, { _id: false });
+
+const activitySchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  description: { type: String },
+  category: { type: String },
+  duration: { type: String },
+  estimatedCost: { type: String },
+  location: { type: mongoose.Schema.Types.Mixed },
+  rating: { type: Number },
+  imageUrl: { type: String },
+}, { _id: false });
+
+const timeSlotSchema = new mongoose.Schema({
+  period: { type: String, required: true },
+  startTime: { type: String, required: true },
+  endTime: { type: String, required: true },
+  activities: { type: [activitySchema], default: [] },
+}, { _id: false });
+
+const daySchema = new mongoose.Schema({
+  dayNumber: { type: Number, required: true },
+  title: { type: String, required: true },
+  timeSlots: { type: [timeSlotSchema], default: [] },
+}, { _id: false });
+
+const tripMetadataSchema = new mongoose.Schema({
+  destination: { type: String, required: true },
+  numberOfPeople: { type: Number, required: true },
+  travelers: { type: Number },
+  budget: {
+    perDay: { type: Number },
+    breakdown: {
+      activities: { type: Number },
+      accommodation: { type: Number },
+      food: { type: Number },
+      travel: { type: Number },
+    },
+  },
+  startLocation: { type: String },
+  travelMeans: {
+    routes: { type: mongoose.Schema.Types.Mixed, default: [] },
+    totalCost: {
+      min: { type: Number },
+      max: { type: Number },
+      currency: { type: String, default: 'USD' },
+    },
+    totalTravelTime: { type: String },
+    recommendations: { type: mongoose.Schema.Types.Mixed, default: [] },
+  },
+}, { _id: false });
+
+const itinerarySchema = new mongoose.Schema({
+  days: { type: [daySchema], required: true },
+  tripMetadata: { type: tripMetadataSchema, required: true },
+}, { _id: false });
+
+const tripSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  },
+  title: { type: String, required: true, trim: true },
+  description: { type: String, trim: true },
+  startDate: { type: Date, required: true },
+  startLocation: { type: String },
+  cities: {
+    type: [citySchema],
+    validate: (v: any) => Array.isArray(v) && v.length > 0,
+  },
+  totalDays: { type: Number, required: true, min: 1 },
+  people: { type: Number, required: true, min: 1 },
+  travelType: { type: String, required: true },
+  budget: { type: budgetSchema, required: true },
+  budgetMode: { type: String, enum: ['capped', 'flexible'], default: 'capped' },
+  generatedItinerary: { type: itinerarySchema, required: true },
+  isPublic: { type: Boolean, default: false },
+  tags: { type: [String], default: [] },
+  isUpcoming: { type: Boolean, default: false },
+  isCompleted: { type: Boolean, default: false },
+  tripStartDate: { type: Date },
+  tripEndDate: { type: Date },
+}, { timestamps: true });
+
+tripSchema.index({ user: 1, createdAt: -1 });
+tripSchema.index({ title: 'text', description: 'text' });
+tripSchema.index({ user: 1, isUpcoming: 1, tripStartDate: 1 });
+tripSchema.index({ user: 1, isCompleted: 1 });
+
+export const Trip = mongoose.model('Trip', tripSchema);

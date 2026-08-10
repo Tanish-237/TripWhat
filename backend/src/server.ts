@@ -13,7 +13,7 @@ import travelRoutes from "./routes/travel.js";
 import flightRoutes from "./routes/flights.js";
 import hotelRoutes from "./routes/hotels.js";
 import calendarRoutes from "./routes/calendar.js";
-import savedTripRoutes from "../routes/savedTripRoutes.js";
+import tripsRoutes from "./routes/trips.js";
 import placesRoutes from "../routes/placesRoutes.js";
 import { authenticateToken } from "./middleware/auth.js";
 import { setSocketIO } from "./controllers/chatController.js";
@@ -68,7 +68,7 @@ app.use("/api/places", placesRoutes);
 app.use("/api/chat", authenticateToken, chatRoutes);
 app.use("/api/itinerary", authenticateToken, itineraryRoutes);
 app.use("/api/travel", travelRoutes);
-app.use("/api/saved-trips", savedTripRoutes);
+app.use("/api/saved-trips", tripsRoutes);
 
 // Flights routes (public for now - can add auth later)
 app.use("/api/flights", flightRoutes);
