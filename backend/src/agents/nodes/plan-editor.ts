@@ -50,7 +50,7 @@ export async function executeEdit(
  * invalidate days and require delta-only regeneration.
  * Activity-level ops (add, remove, replace, move, add_day, remove_day) do not.
  */
-function checkRegenerationNeeded(action: ItineraryAction): {
+export function checkRegenerationNeeded(action: ItineraryAction): {
   requiresRegeneration: boolean;
   invalidatedCities: string[];
 } {
@@ -77,7 +77,7 @@ function checkRegenerationNeeded(action: ItineraryAction): {
   return { requiresRegeneration: false, invalidatedCities: [] };
 }
 
-function buildChangeSummary(action: ItineraryAction, result: EditorResult): ChangeEntry[] {
+export function buildChangeSummary(action: ItineraryAction, result: EditorResult): ChangeEntry[] {
   const entries: ChangeEntry[] = [];
 
   const summary = result.changeSummary;
