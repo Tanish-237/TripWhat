@@ -1,173 +1,57 @@
-# TripWhat 🌍✈️
+# TripWhat
 
-AI-powered travel planner built with **Model Context Protocol (MCP)**, **LangGraph**, and intelligent agents. Now with **LLM-based intent detection** and **10+ integrated tools**!
+AI-powered travel planner with LangGraph agent orchestration, chat-first interface, and deferred itinerary generation.
 
-## 🆕 What's New
-
-- 🧠 **LLM-Based Intent Detection**: 90%+ accuracy vs keyword matching
-- 🔧 **10+ Tools**: Web search, distance calculation, restaurant finder, and more
-- 🌐 **Web Search**: Real-time travel information from the web
-- 📏 **Smart Routing**: Calculate distances and multi-stop routes
-- 🍽️ **Restaurant Search**: Find dining options by cuisine and location
-- 📊 **Unified Tool Registry**: Easy to add new capabilities
-- 🎯 **Better Understanding**: Handles natural language variations
-
-[See Full Phase 1.5 Details](./docs/PHASE1.5-COMPLETE.md)
-
----
-
-## Architecture
-
-```
-tripwhat/
-├── backend/
-│   ├── src/
-│   │   ├── agents/
-│   │   │   ├── travel-agent.ts      # Main LangGraph agent
-│   │   │   ├── intent-detector.ts   # 🆕 LLM-based intent detection
-│   │   │   ├── tool-registry.ts     # 🆕 Unified tool management
-│   │   │   └── prompts.ts
-│   │   ├── mcp-servers/
-│   │   │   ├── places/              # OpenTripMap integration (enhanced)
-│   │   │   ├── websearch/           # 🆕 Web search tools
-│   │   │   └── transport/           # 🆕 Distance & routing
-│   │   ├── routes/           # Express routes
-│   │   ├── models/           # MongoDB schemas
-│   │   ├── services/         # Itinerary builder
-│   │   └── controllers/      # Request handlers
-│   └── package.json
-│
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Chat/         # Real-time chat interface
-│   │   │   ├── Map/          # Interactive map with pins
-│   │   │   └── ui/           # Reusable UI components
-│   │   ├── pages/
-│   │   │   ├── Chat.tsx      # Main chat page
-│   │   │   ├── OnboardingPage.tsx
-│   │   │   └── LoginPage.tsx
-│   │   ├── hooks/            # Custom React hooks
-│   │   └── contexts/         # Auth & state management
-│   └── package.json
-│
-└── docs/
-    ├── PHASE1-COMPLETE.md
-    ├── PHASE1.5-COMPLETE.md
-    ├── GOOGLE-PLACES-SETUP.md  # 🆕 Google Maps setup guide
-    ├── ROADMAP.md
-    └── SETUP.md
-
-## Tech Stack
-
-**Frontend**: 
-- React 18 + TypeScript
-- TailwindCSS for styling
-- Socket.io-client for real-time updates
-- Axios for API calls
-
-**Backend**: 
-- Node.js + Express
-- Socket.io for WebSocket
-- LangGraph for agent orchestration
-- MongoDB + Mongoose
-- OpenAI GPT-4o-mini
-
-**MCP Tools**:
-- OpenTripMap (tourist attractions, POIs)
-- OpenStreetMap (geocoding, no API key)
-- DuckDuckGo (web search, no API key)
-- Custom tools (distance, routing)
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Node.js 18+
-- MongoDB (Community Edition)
-- OpenAI API key
-
-### Installation
+## Quick start
 
 ```bash
-# Clone repository
-git clone https://github.com/Tanish-237/TripWhat.git
-cd TripWhat
+# Backend
+cd backend && npm install && npm run dev    # :5000
 
-# Backend setup
-cd backend
-npm install
-
-# Create .env file
-cp .env.example .env
-# Add your API keys (see below)
-
-# Frontend setup
-cd ../frontend
-npm install
-
-# Create frontend .env
-cp .env.example .env
+# Frontend
+cd frontend && npm install && npm run dev   # :5173
 ```
 
-### Environment Variables
+## Prerequisites
 
-**Backend (.env)**:
-```env
-# Required
-OPENAI_API_KEY=sk-your-openai-key
+- Node.js 24+ (see `.nvmrc`)
+- MongoDB (local or Atlas)
+- OpenAI API key
+
+## Environment variables
+
+**Backend** (`backend/.env`):
+```
+OPENAI_API_KEY=sk-...
 MONGODB_URI=mongodb://localhost:27017/tripwhat
-JWT_SECRET=your-secret-key
-
-# Optional but recommended
-OPENTRIPMAP_API_KEY=your-key  # Get free at https://opentripmap.io
-
-# Server config
+JWT_SECRET=...
+OPENTRIPMAP_API_KEY=...
+GOOGLE_PLACES_API_KEY=...
+SERPAPI_API_KEY=...
+INVENTORY_PROVIDER=serpapi
 PORT=5000
 FRONTEND_URL=http://localhost:5173
 ```
 
-**Frontend (.env)**:
-```env
+**Frontend** (`frontend/.env`):
+```
 VITE_API_URL=http://localhost:5000
-
-# Optional: Google Places Autocomplete
-VITE_GOOGLE_MAPS_API_KEY=your-google-maps-api-key
+VITE_SOCKET_URL=http://localhost:5000
+VITE_GOOGLE_MAPS_API_KEY=...
 ```
 
-> 📝 **Note**: Google Places Autocomplete is optional. If not configured, the app will use standard text input. [See setup guide](./docs/GOOGLE-PLACES-SETUP.md)
-
-### Running the App
+## Testing
 
 ```bash
-# Terminal 1: Start MongoDB
-mongod
-
-# Terminal 2: Start backend
-cd backend
-npm run dev
-
-# Terminal 3: Start frontend  
-cd frontend
-npm run dev
+cd backend && npm test     # vitest unit + integration
+cd frontend && npm test    # vitest + playwright e2e
 ```
 
-**Access the app**: http://localhost:5173
+## Architecture
 
----
+See `docs/MODERNIZATION-PLAN.md` for the full architecture spec and phased execution plan.
 
-## ✨ Features
-
-- **Smart City Search**: Google Places Autocomplete for destination selection
-- **Chat-based Planning**: Natural language trip planning
-- **AI Agent**: MCP tool integration with LangGraph orchestration
-- **Budget-Aware Itineraries**: Personalized day-by-day plans
-- **Interactive Maps**: Destination pins and route visualization
-- **Multi-City Trips**: Seamless multi-destination itineraries
-- **Saved & Upcoming Trips**: Organize and track your travel plans
-- **Real-time Updates**: WebSocket-powered live itinerary generation
-
-## Development roadmap
-
-See [ROADMAP.md](./docs/ROADMAP.md) for detailed feature breakdown.
+- **Backend**: Express + Socket.io + LangGraph + MongoDB
+- **Frontend**: React 18 + Vite + TailwindCSS + Zustand
+- **Agent pipeline**: 8-node LangGraph graph (classify → resolve → slot-gate → route-propose → tool-executor → plan-editor → builder → formatter)
+- **Inventory**: SerpApi (Google Flights + Google Hotels) behind a provider-agnostic interface

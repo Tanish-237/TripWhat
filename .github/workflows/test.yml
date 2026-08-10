@@ -1,0 +1,36 @@
+name: Test
+
+on:
+  push:
+    branches: [modernization, master]
+  pull_request:
+    branches: [modernization, master]
+
+jobs:
+  backend-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+      - run: npm install --legacy-peer-deps
+      - run: npm run lint
+      - run: npm test
+
+  frontend-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+      - run: npm install
+      - run: npm run build
+      - run: npx vitest run
