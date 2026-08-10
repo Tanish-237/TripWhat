@@ -1,45 +1,25 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { User, Mail, Lock } from "lucide-react";
-import Navbar from "@/components/Navbar";
-import { getToken } from "@/lib/api";
+import { GrainOverlay } from "../components/GrainOverlay.jsx";
+import { AmbientBlobs } from "../components/AmbientBlobs.jsx";
 
 export default function SignupPage() {
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    password: "",
-  });
+  const [formData, setFormData] = useState({ name: "", email: "", password: "" });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const { signup } = useAuth();
 
   useEffect(() => {
-    const token = getToken();
-    if (token) {
-      navigate("/plan", { replace: true });
-    }
+    const token = localStorage.getItem("tripwhat_token");
+    if (token) navigate("/trips", { replace: true });
   }, [navigate]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-    // Clear error when user starts typing
+    setFormData((prev) => ({ ...prev, [name]: value }));
     if (error) setError("");
   };
 
@@ -47,28 +27,13 @@ export default function SignupPage() {
     e.preventDefault();
     setIsLoading(true);
     setError("");
-
     try {
-      // Basic validation
-      if (!formData.name || !formData.email || !formData.password) {
-        throw new Error("All fields are required");
-      }
-
-      if (formData.password.length < 6) {
-        throw new Error("Password must be at least 6 characters long");
-      }
-
-      // Basic email validation
+      if (!formData.name || !formData.email || !formData.password) throw new Error("All fields are required");
+      if (formData.password.length < 6) throw new Error("Password must be at least 6 characters long");
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(formData.email)) {
-        throw new Error("Please enter a valid email address");
-      }
-
-      // Use auth context to signup (this handles token storage and user state)
+      if (!emailRegex.test(formData.email)) throw new Error("Please enter a valid email address");
       await signup(formData.email, formData.password, { name: formData.name });
-
-      // Redirect to plan page after successful signup
-      navigate("/plan", { replace: true });
+      navigate("/trips", { replace: true });
     } catch (err) {
       setError(err.message || "Signup failed");
     } finally {
@@ -77,136 +42,81 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Navbar */}
-      <div className="fixed top-0 left-0 w-full z-50 shadow-md bg-white">
-        <Navbar />
-      </div>
+    <div className="min-h-screen bg-[var(--bg)] relative flex items-center justify-center p-4">
+      <GrainOverlay />
+      <AmbientBlobs />
+      <div className="w-full max-w-md relative z-10">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-[var(--ink)] tracking-tight">
+            Create your account
+          </h1>
+          <p className="text-[var(--muted)] text-sm mt-2">
+            Join TripWhat and start planning your journeys
+          </p>
+        </div>
 
-      {/* Main Content */}
-      <div className="pt-24 flex items-center justify-center min-h-screen p-4">
-        <div className="w-full max-w-md">
-          {/* Compact Header */}
-          <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-gray-900 mb-1">
-              Create Account
-            </h1>
-            <p className="text-gray-600 text-sm">
-              Join TripWhat and start planning your perfect journey
-            </p>
-          </div>
+        <div
+          className="rounded-[2rem] bg-[var(--surface)] p-8"
+          style={{ boxShadow: "0 4px 20px -2px rgba(0,0,0,0.05)" }}
+        >
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {error && (
+              <div className="p-3 text-sm text-red-600 bg-red-50 rounded-[1.25rem]">
+                {error}
+              </div>
+            )}
 
-          <Card className="bg-white border border-gray-200 shadow-lg">
-            <CardHeader className="text-center pb-3">
-              <CardTitle className="text-xl font-bold">Sign Up</CardTitle>
-              <CardDescription className="text-sm">
-                Enter your details to create your account
-              </CardDescription>
-            </CardHeader>
+            <div className="space-y-2">
+              <label htmlFor="name" className="text-sm font-medium text-[var(--ink)]">Name</label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted)]" />
+                <input
+                  id="name" name="name" type="text" placeholder="Your full name"
+                  value={formData.name} onChange={handleChange} required disabled={isLoading}
+                  className="w-full h-11 pl-10 pr-4 rounded-[1.25rem] border border-[rgba(41,37,36,0.06)] bg-[var(--bg)] text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--peach)] transition-all duration-300"
+                />
+              </div>
+            </div>
 
-            <form onSubmit={handleSubmit}>
-              <CardContent className="space-y-3">
-                {error && (
-                  <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
-                    {error}
-                  </div>
-                )}
+            <div className="space-y-2">
+              <label htmlFor="email" className="text-sm font-medium text-[var(--ink)]">Email</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted)]" />
+                <input
+                  id="email" name="email" type="email" placeholder="you@example.com"
+                  value={formData.email} onChange={handleChange} required disabled={isLoading}
+                  className="w-full h-11 pl-10 pr-4 rounded-[1.25rem] border border-[rgba(41,37,36,0.06)] bg-[var(--bg)] text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--peach)] transition-all duration-300"
+                />
+              </div>
+            </div>
 
-                <div className="space-y-1">
-                  <label
-                    htmlFor="name"
-                    className="text-sm font-medium text-gray-700"
-                  >
-                    Name
-                  </label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      id="name"
-                      name="name"
-                      type="text"
-                      placeholder="Your full name"
-                      value={formData.name}
-                      onChange={handleChange}
-                      required
-                      disabled={isLoading}
-                      className="pl-9 h-10 bg-white border-gray-200 text-gray-900 placeholder:text-gray-500 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                </div>
+            <div className="space-y-2">
+              <label htmlFor="password" className="text-sm font-medium text-[var(--ink)]">Password</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted)]" />
+                <input
+                  id="password" name="password" type="password" placeholder="Create a password"
+                  value={formData.password} onChange={handleChange} required disabled={isLoading} minLength={6}
+                  className="w-full h-11 pl-10 pr-4 rounded-[1.25rem] border border-[rgba(41,37,36,0.06)] bg-[var(--bg)] text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--peach)] transition-all duration-300"
+                />
+              </div>
+              <p className="text-xs text-[var(--muted)]">Password must be at least 6 characters long</p>
+            </div>
 
-                <div className="space-y-1">
-                  <label
-                    htmlFor="email"
-                    className="text-sm font-medium text-gray-700"
-                  >
-                    Email
-                  </label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      id="email"
-                      name="email"
-                      type="email"
-                      placeholder="Enter your email"
-                      value={formData.email}
-                      onChange={handleChange}
-                      required
-                      disabled={isLoading}
-                      className="pl-9 h-10 bg-white border-gray-200 text-gray-900 placeholder:text-gray-500 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                </div>
+            <button
+              type="submit" disabled={isLoading}
+              className="w-full h-11 rounded-[1.25rem] bg-[var(--peach)] text-white text-sm font-medium hover:opacity-90 transition-opacity duration-300 disabled:opacity-50"
+            >
+              {isLoading ? "Creating account..." : "Create account"}
+            </button>
 
-                <div className="space-y-1">
-                  <label
-                    htmlFor="password"
-                    className="text-sm font-medium text-gray-700"
-                  >
-                    Password
-                  </label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      id="password"
-                      name="password"
-                      type="password"
-                      placeholder="Create a password"
-                      value={formData.password}
-                      onChange={handleChange}
-                      required
-                      disabled={isLoading}
-                      minLength={6}
-                      className="pl-9 h-10 bg-white border-gray-200 text-gray-900 placeholder:text-gray-500 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    Password must be at least 6 characters long
-                  </p>
-                </div>
-              </CardContent>
-
-              <CardFooter className="flex flex-col space-y-3 pt-2">
-                <Button
-                  type="submit"
-                  className="w-full h-10 bg-gradient-to-r from-blue-500 to-pink-500 hover:from-blue-600 hover:to-pink-600 hover:shadow-lg text-white border-0 font-semibold transition-all duration-300"
-                  disabled={isLoading}
-                >
-                  {isLoading ? "Creating account..." : "Create Account"}
-                </Button>
-
-                <div className="text-center text-xs text-gray-600">
-                  Already have an account?{" "}
-                  <Link
-                    to="/login"
-                    className="text-blue-600 hover:text-blue-500 font-medium"
-                  >
-                    Login
-                  </Link>
-                </div>
-              </CardFooter>
-            </form>
-          </Card>
+            <div className="text-center text-sm text-[var(--muted)]">
+              Already have an account?{" "}
+              <Link to="/login" className="text-[var(--peach)] font-medium hover:opacity-80 transition-opacity">
+                Log in
+              </Link>
+            </div>
+          </form>
         </div>
       </div>
     </div>

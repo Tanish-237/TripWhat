@@ -4,22 +4,31 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: {
-          50: "#f0f9ff",
-          100: "#e0f2fe",
-          200: "#bae6fd",
-          300: "#7dd3fc",
-          400: "#38bdf8",
-          500: "#0ea5e9",
-          600: "#0284c7",
-          700: "#0369a1",
-          800: "#075985",
-          900: "#0c4a6e",
-        },
+        bg: "var(--bg)",
+        sage: "var(--sage)",
+        lavender: "var(--lavender)",
+        peach: "var(--peach)",
+        ink: "var(--ink)",
+        muted: "var(--muted)",
+        surface: "var(--surface)",
+      },
+      fontFamily: {
+        sans: ['"Outfit"', 'system-ui', 'sans-serif'],
+        accent: ['"Reenie Beanie"', 'cursive'],
+      },
+      borderRadius: {
+        '2rem': '2rem',
+        '4rem': '4rem',
+        '1.25rem': '1.25rem',
+      },
+      boxShadow: {
+        'soft': '0 4px 20px -2px rgba(0,0,0,0.05)',
+        'soft-hover': '0 8px 30px -4px rgba(0,0,0,0.08)',
       },
       animation: {
-        "fade-in": "fadeIn 0.3s ease-in-out",
-        "slide-up": "slideUp 0.3s ease-out",
+        "fade-in": "fadeIn 0.8s ease-out",
+        "slide-up": "slideUp 0.8s ease-out",
+        "widget-mount": "widgetMount 0.4s ease-out",
       },
       keyframes: {
         fadeIn: {
@@ -27,7 +36,11 @@ export default {
           "100%": { opacity: "1" },
         },
         slideUp: {
-          "0%": { transform: "translateY(10px)", opacity: "0" },
+          "0%": { transform: "translateY(30px)", opacity: "0" },
+          "100%": { transform: "translateY(0)", opacity: "1" },
+        },
+        widgetMount: {
+          "0%": { transform: "translateY(12px)", opacity: "0" },
           "100%": { transform: "translateY(0)", opacity: "1" },
         },
       },
