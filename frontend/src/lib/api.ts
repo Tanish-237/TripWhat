@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -47,7 +47,7 @@ export const chatApi = {
   syncItinerary: (data: { conversationId: string; itinerary: any }) =>
     api.post('/api/chat/sync-itinerary', data),
   modifyItinerary: (data: any) =>
-    api.post('/api/chat/modify', data),
+    api.post('/api/chat/modify-itinerary', data),
 };
 
 export const tripsApi = {
@@ -90,6 +90,12 @@ export const calendarApi = {
   oauthUrl: () => api.get('/api/google/oauth/url'),
   upcoming: () => api.get('/api/google/calendar/upcoming'),
   createEvent: (payload: any) => api.post('/api/google/calendar/events', payload),
+};
+
+export const gmailApi = {
+  oauthUrl: () => api.get('/api/google/gmail/oauth/url'),
+  status: () => api.get('/api/google/gmail/status'),
+  bookings: () => api.get('/api/google/gmail/bookings'),
 };
 
 export function saveToken(token: string) {
