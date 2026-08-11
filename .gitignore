@@ -1,2 +1,6 @@
-backend/.env
-backend-python/.gitignore
+backend-python/.env
+backend-python/.venv/
+__pycache__/
+*.pyc
+.DS_Store
+node_modules/
