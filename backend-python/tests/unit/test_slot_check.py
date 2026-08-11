@@ -8,14 +8,14 @@ def test_empty_state_all_slots_missing():
     result = check_slots(None)
     assert not result["proceed"]
     assert len(result["missingSlots"]) == len(SLOT_ORDER)
-    assert result["missingSlots"] == ["destination", "dates", "duration", "travelers"]
+    assert result["missingSlots"] == ["destination", "dates", "duration", "travelers", "trip_style", "help_with"]
 
 
 def test_default_state_all_slots_missing():
     state = create_default_trip_state()
     result = check_slots(state)
     assert not result["proceed"]
-    assert len(result["missingSlots"]) == 4
+    assert len(result["missingSlots"]) == len(SLOT_ORDER)
 
 
 def test_fill_destination():
@@ -41,6 +41,8 @@ def test_fill_all_slots():
     state = apply_slot_answer(state, "dates", "flexible")
     state = apply_slot_answer(state, "duration", 7)
     state = apply_slot_answer(state, "travelers", "solo")
+    state = apply_slot_answer(state, "trip_style", "culture")
+    state = apply_slot_answer(state, "help_with", "everything")
     result = check_slots(state)
     assert result["proceed"]
     assert state["onboarding"]["completed"]
