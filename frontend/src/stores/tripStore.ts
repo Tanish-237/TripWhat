@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { io, type Socket } from 'socket.io-client';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5001';
 
 export interface TripCity {
   name: string;
@@ -80,7 +80,8 @@ export const useTripStore = create<TripStore>((set, get) => ({
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      set({ trips: data.trips || data || [], loading: false });
+      const tripsList = Array.isArray(data) ? data : Array.isArray(data.savedTrips) ? data.savedTrips : Array.isArray(data.trips) ? data.trips : [];
+      set({ trips: tripsList, loading: false });
     } catch (err: any) {
       set({ error: err.message, loading: false });
     }
@@ -104,16 +105,29 @@ export const useTripStore = create<TripStore>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const token = getToken();
+      const ts = (data.tripState || {}) as TripState;
+      const payload = {
+        title: data.title || ts.cities?.map((c: any) => c.name).join(' → ') || 'Untitled trip',
+        startDate: ts.dates?.start || new Date().toISOString(),
+        cities: ts.cities || [],
+        totalDays: ts.duration || 1,
+        people: ts.travelers || '1',
+        travelType: ts.preferences?.join(', ') || 'cultural',
+        budget: 'mid-range',
+        generatedItinerary: ts.itinerary || { days: [] },
+        tripState: ts,
+      };
       const res = await fetch(`${API_URL}/api/saved-trips`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
-      const trip = await res.json();
-      set({ currentTrip: trip, tripState: trip.tripState, loading: false });
+      const result = await res.json();
+      const trip = result.savedTrip || result;
+      set({ currentTrip: trip, tripState: trip.tripState || ts, loading: false });
       return trip;
     } catch (err: any) {
       set({ error: err.message, loading: false });

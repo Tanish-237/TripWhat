@@ -16,28 +16,25 @@ export function ChangeSummaryCard({ data }: ChangeSummaryCardProps) {
 
   return (
     <div
-      className="rounded-2xl bg-[var(--surface)] p-5 mt-3"
-      style={{
-        boxShadow: '0 4px 20px -2px rgba(0,0,0,0.05)',
-        animation: 'widgetMount 0.4s ease-out forwards',
-      }}
+      className="rounded-lg bg-[var(--success-bg)] border border-[var(--success-border)] p-3 mt-2"
+      style={{ animation: 'widgetMount 0.3s ease-out forwards' }}
     >
-      <div className="flex items-center gap-2 mb-3">
-        <Edit className="w-4 h-4 text-[var(--peach)]" />
-        <span className="text-sm font-medium text-[var(--ink)]">
+      <div className="flex items-center gap-2 mb-2">
+        <Edit className="w-3.5 h-3.5 text-[var(--success-text)]" />
+        <span className="text-xs font-medium text-[var(--success-text)]">
           Updated plan with {data.length} {data.length === 1 ? 'change' : 'changes'}
         </span>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         {data.map((change, i) => (
-          <div key={i} className="flex items-start gap-2 text-sm">
-            {change.type === 'add' && <Plus className="w-4 h-4 text-green-600 mt-0.5" />}
-            {change.type === 'remove' && <Minus className="w-4 h-4 text-red-500 mt-0.5" />}
-            {change.type === 'replace' && <ArrowRight className="w-4 h-4 text-[var(--peach)] mt-0.5" />}
-            {change.type === 'modify' && <Edit className="w-4 h-4 text-[var(--muted)] mt-0.5" />}
+          <div key={i} className="flex items-start gap-2 text-xs">
+            {change.type === 'add' && <Plus className="w-3.5 h-3.5 text-green-600 mt-0.5" />}
+            {change.type === 'remove' && <Minus className="w-3.5 h-3.5 text-red-500 mt-0.5" />}
+            {change.type === 'replace' && <ArrowRight className="w-3.5 h-3.5 text-[var(--peach)] mt-0.5" />}
+            {change.type === 'modify' && <Edit className="w-3.5 h-3.5 text-[var(--muted)] mt-0.5" />}
             {!['add', 'remove', 'replace', 'modify'].includes(change.type) && (
-              <Check className="w-4 h-4 text-[var(--muted)] mt-0.5" />
+              <Check className="w-3.5 h-3.5 text-[var(--muted)] mt-0.5" />
             )}
             <span className="text-[var(--ink)]">
               {change.description || change.target || `${change.type} ${change.target || ''}`}
@@ -45,12 +42,6 @@ export function ChangeSummaryCard({ data }: ChangeSummaryCardProps) {
           </div>
         ))}
       </div>
-      <style>{`
-        @keyframes widgetMount {
-          from { opacity: 0; transform: translateY(12px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
     </div>
   );
 }

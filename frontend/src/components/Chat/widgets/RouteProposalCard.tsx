@@ -12,31 +12,28 @@ interface RouteProposalCardProps {
 export function RouteProposalCard({ data, onConfirm }: RouteProposalCardProps) {
   return (
     <div
-      className="rounded-2xl bg-[var(--surface)] p-5 mt-3"
-      style={{
-        boxShadow: '0 4px 20px -2px rgba(0,0,0,0.05)',
-        animation: 'widgetMount 0.4s ease-out forwards',
-      }}
+      className="rounded-lg bg-[var(--surface)] border border-[var(--border)] p-3 mt-2"
+      style={{ animation: 'widgetMount 0.3s ease-out forwards' }}
     >
-      <div className="flex items-center gap-2 mb-4">
-        <MapPin className="w-4 h-4 text-[var(--peach)]" />
-        <span className="text-sm font-medium text-[var(--ink)]">
+      <div className="flex items-center gap-2 mb-3">
+        <MapPin className="w-3.5 h-3.5 text-[var(--muted)]" />
+        <span className="text-xs font-medium text-[var(--ink)]">
           Proposed route · {data.totalNights} nights
         </span>
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap mb-4">
+      <div className="flex items-center gap-1.5 flex-wrap mb-3">
         {data.cities.map((city, i) => (
           <React.Fragment key={city.name}>
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--sage)]">
-              <span className="text-sm font-medium text-[var(--ink)]">{city.name}</span>
-              <span className="text-xs text-[var(--muted)] flex items-center gap-0.5">
-                <Clock className="w-3 h-3" />
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[var(--sage)]">
+              <span className="text-xs font-medium text-[var(--ink)]">{city.name}</span>
+              <span className="text-[10px] text-[var(--muted)] flex items-center gap-0.5">
+                <Clock className="w-2.5 h-2.5" />
                 {city.nights}n
               </span>
             </div>
             {i < data.cities.length - 1 && (
-              <span className="text-[var(--muted)] text-sm">→</span>
+              <span className="text-[var(--muted)] text-xs">→</span>
             )}
           </React.Fragment>
         ))}
@@ -44,17 +41,11 @@ export function RouteProposalCard({ data, onConfirm }: RouteProposalCardProps) {
 
       <button
         onClick={onConfirm}
-        className="w-full py-2.5 px-4 rounded-[1.25rem] bg-[var(--peach)] text-white text-sm font-medium hover:opacity-90 transition-opacity duration-300 flex items-center justify-center gap-2"
+        className="w-full py-2 px-3 rounded-md bg-[var(--ink)] text-white text-xs font-medium hover:bg-[#292524] transition-colors flex items-center justify-center gap-1.5"
       >
-        <Check className="w-4 h-4" />
+        <Check className="w-3.5 h-3.5" />
         Confirm route & build itinerary
       </button>
-      <style>{`
-        @keyframes widgetMount {
-          from { opacity: 0; transform: translateY(12px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
     </div>
   );
 }
