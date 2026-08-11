@@ -1,32 +1,35 @@
 services:
-  mongodb:
-    image: mongo:7
+  postgres:
+    image: postgres:16
     restart: unless-stopped
     ports:
-      - "27017:27017"
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=tripwhat
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
     volumes:
-      - mongo_data:/data/db
+      - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   backend:
     build:
-      context: ./backend
+      context: ./backend-python
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
       - "5000:5000"
     env_file:
-      - ./backend/.env
+      - ./backend-python/.env
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017/tripwhat
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/tripwhat
       - FRONTEND_URL=http://localhost:8080
-      - NODE_ENV=production
     depends_on:
-      mongodb:
+      postgres:
         condition: service_healthy
 
   frontend:
@@ -40,4 +43,4 @@ services:
       - backend
 
 volumes:
-  mongo_data:
+  pg_data:
