@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
-import { authApi, tripsApi } from "@/lib/api";
-import Navbar from "@/components/Navbar";
+import { useAuth } from "../contexts/AuthContext";
+import { authApi, tripsApi } from "../lib/api";
 import { toast } from "react-toastify";
 import { User, Mail, Calendar, MapPin, Save, LogOut, Compass } from "lucide-react";
 
@@ -83,81 +82,81 @@ const ProfilePage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--bg)]">
-      <Navbar />
-      <main className="max-w-2xl mx-auto px-6 py-12 relative z-10">
-        <div className="text-center mb-8">
-          <div className="w-20 h-20 mx-auto mb-4 rounded-full overflow-hidden border-2 border-[rgba(41,37,36,0.06)]">
+    <div className="flex-1 overflow-y-auto">
+      <main className="max-w-xl mx-auto px-6 py-8">
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 mx-auto mb-3 rounded-full overflow-hidden border border-[var(--border)]">
             <img src={profileData.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
           </div>
-          <h1 className="text-2xl font-bold text-[var(--ink)] tracking-tight">My profile</h1>
+          <h1 className="text-xl font-semibold text-[var(--ink)] tracking-tight">My profile</h1>
         </div>
 
         {statistics && (
-          <div className="grid grid-cols-3 gap-4 mb-8">
+          <div className="grid grid-cols-3 gap-3 mb-6">
             {[
               { label: "Days traveled", value: statistics.totalDaysTraveled || 0, icon: Calendar },
               { label: "Cities visited", value: statistics.citiesVisited || 0, icon: MapPin },
               { label: "Countries", value: statistics.countriesVisited || 0, icon: Compass },
             ].map((stat, i) => (
-              <div key={i} className="rounded-[1.25rem] bg-[var(--surface)] p-4 text-center" style={{ boxShadow: "0 4px 20px -2px rgba(0,0,0,0.05)" }}>
-                <stat.icon className="w-5 h-5 text-[var(--peach)] mx-auto mb-2" />
-                <p className="text-2xl font-bold text-[var(--ink)]">{stat.value}</p>
-                <p className="text-xs text-[var(--muted)]">{stat.label}</p>
+              <div key={i} className="rounded-lg bg-[var(--surface)] border border-[var(--border)] p-3 text-center">
+                <stat.icon className="w-4 h-4 text-[var(--muted)] mx-auto mb-1.5" />
+                <p className="text-lg font-semibold text-[var(--ink)]">{stat.value}</p>
+                <p className="text-[10px] text-[var(--muted)]">{stat.label}</p>
               </div>
             ))}
           </div>
         )}
 
-        <div className="rounded-[2rem] bg-[var(--surface)] p-8 space-y-6" style={{ boxShadow: "0 4px 20px -2px rgba(0,0,0,0.05)" }}>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-[var(--ink)] flex items-center gap-2">
-              <User className="w-4 h-4 text-[var(--muted)]" /> Name
+        <div className="rounded-xl bg-[var(--surface)] border border-[var(--border)] p-5 space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--ink)] flex items-center gap-1.5">
+              <User className="w-3.5 h-3.5 text-[var(--muted)]" /> Name
             </label>
             <input
               type="text"
               value={profileData.name}
               onChange={(e) => setProfileData((p) => ({ ...p, name: e.target.value }))}
-              className="w-full h-11 px-4 rounded-[1.25rem] border border-[rgba(41,37,36,0.06)] bg-[var(--bg)] text-sm text-[var(--ink)] focus:outline-none focus:ring-2 focus:ring-[var(--peach)] transition-all duration-300"
+              className="w-full h-10 px-3 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-sm text-[var(--ink)] focus:outline-none focus:border-[var(--muted)] transition-colors"
             />
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-[var(--ink)] flex items-center gap-2">
-              <Mail className="w-4 h-4 text-[var(--muted)]" /> Email
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--ink)] flex items-center gap-1.5">
+              <Mail className="w-3.5 h-3.5 text-[var(--muted)]" /> Email
             </label>
             <input
               type="email"
               value={profileData.email}
               disabled
-              className="w-full h-11 px-4 rounded-[1.25rem] border border-[rgba(41,37,36,0.06)] bg-[var(--bg)] text-sm text-[var(--muted)] cursor-not-allowed"
+              className="w-full h-10 px-3 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-sm text-[var(--muted)] cursor-not-allowed"
             />
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-[var(--ink)]">Bio</label>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--ink)]">Bio</label>
             <textarea
               value={profileData.bio}
               onChange={(e) => setProfileData((p) => ({ ...p, bio: e.target.value }))}
               placeholder="Tell us about your travel style..."
               rows={3}
               maxLength={500}
-              className="w-full px-4 py-3 rounded-[1.25rem] border border-[rgba(41,37,36,0.06)] bg-[var(--bg)] text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--peach)] transition-all duration-300 resize-none"
+              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:border-[var(--muted)] transition-colors resize-none"
             />
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-[var(--ink)]">Budget preference</label>
-            <div className="grid grid-cols-3 gap-2">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--ink)]">Budget preference</label>
+            <div className="grid grid-cols-3 gap-1.5">
               {["budget", "mid-range", "luxury"].map((level) => (
                 <button
                   key={level}
                   onClick={() => setProfileData((p) => ({ ...p, preferences: { ...p.preferences, budget: level } }))}
-                  className={`px-4 py-2 rounded-[1.25rem] text-sm capitalize transition-all duration-300 ${
+                  className={`px-3 py-1.5 rounded-md text-xs capitalize transition-colors ${
                     profileData.preferences.budget === level
-                      ? "bg-[var(--peach)] text-white font-medium"
+                      ? "bg-[var(--ink)] text-white font-medium"
                       : "bg-[var(--bg)] text-[var(--ink)] hover:bg-[var(--sage)]"
-                  }`}
+                  }`
+                }
                 >
                   {level === "mid-range" ? "Mid-range" : level}
                 </button>
@@ -165,18 +164,19 @@ const ProfilePage = () => {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-[var(--ink)]">Travel style</label>
-            <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--ink)]">Travel style</label>
+            <div className="grid grid-cols-2 gap-1.5">
               {["adventure", "relaxation", "cultural", "business"].map((style) => (
                 <button
                   key={style}
                   onClick={() => setProfileData((p) => ({ ...p, preferences: { ...p.preferences, travelStyle: style } }))}
-                  className={`px-4 py-2 rounded-[1.25rem] text-sm capitalize transition-all duration-300 ${
+                  className={`px-3 py-1.5 rounded-md text-xs capitalize transition-colors ${
                     profileData.preferences.travelStyle === style
-                      ? "bg-[var(--peach)] text-white font-medium"
+                      ? "bg-[var(--ink)] text-white font-medium"
                       : "bg-[var(--bg)] text-[var(--ink)] hover:bg-[var(--sage)]"
-                  }`}
+                  }`
+                }
                 >
                   {style}
                 </button>
@@ -184,9 +184,9 @@ const ProfilePage = () => {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-[var(--ink)]">Interests</label>
-            <div className="flex flex-wrap gap-2">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--ink)]">Interests</label>
+            <div className="flex flex-wrap gap-1.5">
               {["museums", "nightlife", "nature", "food", "shopping", "history", "art"].map((interest) => (
                 <button
                   key={interest}
@@ -197,11 +197,12 @@ const ProfilePage = () => {
                       : [...interests, interest];
                     setProfileData((p) => ({ ...p, preferences: { ...p.preferences, interests: newInterests } }));
                   }}
-                  className={`px-3 py-1.5 rounded-full text-sm capitalize transition-all duration-300 ${
+                  className={`px-2.5 py-1 rounded-md text-xs capitalize transition-colors ${
                     (profileData.preferences.interests || []).includes(interest)
                       ? "bg-[var(--lavender)] text-[var(--ink)] font-medium"
                       : "bg-[var(--bg)] text-[var(--muted)] hover:bg-[var(--sage)]"
-                  }`}
+                  }`
+                }
                 >
                   {interest}
                 </button>
@@ -212,18 +213,18 @@ const ProfilePage = () => {
           <button
             onClick={handleSaveProfile}
             disabled={saving}
-            className="w-full h-11 rounded-[1.25rem] bg-[var(--peach)] text-white text-sm font-medium hover:opacity-90 transition-opacity duration-300 disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full h-10 rounded-lg bg-[var(--ink)] text-white text-sm font-medium hover:bg-[#292524] transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
           >
-            <Save className="w-4 h-4" />
+            <Save className="w-3.5 h-3.5" />
             {saving ? "Saving..." : "Save changes"}
           </button>
 
-          <div className="border-t border-[rgba(41,37,36,0.06)] pt-4">
+          <div className="border-t border-[var(--border)] pt-4">
             <button
               onClick={handleLogout}
-              className="w-full h-11 rounded-[1.25rem] border border-[rgba(41,37,36,0.06)] text-[var(--muted)] text-sm font-medium hover:bg-red-50 hover:text-red-500 transition-all duration-300 flex items-center justify-center gap-2"
+              className="w-full h-10 rounded-lg border border-[var(--border)] text-[var(--muted)] text-sm font-medium hover:bg-red-50 hover:text-red-500 transition-colors flex items-center justify-center gap-1.5"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-3.5 h-3.5" />
               Sign out
             </button>
           </div>

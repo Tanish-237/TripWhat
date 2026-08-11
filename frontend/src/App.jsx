@@ -9,7 +9,7 @@ import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { AuthProvider, useAuth } from "./contexts/AuthContext.jsx";
 
-import Navbar from "./components/Navbar.jsx";
+import AppLayout from "./components/AppLayout.tsx";
 import LandingPage from "./pages/LandingPage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import SignupPage from "./pages/SignupPage.jsx";
@@ -23,7 +23,7 @@ function ProtectedRoute({ children }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--bg)] text-[var(--muted)]">
+      <div className="min-h-screen flex items-center justify-center text-[var(--muted)]">
         <div className="animate-pulse text-lg">Loading...</div>
       </div>
     );
@@ -46,8 +46,9 @@ function AppContent() {
           path="/trips"
           element={
             <ProtectedRoute>
-              <Navbar />
-              <TripsPage />
+              <AppLayout>
+                <TripsPage />
+              </AppLayout>
             </ProtectedRoute>
           }
         />
@@ -56,7 +57,9 @@ function AppContent() {
           path="/trip/:id"
           element={
             <ProtectedRoute>
-              <TripWorkspacePage />
+              <AppLayout>
+                <TripWorkspacePage />
+              </AppLayout>
             </ProtectedRoute>
           }
         />
@@ -65,8 +68,9 @@ function AppContent() {
           path="/new"
           element={
             <ProtectedRoute>
-              <Navbar />
-              <NewTripPage />
+              <AppLayout>
+                <NewTripPage />
+              </AppLayout>
             </ProtectedRoute>
           }
         />
@@ -75,8 +79,9 @@ function AppContent() {
           path="/profile"
           element={
             <ProtectedRoute>
-              <Navbar />
-              <ProfilePage />
+              <AppLayout>
+                <ProfilePage />
+              </AppLayout>
             </ProtectedRoute>
           }
         />

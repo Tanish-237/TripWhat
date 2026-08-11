@@ -1,140 +1,120 @@
-import { Link } from "react-router-dom";
-import { MapPin, Plane, Sparkles } from "lucide-react";
-import { useReveal } from "../hooks/useReveal";
+import { useState } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { Compass, Mic, ArrowUp, MapPin } from "lucide-react";
+import { useAuth } from "../contexts/AuthContext";
+
+const SUGGESTIONS = [
+  { label: "Paris", sub: "3 days", img: "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=200&h=200&fit=crop" },
+  { label: "Tokyo", sub: "7 days", img: "https://images.unsplash.com/photo-1540959733332-eab446abeeb3?w=200&h=200&fit=crop" },
+  { label: "Bali", sub: "5 days", img: "https://images.unsplash.com/photo-1537996194471-e657df975ab4?w=200&h=200&fit=crop" },
+  { label: "Iceland", sub: "6 days", img: "https://images.unsplash.com/photo-1535941339077-2dd1c7963098?w=200&h=200&fit=crop" },
+  { label: "New York", sub: "4 days", img: "https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?w=200&h=200&fit=crop" },
+];
 
 export default function LandingPage() {
-  const { ref: heroRef, visible: heroVisible } = useReveal();
-  const { ref: featuresRef, visible: featuresVisible } = useReveal();
+  const [query, setQuery] = useState("");
+  const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSubmit = () => {
+    if (!query.trim()) return;
+    if (isAuthenticated) {
+      navigate(`/new?q=${encodeURIComponent(query.trim())}`);
+    } else {
+      navigate("/signup");
+    }
+  };
+
+  const handleSuggestion = (label) => {
+    if (isAuthenticated) {
+      navigate(`/new?q=${encodeURIComponent(`Plan a trip to ${label}`)}`);
+    } else {
+      navigate("/signup");
+    }
+  };
 
   return (
-    <main className="min-h-screen relative">
-      {/* Header */}
-      <header className="relative z-10 max-w-6xl mx-auto flex items-center justify-between px-6 py-5">
-        <div className="flex items-center gap-2 text-xl font-bold text-[var(--ink)]">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--peach)]">
-            <MapPin className="w-4 h-4 text-white" />
+    <main className="min-h-screen bg-[var(--bg)] flex flex-col">
+      {/* Minimal top bar */}
+      <header className="relative z-20 flex items-center justify-between px-6 py-4">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-[var(--peach)]">
+            <Compass className="w-4 h-4 text-white" />
           </div>
-          TripWhat
+          <span className="text-sm font-semibold text-[var(--ink)]">TripWhat</span>
         </div>
         <div className="flex items-center gap-3">
-          <Link
-            to="/login"
-            className="text-sm font-medium text-[var(--ink)] hover:text-[var(--peach)] transition-colors duration-300"
-          >
+          <Link to="/login" className="text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] transition-colors">
             Log in
           </Link>
           <Link
             to="/signup"
-            className="px-5 py-2 rounded-[1.25rem] bg-[var(--peach)] text-white text-sm font-medium hover:opacity-90 transition-opacity duration-300"
+            className="px-4 py-2 rounded-lg bg-[var(--ink)] text-white text-sm font-medium hover:bg-[#292524] transition-colors"
           >
             Sign up
           </Link>
         </div>
       </header>
 
-      {/* Hero */}
-      <section
-        ref={heroRef}
-        className="relative z-10 px-6 py-24 md:py-32 text-center"
-        style={{
-          opacity: heroVisible ? 1 : 0,
-          transform: heroVisible ? "translateY(0)" : "translateY(30px)",
-          transition: "opacity 0.8s ease-out, transform 0.8s ease-out",
-        }}
-      >
-        <div className="max-w-4xl mx-auto space-y-8">
-          <h2 className="text-3xl md:text-5xl font-normal text-[var(--muted)] tracking-tight" style={{ fontFamily: "var(--font-accent)" }}>
-            your digital living room for travel
-          </h2>
-          <h1 className="text-6xl md:text-8xl font-bold tracking-tight text-[var(--ink)] leading-[1.05]">
-            Plan your perfect journey
-          </h1>
-          <p className="text-lg md:text-xl text-[var(--muted)] leading-relaxed max-w-2xl mx-auto">
-            Chat with an AI travel companion that builds personalized itineraries
-            with real-time weather, optimal routes, and local recommendations.
-          </p>
-          <div className="flex flex-col sm:flex-row justify-center gap-4 pt-8">
-            <Link
-              to="/signup"
-              className="px-8 py-3.5 rounded-[1.25rem] bg-[var(--peach)] text-white text-base font-medium hover:opacity-90 transition-opacity duration-300"
+      {/* Centered composer */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6">
+        <h1 className="text-2xl md:text-3xl font-semibold text-[var(--ink)] tracking-tight mb-1">
+          Where are you headed?
+        </h1>
+        <p className="text-sm text-[var(--muted)] mb-8">
+          Tell us about your trip and we'll plan the rest.
+        </p>
+
+        {/* Composer */}
+        <div className="w-full max-w-[560px] relative">
+          <div className="flex items-center gap-2 bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-[var(--shadow-soft)] px-4 py-3 focus-within:border-[var(--muted)] transition-colors">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+              placeholder="Plan a trip to Paris for two..."
+              className="flex-1 bg-transparent text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none"
+              autoFocus
+            />
+            <button className="p-1.5 rounded-lg text-[var(--muted)] hover:bg-[var(--sage)] transition-colors" title="Voice input">
+              <Mic className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleSubmit}
+              className="flex items-center justify-center w-8 h-8 rounded-full bg-[var(--ink)] text-white hover:bg-[#292524] transition-colors disabled:opacity-30"
+              disabled={!query.trim()}
+              title="Send"
             >
-              Start planning
-            </Link>
-            <Link
-              to="/login"
-              className="px-8 py-3.5 rounded-[1.25rem] border border-[var(--lavender)] text-[var(--ink)] text-base font-medium hover:bg-[var(--sage)] transition-colors duration-300"
-            >
-              I have an account
-            </Link>
+              <ArrowUp className="w-4 h-4" />
+            </button>
           </div>
         </div>
-      </section>
 
-      {/* Features */}
-      <section
-        ref={featuresRef}
-        className="relative z-10 px-6 py-16 md:py-24"
-        style={{
-          opacity: featuresVisible ? 1 : 0,
-          transform: featuresVisible ? "translateY(0)" : "translateY(30px)",
-          transition: "opacity 0.8s ease-out, transform 0.8s ease-out",
-        }}
-      >
-        <div className="max-w-6xl mx-auto">
-          <div className="grid gap-8 md:grid-cols-3">
-            {[
-              {
-                icon: <Plane className="w-6 h-6 text-[var(--peach)]" />,
-                title: "Chat-first planning",
-                desc: "Tell the AI where you want to go. It handles dates, routes, and daily plans.",
-              },
-              {
-                icon: <MapPin className="w-6 h-6 text-[var(--peach)]" />,
-                title: "Interactive maps",
-                desc: "See your itinerary come to life with Google Maps integration and city-by-city breakdowns.",
-              },
-              {
-                icon: <Sparkles className="w-6 h-6 text-[var(--peach)]" />,
-                title: "Smart suggestions",
-                desc: "Get real-time weather, local events, and curated recommendations for every day of your trip.",
-              },
-            ].map((card, idx) => (
-              <div
-                key={idx}
-                className="rounded-[2rem] bg-[var(--surface)] border border-[var(--lavender)] p-8 hover:border-[var(--muted)] transition-colors duration-300"
-              >
-                <div className="w-12 h-12 rounded-[1.25rem] bg-[var(--lavender)] flex items-center justify-center mb-4">
-                  {card.icon}
-                </div>
-                <h3 className="text-lg font-semibold text-[var(--ink)] mb-2">
-                  {card.title}
-                </h3>
-                <p className="text-sm text-[var(--muted)] leading-relaxed">
-                  {card.desc}
-                </p>
+        {/* Destination suggestions */}
+        <div className="flex gap-3 mt-8 flex-wrap justify-center max-w-[640px]">
+          {SUGGESTIONS.map((s) => (
+            <button
+              key={s.label}
+              onClick={() => handleSuggestion(s.label)}
+              className="group flex flex-col items-center gap-1.5"
+            >
+              <div className="w-16 h-16 rounded-xl overflow-hidden border border-[var(--border)] group-hover:shadow-[var(--shadow-soft-hover)] transition-shadow">
+                <img src={s.img} alt={s.label} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
               </div>
-            ))}
-          </div>
+              <span className="text-xs font-medium text-[var(--ink)]">{s.label}</span>
+              <span className="text-[10px] text-[var(--muted)] -mt-1">{s.sub}</span>
+            </button>
+          ))}
         </div>
-      </section>
+      </div>
 
-      {/* CTA */}
-      <section className="relative z-10 px-6 py-24 text-center">
-        <div className="max-w-2xl mx-auto">
-          <h2 className="text-3xl md:text-4xl font-bold text-[var(--ink)] tracking-tight mb-4">
-            Ready to explore?
-          </h2>
-          <p className="text-[var(--muted)] mb-8">
-            Join TripWhat and start planning your next adventure today.
-          </p>
-          <Link
-            to="/signup"
-            className="inline-block px-8 py-3.5 rounded-[1.25rem] bg-[var(--peach)] text-white text-base font-medium hover:opacity-90 transition-opacity duration-300"
-          >
-            Get started for free
-          </Link>
-        </div>
-      </section>
+      {/* Footer */}
+      <footer className="px-6 py-6 text-center">
+        <p className="text-xs text-[var(--muted)]">
+          TripWhat — your AI travel workspace
+        </p>
+      </footer>
     </main>
   );
 }

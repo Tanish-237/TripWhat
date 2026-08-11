@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { Mail, Lock } from "lucide-react";
+import { Mail, Lock, Compass } from "lucide-react";
 
 export default function LoginPage() {
   const [formData, setFormData] = useState({ email: "", password: "" });
@@ -39,37 +39,51 @@ export default function LoginPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="animate-pulse text-[var(--muted)]">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center p-4">
-      <div className="w-full max-w-md relative z-10">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-[var(--ink)] tracking-tight">
+    <div className="min-h-screen bg-[var(--bg)] flex flex-col">
+      {/* Minimal top bar */}
+      <header className="flex items-center justify-between px-6 py-4">
+        <Link to="/" className="flex items-center gap-2">
+          <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-[var(--peach)]">
+            <Compass className="w-4 h-4 text-white" />
+          </div>
+          <span className="text-sm font-semibold text-[var(--ink)]">TripWhat</span>
+        </Link>
+        <Link
+          to="/signup"
+          className="text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] transition-colors"
+        >
+          Sign up
+        </Link>
+      </header>
+
+      <div className="flex-1 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm relative z-10">
+        <div className="text-center mb-6">
+          <h1 className="text-2xl font-semibold text-[var(--ink)] tracking-tight">
             Welcome back
           </h1>
-          <p className="text-[var(--muted)] text-sm mt-2">
+          <p className="text-[var(--muted)] text-sm mt-1">
             Log in to continue planning your journeys
           </p>
         </div>
 
-        <div
-          className="rounded-[2rem] bg-[var(--surface)] p-8"
-          style={{ boxShadow: "0 4px 20px -2px rgba(0,0,0,0.05)" }}
-        >
-          <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="rounded-xl bg-[var(--surface)] border border-[var(--border)] p-6 shadow-[var(--shadow-soft)]">
+          <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <div className="p-3 text-sm text-red-600 bg-red-50 rounded-[1.25rem]">
+              <div className="p-2.5 text-sm text-red-600 bg-red-50 rounded-lg">
                 {error}
               </div>
             )}
 
-            <div className="space-y-2">
-              <label htmlFor="email" className="text-sm font-medium text-[var(--ink)]">
+            <div className="space-y-1.5">
+              <label htmlFor="email" className="text-xs font-medium text-[var(--ink)]">
                 Email
               </label>
               <div className="relative">
@@ -83,13 +97,13 @@ export default function LoginPage() {
                   onChange={handleChange}
                   required
                   disabled={isLoading}
-                  className="w-full h-11 pl-10 pr-4 rounded-[1.25rem] border border-[rgba(41,37,36,0.06)] bg-[var(--bg)] text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--peach)] transition-all duration-300"
+                  className="w-full h-10 pl-10 pr-3 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:border-[var(--muted)] transition-colors"
                 />
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label htmlFor="password" className="text-sm font-medium text-[var(--ink)]">
+            <div className="space-y-1.5">
+              <label htmlFor="password" className="text-xs font-medium text-[var(--ink)]">
                 Password
               </label>
               <div className="relative">
@@ -103,7 +117,7 @@ export default function LoginPage() {
                   onChange={handleChange}
                   required
                   disabled={isLoading}
-                  className="w-full h-11 pl-10 pr-4 rounded-[1.25rem] border border-[rgba(41,37,36,0.06)] bg-[var(--bg)] text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--peach)] transition-all duration-300"
+                  className="w-full h-10 pl-10 pr-3 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:border-[var(--muted)] transition-colors"
                 />
               </div>
             </div>
@@ -111,12 +125,12 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full h-11 rounded-[1.25rem] bg-[var(--peach)] text-white text-sm font-medium hover:opacity-90 transition-opacity duration-300 disabled:opacity-50"
+              className="w-full h-10 rounded-lg bg-[var(--ink)] text-white text-sm font-medium hover:bg-[#292524] transition-colors disabled:opacity-50"
             >
               {isLoading ? "Logging in..." : "Log in"}
             </button>
 
-            <div className="text-center text-sm text-[var(--muted)]">
+            <div className="text-center text-xs text-[var(--muted)]">
               Don't have an account?{" "}
               <Link to="/signup" className="text-[var(--peach)] font-medium hover:opacity-80 transition-opacity">
                 Sign up
@@ -124,6 +138,7 @@ export default function LoginPage() {
             </div>
           </form>
         </div>
+      </div>
       </div>
     </div>
   );
