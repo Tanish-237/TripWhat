@@ -3,16 +3,20 @@
 @tailwind utilities;
 
 :root {
-  --font-sans: "Outfit", system-ui, sans-serif;
-  --font-accent: "Reenie Beanie", cursive;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
 
-  --bg: #0C0A09;
-  --sage: #1C1917;
-  --lavender: #292524;
-  --peach: #F97316;
-  --ink: #FAFAF9;
+  --bg: #FAFAF9;
+  --sage: #F5F5F4;
+  --lavender: #E7E5E4;
+  --peach: #EA580C;
+  --ink: #1C1917;
   --muted: #78716C;
-  --surface: #1C1917;
+  --surface: #FFFFFF;
+  --border: rgba(0, 0, 0, 0.06);
+  --accent: #2563EB;
+  --success-bg: #F0FDF4;
+  --success-border: #BBF7D0;
+  --success-text: #166534;
 
   font-family: var(--font-sans);
   line-height: 1.5;
@@ -33,11 +37,6 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background-color: var(--bg);
-  background-image:
-    radial-gradient(ellipse 800px 400px at 50% 0%, #44403C 0%, transparent 70%),
-    radial-gradient(circle 600px at 0% 100%, #292524 0%, transparent 70%),
-    radial-gradient(circle 500px at 100% 50%, #1C1917 0%, transparent 70%);
-  background-attachment: fixed;
   color: var(--ink);
 }
 
@@ -59,4 +58,12 @@ input:-webkit-autofill:active {
   -webkit-box-shadow: 0 0 0px 1000px var(--surface) inset !important;
   -webkit-text-fill-color: var(--ink) !important;
   transition: background-color 5000s ease-in-out 0s;
+}
+
+.mapboxgl-map {
+  font-family: var(--font-sans);
+}
+
+.mapboxgl-canvas {
+  outline: none;
 }
