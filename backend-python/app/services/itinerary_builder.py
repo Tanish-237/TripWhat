@@ -296,15 +296,16 @@ Respond with ONLY a JSON array of 3 objects:
 
     def _generate_day_description(self, city: str, day_num: int, total_days: int, trip_style: str = "balanced") -> str:
         style_hints = {
-            "beaches": "relax by the coast and enjoy the ocean breeze",
-            "culture": "explore historic sites and immerse in local traditions",
-            "wellness": "focus on rejuvenation and mindful exploration",
-            "adventure": "get outdoors and seek out active experiences",
-            "food": "discover local flavors and hidden culinary gems",
-            "city": "wander through neighborhoods and soak in the urban energy",
-            "balanced": "balance sightseeing with time to wander",
+            "beaches": ["relax by the coast and enjoy the ocean breeze", "unwind by the water and soak up the sun", "take a leisurely stroll along the shore", "enjoy the beach at your own pace"],
+            "culture": ["explore historic sites and immerse in local traditions", "wander through old quarters and discover hidden temples", "visit museums and learn the city's story", "experience the local arts and heritage scene"],
+            "wellness": ["focus on rejuvenation and mindful exploration", "start the day with a calm walk and a healthy breakfast", "treat yourself to a spa session and quiet reflection", "find a peaceful spot and recharge"],
+            "adventure": ["get outdoors and seek out active experiences", "challenge yourself with a hike or a water sport", "push your limits with something new", "explore the wilder side of the destination"],
+            "food": ["discover local flavors and hidden culinary gems", "hunt down the best street food and local markets", "try a cooking class or a food tour", "dine where the locals dine"],
+            "city": ["wander through neighborhoods and soak in the urban energy", "explore a different district and its character", "hop between cafes, shops, and galleries", "get lost in the city's rhythm"],
+            "balanced": ["balance sightseeing with time to wander", "mix a must-see landmark with a quiet afternoon", "explore at a comfortable pace with room for spontaneity", "split the day between planned stops and free exploration"],
         }
-        activity_hint = style_hints.get(trip_style, style_hints["balanced"])
+        hints = style_hints.get(trip_style, style_hints["balanced"])
+        activity_hint = hints[(day_num - 1) % len(hints)]
 
         if day_num == 1:
             return f"Arrive in {city}, settle in, and start to {activity_hint}. Keep the first day light to adjust."
@@ -312,8 +313,12 @@ Respond with ONLY a JSON array of 3 objects:
             return f"Final day in {city} — wrap up with any last visits and {activity_hint} before departure."
         elif day_num == total_days - 1 and total_days > 2:
             return f"Make the most of your last full day in {city}. {activity_hint.capitalize()} with a relaxed pace."
+        elif day_num == 2:
+            return f"Get into the rhythm of {city} — {activity_hint} and start exploring in earnest."
+        elif day_num == 3:
+            return f"Go deeper into {city}. {activity_hint.capitalize()} and discover something unexpected."
         else:
-            return f"Day {day_num} in {city} — {activity_hint} and take it at your own rhythm."
+            return f"Another day in {city} — {activity_hint} and see where the day takes you."
 
     def compute_day_signature(self, day: DayPlan) -> str:
         slot_count = len(day.timeSlots)
