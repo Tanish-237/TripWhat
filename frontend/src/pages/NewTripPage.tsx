@@ -1,21 +1,42 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Compass, Plus } from 'lucide-react';
 import { ChatPanel } from '../components/Chat/ChatPanel';
 import { TripMap } from '../components/map/TripMap';
 import { useTripStore } from '../stores/tripStore';
-import { tripsApi } from '../lib/api';
+import { useChatStore } from '../stores/chatStore';
 
 export default function NewTripPage() {
   const [searchParams] = useSearchParams();
   const initialQuery = searchParams.get('q') || '';
   const [localTripState, setLocalTripState] = useState<any>(null);
-  const { createTrip } = useTripStore();
+  const { createTrip, updateTrip, setTripState, connectSocket, disconnectSocket } = useTripStore();
+  const conversationId = useChatStore((s) => s.conversationId);
   const tripIdRef = useRef<number | null>(null);
+  const pendingSaveRef = useRef<any>(null);
+
+  useEffect(() => {
+    connectSocket();
+    return () => { disconnectSocket(); };
+  }, [connectSocket, disconnectSocket]);
+
+  useEffect(() => {
+    if (conversationId) {
+      connectSocket(conversationId);
+    }
+  }, [conversationId, connectSocket]);
 
   const handleTripStateUpdate = useCallback((tripState: any) => {
     setLocalTripState(tripState);
+    setTripState(tripState);
     if (!tripState) return;
+
+    const saveData = {
+      generatedItinerary: tripState.itinerary,
+      cities: (tripState.cities || []).map((c: any) => ({ name: c.name, days: c.nights ? c.nights + 1 : 1 })),
+      totalDays: tripState.duration || tripState.itinerary?.days?.length,
+      tripState,
+    };
 
     (async () => {
       try {
@@ -26,17 +47,23 @@ export default function NewTripPage() {
             if (newId) tripIdRef.current = newId;
           }
         } else {
-          await tripsApi.update(String(tripIdRef.current), {
-            generatedItinerary: tripState.itinerary,
-            cities: (tripState.cities || []).map((c: any) => ({ name: c.name, days: c.nights ? c.nights + 1 : 1 })),
-            totalDays: tripState.duration || tripState.itinerary?.days?.length,
-          });
+          pendingSaveRef.current = saveData;
+          await updateTrip(String(tripIdRef.current), saveData);
+          pendingSaveRef.current = null;
         }
       } catch (e) {
         console.error('Save failed:', e);
       }
     })();
-  }, [createTrip]);
+  }, [createTrip, updateTrip, setTripState]);
+
+  useEffect(() => {
+    return () => {
+      if (tripIdRef.current && pendingSaveRef.current) {
+        updateTrip(String(tripIdRef.current), pendingSaveRef.current).catch(() => {});
+      }
+    };
+  }, [updateTrip]);
 
   const destination = localTripState?.cities?.[0]?.name || null;
   const itinerary = localTripState?.itinerary || null;
@@ -95,12 +122,38 @@ export default function NewTripPage() {
                         <p className="px-4 py-2 text-xs text-[var(--muted)] leading-relaxed border-b border-[var(--border)]">{day.subtitle}</p>
                       )}
                       <div className="divide-y divide-[var(--border)]">
-                        {day.timeSlots?.map((slot: any, i: number) => (
-                          <div key={i} className="flex items-center gap-3 px-4 py-2.5">
-                            <span className="text-[10px] text-[var(--muted)] uppercase tracking-wide w-16 shrink-0">{slot.period || slot.timeSlot || ''}</span>
-                            <span className="text-xs text-[var(--ink)] flex-1 truncate">{slot.activity?.name || slot.activities?.map((a: any) => a.name).join(', ') || 'Free time'}</span>
-                          </div>
-                        ))}
+                        {day.timeSlots?.map((slot: any, i: number) => {
+                          const activityName = slot.activity?.name || slot.activities?.map((a: any) => a.name).join(', ') || '';
+                          const imageUrl = slot.activity?.imageUrl || slot.activity?.photos?.[0];
+                          return (
+                            <div key={i} className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg)] transition-colors">
+                              {imageUrl && (
+                                <img
+                                  src={imageUrl}
+                                  alt={activityName}
+                                  className="w-10 h-10 rounded-md object-cover shrink-0"
+                                  loading="lazy"
+                                />
+                              )}
+                              <span className="text-[10px] text-[var(--muted)] uppercase tracking-wide w-16 shrink-0">
+                                {slot.startTime && slot.endTime ? `${slot.startTime}–${slot.endTime}` : (slot.period || slot.timeSlot || '')}
+                              </span>
+                              <span className="text-xs text-[var(--ink)] flex-1 truncate">
+                                {activityName || 'Free time'}
+                              </span>
+                              {slot.activity?.duration && (
+                                <span className="text-[10px] text-[var(--muted)] shrink-0">
+                                  {slot.activity.duration}
+                                </span>
+                              )}
+                              {slot.activity?.type && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--sage)] text-[var(--muted)] shrink-0">
+                                  {slot.activity.type}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   ))}

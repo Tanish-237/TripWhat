@@ -1,18 +1,21 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { MapPin, Plus, Mail, Bookmark, Calendar, Plane, Hotel, Utensils, Package, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { ChatPanel } from '../components/Chat/ChatPanel';
 import { TripMap } from '../components/map/TripMap';
 import { useTripStore } from '../stores/tripStore';
+import { useChatStore } from '../stores/chatStore';
 import { useUIStore } from '../stores/uiStore';
-import { gmailApi, tripsApi } from '../lib/api';
+import { gmailApi } from '../lib/api';
 
 export default function TripWorkspacePage() {
   const { id } = useParams<{ id: string }>();
-  const { tripState, fetchTrip, connectSocket, disconnectSocket, setTripState } = useTripStore();
+  const { tripState, fetchTrip, connectSocket, disconnectSocket, setTripState, updateTrip } = useTripStore();
+  const conversationId = useChatStore((s) => s.conversationId);
   const { activeTab, setActiveTab, cityFilter, setCityFilter } = useUIStore();
   const [tripLoading, setTripLoading] = useState(true);
   const [tripError, setTripError] = useState<string | null>(null);
+  const pendingSaveRef = useRef<any>(null);
 
   useEffect(() => {
     if (id) {
@@ -22,24 +25,44 @@ export default function TripWorkspacePage() {
     }
     connectSocket();
     return () => { disconnectSocket(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  useEffect(() => {
+    if (conversationId) {
+      connectSocket(conversationId);
+    }
+  }, [conversationId, connectSocket]);
+
+  useEffect(() => {
+    return () => {
+      if (id && pendingSaveRef.current) {
+        updateTrip(id, pendingSaveRef.current).catch(() => {});
+      }
+    };
+  }, [id, updateTrip]);
 
   const handleTripStateUpdate = useCallback((newTripState: any) => {
     setTripState(newTripState);
     if (!newTripState || !id) return;
 
+    const saveData = {
+      generatedItinerary: newTripState.itinerary,
+      cities: (newTripState.cities || []).map((c: any) => ({ name: c.name, days: c.nights ? c.nights + 1 : 1 })),
+      totalDays: newTripState.duration || newTripState.itinerary?.days?.length,
+      tripState: newTripState,
+    };
+
+    pendingSaveRef.current = saveData;
     (async () => {
       try {
-        await tripsApi.update(id, {
-          generatedItinerary: newTripState.itinerary,
-          cities: (newTripState.cities || []).map((c: any) => ({ name: c.name, days: c.nights ? c.nights + 1 : 1 })),
-          totalDays: newTripState.duration || newTripState.itinerary?.days?.length,
-        });
+        await updateTrip(id, saveData);
+        pendingSaveRef.current = null;
       } catch (e) {
         console.error('Save failed:', e);
       }
     })();
-  }, [id, setTripState]);
+  }, [id, setTripState, updateTrip]);
 
   const cities = tripState?.cities || [];
   const itinerary = tripState?.itinerary;
@@ -200,14 +223,28 @@ function PlanTab({ itinerary, cityFilter, setCityFilter, cities }: any) {
             <div className="divide-y divide-[var(--border)]">
               {day.timeSlots?.map((slot: any, i: number) => {
                 const activityName = slot.activity?.name || slot.activities?.map((a: any) => a.name).join(', ') || '';
+                const imageUrl = slot.activity?.imageUrl || slot.activity?.photos?.[0];
                 return (
                   <div key={i} className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg)] transition-colors">
+                    {imageUrl && (
+                      <img
+                        src={imageUrl}
+                        alt={activityName}
+                        className="w-10 h-10 rounded-md object-cover shrink-0"
+                        loading="lazy"
+                      />
+                    )}
                     <span className="text-[10px] text-[var(--muted)] uppercase tracking-wide w-16 shrink-0">
-                      {slot.period || slot.timeSlot || ''}
+                      {slot.startTime && slot.endTime ? `${slot.startTime}–${slot.endTime}` : (slot.period || slot.timeSlot || '')}
                     </span>
                     <span className="text-xs text-[var(--ink)] flex-1 truncate">
                       {activityName || 'Free time'}
                     </span>
+                    {slot.activity?.duration && (
+                      <span className="text-[10px] text-[var(--muted)] shrink-0">
+                        {slot.activity.duration}
+                      </span>
+                    )}
                     {slot.activity?.type && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--sage)] text-[var(--muted)] shrink-0">
                         {slot.activity.type}
