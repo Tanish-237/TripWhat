@@ -12,6 +12,7 @@ from app.database import get_db, async_session
 from app.deps import get_current_user
 from app.models import Conversation, User
 from app.schemas.chat import SendMessageRequest, SyncItineraryRequest, ModifyItineraryRequest
+from app.services.stream_buffer import stream_buffer
 from app.utils.logger import logger
 
 router = APIRouter()
@@ -83,7 +84,8 @@ async def send_message(
 
     logger.info(f"Processing (streaming): {req.message!r}")
 
-    # Launch background task to stream agent responses via Socket.IO
+    # Mark stream as active and launch background task
+    await stream_buffer.mark_active(conv_id)
     asyncio.create_task(_process_agent_stream(
         conv_id, req.message, agent_context, user.id
     ))
@@ -111,27 +113,36 @@ async def _process_agent_stream(
     try:
         async for event in travel_agent.chat_stream(message, conv_id, agent_context):
             if event["type"] == "token":
+                eid = await stream_buffer.push_event(conv_id, "token", {"text": event["text"]})
                 await sio.emit("agent:token", {
                     "conversationId": conv_id,
                     "text": event["text"],
+                    "eventId": eid,
                 }, room=conv_id)
 
             elif event["type"] == "status":
+                eid = await stream_buffer.push_event(conv_id, "status", {"status": event["status"]})
                 await sio.emit("agent:status", {
                     "conversationId": conv_id,
                     "status": event["status"],
+                    "eventId": eid,
                 }, room=conv_id)
 
             elif event["type"] == "tripState":
+                sanitized = _sanitize_json(event["tripState"])
+                eid = await stream_buffer.push_event(conv_id, "tripState", {"tripState": sanitized})
                 await sio.emit("agent:tripState", {
                     "conversationId": conv_id,
-                    "tripState": _sanitize_json(event["tripState"]),
+                    "tripState": sanitized,
+                    "eventId": eid,
                 }, room=conv_id)
 
             elif event["type"] == "interrupt":
+                eid = await stream_buffer.push_event(conv_id, "interrupt", {"payload": event["payload"]})
                 await sio.emit("agent:interrupt", {
                     "conversationId": conv_id,
                     "payload": event["payload"],
+                    "eventId": eid,
                 }, room=conv_id)
 
             elif event["type"] == "complete":
@@ -164,7 +175,7 @@ async def _process_agent_stream(
                         await db.commit()
 
                 # Emit final response
-                await sio.emit("agent:response", {
+                final_payload = {
                     "message": ai_response,
                     "conversationId": conv_id,
                     "widgets": payload.get("widgets", []),
@@ -172,11 +183,14 @@ async def _process_agent_stream(
                     "changeSummary": payload.get("changeSummary", []),
                     "classification": payload.get("classification"),
                     "tripState": _sanitize_json(payload.get("tripState")),
-                }, room=conv_id)
+                }
+                eid = await stream_buffer.push_event(conv_id, "response", final_payload)
+                final_payload["eventId"] = eid
+                await sio.emit("agent:response", final_payload, room=conv_id)
 
     except Exception as e:
         logger.error(f"[STREAM_TASK] Failed: {e}")
-        await sio.emit("agent:response", {
+        error_payload = {
             "message": "I'm sorry, I encountered an error processing your request.",
             "conversationId": conv_id,
             "widgets": [],
@@ -185,7 +199,13 @@ async def _process_agent_stream(
             "classification": None,
             "tripState": None,
             "error": str(e),
-        }, room=conv_id)
+        }
+        eid = await stream_buffer.push_event(conv_id, "response", error_payload)
+        error_payload["eventId"] = eid
+        await sio.emit("agent:response", error_payload, room=conv_id)
+
+    finally:
+        await stream_buffer.mark_done(conv_id)
 
 
 @router.post("/resume")
@@ -213,7 +233,8 @@ async def resume_agent(
 
     logger.info(f"[RESUME] Resuming agent for conv={conv_id} with decision={decision}")
 
-    # Launch background task to resume the agent stream
+    # Mark stream as active and launch background task
+    await stream_buffer.mark_active(conv_id)
     asyncio.create_task(_process_agent_resume(
         conv_id, resume_value, user.id
     ))
@@ -254,19 +275,24 @@ async def _process_agent_resume(conv_id: str, resume_value: dict, user_id: str):
         async for message_event in stream.messages:
             text = str(message_event.text)
             if text:
+                eid = await stream_buffer.push_event(conv_id, "token", {"text": text})
                 await sio.emit("agent:token", {
                     "conversationId": conv_id,
                     "text": text,
+                    "eventId": eid,
                 }, room=conv_id)
                 response_text += text
 
         # Check for further interrupts
         if stream.interrupted:
             interrupt_info = stream.interrupts[0].value if stream.interrupts else {}
+            eid = await stream_buffer.push_event(conv_id, "interrupt", {"payload": interrupt_info})
             await sio.emit("agent:interrupt", {
                 "conversationId": conv_id,
                 "payload": interrupt_info,
+                "eventId": eid,
             }, room=conv_id)
+            await stream_buffer.mark_done(conv_id)
             return
 
         if not response_text:
@@ -275,18 +301,23 @@ async def _process_agent_resume(conv_id: str, resume_value: dict, user_id: str):
         # After resume, run the auto-build flow (route proposal → itinerary)
         final_trip_state = current_trip_state
         if final_trip_state and resume_value.get("confirmed"):
+            eid = await stream_buffer.push_event(conv_id, "status", {"status": "Building your itinerary..."})
             await sio.emit("agent:status", {
                 "conversationId": conv_id,
                 "status": "Building your itinerary...",
+                "eventId": eid,
             }, room=conv_id)
 
             final_trip_state = await travel_agent._auto_build_itinerary(final_trip_state)
             if final_trip_state.get("itinerary"):
                 response_text = "I've put together your itinerary! Check it out on the right — you can ask me to adjust anything."
 
+            sanitized_ts = _sanitize_json(final_trip_state)
+            eid = await stream_buffer.push_event(conv_id, "tripState", {"tripState": sanitized_ts})
             await sio.emit("agent:tripState", {
                 "conversationId": conv_id,
-                "tripState": _sanitize_json(final_trip_state),
+                "tripState": sanitized_ts,
+                "eventId": eid,
             }, room=conv_id)
 
         # Persist to DB
@@ -321,7 +352,7 @@ async def _process_agent_resume(conv_id: str, resume_value: dict, user_id: str):
         suggestions = travel_agent._build_suggestions(final_trip_state, post_check)
 
         # Emit final response
-        await sio.emit("agent:response", {
+        final_payload = {
             "message": response_text,
             "conversationId": conv_id,
             "widgets": widgets,
@@ -329,11 +360,14 @@ async def _process_agent_resume(conv_id: str, resume_value: dict, user_id: str):
             "changeSummary": [],
             "classification": None,
             "tripState": _sanitize_json(final_trip_state),
-        }, room=conv_id)
+        }
+        eid = await stream_buffer.push_event(conv_id, "response", final_payload)
+        final_payload["eventId"] = eid
+        await sio.emit("agent:response", final_payload, room=conv_id)
 
     except Exception as e:
         logger.error(f"[RESUME_TASK] Failed: {e}")
-        await sio.emit("agent:response", {
+        error_payload = {
             "message": f"Error resuming: {e}",
             "conversationId": conv_id,
             "widgets": [],
@@ -342,7 +376,13 @@ async def _process_agent_resume(conv_id: str, resume_value: dict, user_id: str):
             "classification": None,
             "tripState": None,
             "error": str(e),
-        }, room=conv_id)
+        }
+        eid = await stream_buffer.push_event(conv_id, "response", error_payload)
+        error_payload["eventId"] = eid
+        await sio.emit("agent:response", error_payload, room=conv_id)
+
+    finally:
+        await stream_buffer.mark_done(conv_id)
 
 
 @router.post("/sync-itinerary")
@@ -425,6 +465,28 @@ async def get_conversation(
         "metadata": conversation.meta,
         "createdAt": conversation.created_at.isoformat() if conversation.created_at else None,
         "updatedAt": conversation.updated_at.isoformat() if conversation.updated_at else None,
+    }
+
+
+@router.get("/stream/{conversation_id}")
+async def get_stream_events(
+    conversation_id: str,
+    after: str = "0",
+    user: User = Depends(get_current_user),
+):
+    """Replay buffered stream events for a conversation.
+
+    Used by the frontend on reconnect to catch up on missed events.
+    `after` is the last seen Redis stream entry ID (default "0" = all).
+    """
+    events = await stream_buffer.read_events(conversation_id, after_id=after)
+    is_active = await stream_buffer.is_active(conversation_id)
+    last_id = events[-1]["id"] if events else after
+    return {
+        "conversationId": conversation_id,
+        "events": events,
+        "isActive": is_active,
+        "lastEventId": last_id,
     }
 
 
