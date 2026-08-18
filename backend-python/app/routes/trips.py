@@ -13,6 +13,11 @@ from app.schemas.trip import CreateTripRequest, UpdateTripRequest, MarkUpcomingR
 router = APIRouter()
 
 
+def _parse_iso(s: str) -> datetime:
+    """Parse ISO 8601 datetime string, handling Z suffix for Python 3.10."""
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
 def _trip_to_dict(trip: Trip) -> dict:
     return {
         "id": trip.id,
@@ -27,6 +32,9 @@ def _trip_to_dict(trip: Trip) -> dict:
         "budget": trip.budget,
         "budgetMode": trip.budget_mode,
         "generatedItinerary": trip.generated_itinerary,
+        "tripState": trip.trip_state,
+        "chatHistory": trip.chat_history or [],
+        "conversationId": trip.conversation_id,
         "isPublic": trip.is_public,
         "tags": trip.tags or [],
         "isUpcoming": trip.is_upcoming,
@@ -49,7 +57,7 @@ async def create_trip(
         user_id=user.id,
         title=req.title,
         description=req.description,
-        start_date=datetime.fromisoformat(req.startDate) if req.startDate else None,
+        start_date=_parse_iso(req.startDate) if req.startDate else None,
         start_location=req.startLocation,
         cities=[c.model_dump() for c in req.cities],
         total_days=req.totalDays,
@@ -58,9 +66,27 @@ async def create_trip(
         budget=req.budget.model_dump() if req.budget else None,
         budget_mode=req.budgetMode,
         generated_itinerary=req.generatedItinerary,
+        trip_state=req.tripState,
+        chat_history=req.chatHistory,
+        conversation_id=req.conversationId,
         is_public=req.isPublic,
         tags=req.tags,
     )
+
+    # Auto-set is_upcoming and trip dates from tripState if available
+    if req.tripState and isinstance(req.tripState, dict):
+        dates = req.tripState.get("dates")
+        if dates and isinstance(dates, dict) and dates.get("start"):
+            try:
+                start = _parse_iso(dates["start"])
+                trip.trip_start_date = start.date()
+                if req.totalDays:
+                    trip.trip_end_date = (start + timedelta(days=req.totalDays)).date()
+                if start.date() >= datetime.utcnow().date():
+                    trip.is_upcoming = True
+            except (ValueError, TypeError):
+                pass
+
     db.add(trip)
     await db.commit()
     await db.refresh(trip)
@@ -78,8 +104,6 @@ async def list_trips(
 ):
     query = select(Trip).where(
         Trip.user_id == user.id,
-        Trip.is_upcoming != True,
-        Trip.is_completed != True,
     )
     if search:
         query = query.where(
@@ -94,8 +118,6 @@ async def list_trips(
 
     count_q = select(func.count(Trip.id)).where(
         Trip.user_id == user.id,
-        Trip.is_upcoming != True,
-        Trip.is_completed != True,
     )
     total = (await db.execute(count_q)).scalar() or 0
 
@@ -229,7 +251,7 @@ async def check_trip(
     result = await db.execute(
         select(Trip).where(
             Trip.user_id == user.id,
-            Trip.start_date == datetime.fromisoformat(startDate),
+            Trip.start_date == _parse_iso(startDate),
             Trip.people == people,
             Trip.travel_type == travelType,
         )
@@ -270,11 +292,31 @@ async def update_trip(
     data = req.model_dump(exclude_unset=True)
     for key, value in data.items():
         if key == "startDate" and value:
-            trip.start_date = datetime.fromisoformat(value)
+            trip.start_date = _parse_iso(value)
         elif key == "cities" and value:
             trip.cities = value
         elif key == "budget" and value:
             trip.budget = value
+        elif key == "tripState":
+            trip.trip_state = value
+            # Auto-update trip dates from tripState
+            if isinstance(value, dict):
+                dates = value.get("dates")
+                if dates and isinstance(dates, dict) and dates.get("start"):
+                    try:
+                        start = _parse_iso(dates["start"])
+                        trip.trip_start_date = start.date()
+                        if trip.total_days:
+                            trip.trip_end_date = (start + timedelta(days=trip.total_days)).date()
+                        if start.date() >= datetime.utcnow().date():
+                            trip.is_upcoming = True
+                            trip.is_completed = False
+                    except (ValueError, TypeError):
+                        pass
+        elif key == "chatHistory" and value is not None:
+            trip.chat_history = value
+        elif key == "conversationId" and value is not None:
+            trip.conversation_id = value
         elif hasattr(trip, key):
             setattr(trip, key, value)
 
@@ -295,7 +337,7 @@ async def mark_upcoming(
     if not trip:
         raise HTTPException(status_code=404, detail="Saved trip not found")
 
-    start = datetime.fromisoformat(req.tripStartDate)
+    start = _parse_iso(req.tripStartDate)
     end = start + timedelta(days=trip.total_days or 1)
     trip.is_upcoming = True
     trip.is_completed = False

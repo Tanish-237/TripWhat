@@ -13,14 +13,8 @@ export default function TripsPage() {
 
   const filtered = trips.filter((t) => {
     if (tab === 'all') return true;
-    if (tab === 'upcoming') {
-      const start = t.tripState?.dates?.start;
-      return start && new Date(start) > new Date();
-    }
-    if (tab === 'past') {
-      const end = t.tripState?.dates?.end;
-      return end && new Date(end) < new Date();
-    }
+    if (tab === 'upcoming') return t.isUpcoming;
+    if (tab === 'past') return t.isCompleted;
     return true;
   });
 
@@ -90,7 +84,7 @@ export default function TripsPage() {
         {!loading && !error && filtered.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {filtered.map((trip) => (
-              <TripCard key={trip._id} trip={trip} onDelete={deleteTrip} />
+              <TripCard key={trip.id} trip={trip} onDelete={deleteTrip} />
             ))}
           </div>
         )}
@@ -100,15 +94,16 @@ export default function TripsPage() {
 }
 
 function TripCard({ trip, onDelete }: { trip: any; onDelete: (id: string) => void }) {
-  const cities = trip.tripState?.cities || [];
+  const cities = trip.cities || trip.tripState?.cities || [];
   const cityNames = cities.map((c: any) => c.name).join(' → ');
-  const dates = trip.tripState?.dates;
-  const duration = trip.tripState?.duration;
-  const dayCount = trip.tripState?.itinerary?.days?.length || 0;
+  const startDate = trip.tripStartDate;
+  const endDate = trip.tripEndDate;
+  const duration = trip.totalDays || trip.tripState?.duration;
+  const dayCount = trip.generatedItinerary?.days?.length || trip.tripState?.itinerary?.days?.length || 0;
 
   return (
     <Link
-      to={`/trip/${trip._id}`}
+      to={`/trip/${trip.id}`}
       className="block rounded-lg bg-[var(--surface)] border border-[var(--border)] p-4 hover:shadow-[var(--shadow-soft-hover)] transition-shadow"
     >
       <div className="flex items-start justify-between mb-2">
@@ -121,7 +116,7 @@ function TripCard({ trip, onDelete }: { trip: any; onDelete: (id: string) => voi
         <button
           onClick={(e) => {
             e.preventDefault();
-            if (confirm('Delete this trip?')) onDelete(trip._id);
+            if (confirm('Delete this trip?')) onDelete(String(trip.id));
           }}
           className="text-[var(--muted)] hover:text-red-500 transition-colors p-1"
         >
@@ -130,10 +125,10 @@ function TripCard({ trip, onDelete }: { trip: any; onDelete: (id: string) => voi
       </div>
 
       <div className="flex items-center gap-3 text-xs text-[var(--muted)]">
-        {dates && (
+        {startDate && (
           <span className="flex items-center gap-1">
             <Calendar className="w-3 h-3" />
-            {dates.start} → {dates.end}
+            {startDate}{endDate ? ` → ${endDate}` : ''}
           </span>
         )}
         {duration && (

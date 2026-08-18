@@ -29,6 +29,9 @@ class CreateTripRequest(BaseModel):
     budgetMode: str = "capped"
     generatedItinerary: dict | None = None
     travelMeans: dict | None = None
+    tripState: dict | None = None
+    chatHistory: list | None = None
+    conversationId: str | None = None
     isPublic: bool = False
     tags: list[str] = []
 
@@ -46,6 +49,9 @@ class UpdateTripRequest(BaseModel):
     budgetMode: str | None = None
     generatedItinerary: dict | None = None
     travelMeans: dict | None = None
+    tripState: dict | None = None
+    chatHistory: list | None = None
+    conversationId: str | None = None
     isPublic: bool | None = None
     tags: list[str] | None = None
 
@@ -67,6 +73,10 @@ class TripResponse(BaseModel):
     budget: dict | None = None
     budgetMode: str | None = None
     generatedItinerary: dict | None = None
+    travelMeans: dict | None = None
+    tripState: dict | None = None
+    chatHistory: list = []
+    conversationId: str | None = None
     isPublic: bool = False
     tags: list = []
     isUpcoming: bool = False
