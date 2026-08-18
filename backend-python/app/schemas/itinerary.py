@@ -153,13 +153,13 @@ def create_time_slot(period: str = "morning", activity: Activity | None = None) 
     )
 
 
-def create_day_plan(day_number: int, date: str, location: str, title: str | None = None) -> DayPlan:
+def create_day_plan(day_number: int, date: str, location: str, title: str | None = None, time_slots: list[TimeSlot] | None = None) -> DayPlan:
     return DayPlan(
         dayNumber=day_number,
         date=date,
         location=location,
         title=title or f"Day {day_number}",
-        timeSlots=[create_time_slot("morning"), create_time_slot("afternoon"), create_time_slot("evening")],
+        timeSlots=time_slots if time_slots else [create_time_slot("morning"), create_time_slot("afternoon"), create_time_slot("evening")],
     )
 
 

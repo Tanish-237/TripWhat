@@ -52,6 +52,41 @@ class GooglePlacesService:
             data = resp.json()
             return data.get("result")
 
+    async def resolve_photo_url(self, photo_reference: str, max_width: int = 400) -> str | None:
+        """Resolve a Google Places photo reference to a direct image URL.
+
+        The Places Photo API returns a 302 redirect to the actual image URL.
+        We capture that redirect URL without downloading the image.
+        """
+        if not settings.google_places_api_key:
+            return None
+
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            resp = await client.get(f"{self.BASE_URL}/photo", params={
+                "photoreference": photo_reference,
+                "maxwidth": max_width,
+                "key": settings.google_places_api_key,
+            })
+            if resp.status_code == 302:
+                return resp.headers.get("location")
+        return None
+
+    async def resolve_place_photos(self, place_id: str, max_photos: int = 3) -> list[str]:
+        """Get resolved photo URLs for a place via Place Details API."""
+        details = await self.get_place_details(place_id)
+        if not details:
+            return []
+
+        photos = details.get("photos", [])
+        urls = []
+        for p in photos[:max_photos]:
+            ref = p.get("photo_reference")
+            if ref:
+                url = await self.resolve_photo_url(ref)
+                if url:
+                    urls.append(url)
+        return urls
+
     async def find_nearby(self, lat: float, lng: float, radius: int = 5000, place_type: str = "tourist_attraction") -> list[dict]:
         if not settings.google_places_api_key:
             return []

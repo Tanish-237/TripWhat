@@ -22,6 +22,24 @@ from app.services.query_generator import generate_queries
 from app.utils.logger import logger
 
 
+TIME_BUDGETS = {
+    "relaxed": {"morning": 3, "afternoon": 3, "evening": 2},
+    "moderate": {"morning": 4, "afternoon": 4, "evening": 3},
+    "packed": {"morning": 5, "afternoon": 5, "evening": 4},
+}
+
+TYPE_DURATIONS = {
+    "museum": 2.5, "art_gallery": 1.5, "park": 1.5, "temple": 1.0,
+    "shrine": 0.5, "shopping_mall": 2.0, "restaurant": 1.5, "cafe": 0.75,
+    "landmark": 0.5, "historical_site": 1.5, "market": 1.0, "garden": 1.0,
+    "amusement_park": 5.0, "zoo": 3.0, "aquarium": 2.0, "beach": 3.0,
+    "hiking_trail": 4.0, "viewpoint": 0.5, "neighborhood": 2.0,
+    "night_club": 2.0, "bar": 1.5, "tourist_attraction": 2.0,
+    "point_of_interest": 1.5, "natural_feature": 1.5, "church": 1.0,
+    "castle": 2.0, "monument": 0.5, "square": 0.5, "palace": 2.0,
+}
+
+
 class ItineraryBuilder:
     def __init__(self):
         self._model = None
@@ -48,26 +66,46 @@ class ItineraryBuilder:
         trip_style: str,
         help_with: list[str] | None,
         all_city_names: list[str],
+        used_names: list[str] | None = None,
     ) -> list[dict]:
-        """Search for real places and use LLM to curate the best 3 for the day.
+        """Search for real places and use LLM to curate activities for the day.
 
         1. Generate procedural queries (zero LLM tokens)
-        2. Search via places_search (cache-first)
-        3. LLM picks best 3 from real results
+        2. Search via places_search (cache-first, with photo resolution)
+        3. LLM picks 2-5 activities from real results based on time budget
         """
         # Step 1: Generate queries procedurally
         queries = generate_queries(city, trip_style, help_with, day_num, total_days)
         logger.info(f"[ITINERARY_BUILDER] Generated {len(queries)} queries for {city} day {day_num}: {queries}")
 
-        # Step 2: Search for real places (cache-first)
+        # Step 2: Search for real places (cache-first, with photos)
         places = await places_search.search_multiple(queries, city, limit_per_query=5)
 
         if not places:
             logger.warning(f"[ITINERARY_BUILDER] No places found for {city}, using LLM fallback")
             return self._llm_fallback_activities(city, day_num, total_days, trip_style)
 
-        # Step 3: LLM curation — pick best 3 from real results
-        return await self._curate_activities_llm(places, city, day_num, total_days, trip_style, all_city_names)
+        # Step 3: LLM curation — pick best activities from real results
+        return await self._curate_activities_llm(places, city, day_num, total_days, trip_style, all_city_names, used_names)
+
+    def _estimate_duration(self, place: dict) -> float:
+        """Estimate visit duration in hours based on place types."""
+        types = place.get("types", [])
+        durations = [TYPE_DURATIONS.get(t, 0) for t in types if t in TYPE_DURATIONS]
+        return max(durations) if durations else 2.0
+
+    def _pace_to_budget(self, trip_style: str) -> dict:
+        """Map trip style to time budget per period."""
+        pace_map = {
+            "relaxed": "relaxed",
+            "balanced": "moderate",
+            "moderate": "moderate",
+            "packed": "packed",
+            "adventure": "packed",
+            "fast": "packed",
+        }
+        pace = pace_map.get(trip_style, "moderate")
+        return TIME_BUDGETS.get(pace, TIME_BUDGETS["moderate"])
 
     async def _curate_activities_llm(
         self,
@@ -77,24 +115,38 @@ class ItineraryBuilder:
         total_days: int,
         trip_style: str,
         all_cities: list[str],
+        used_names: list[str] | None = None,
     ) -> list[dict]:
-        """Use LLM to pick the best 3 activities from real search results."""
+        """Use LLM to pick 2-5 activities from real search results based on time budget."""
         is_first_day = day_num == 1
         is_last_day = day_num == total_days
+        budget = self._pace_to_budget(trip_style)
+        total_budget = sum(budget.values())
 
-        # Format places for the LLM
+        # Format places for the LLM with estimated durations
         places_text = []
         for i, p in enumerate(places):
             name = p.get("name", "Unknown")
             rating = p.get("rating", "N/A")
             ptype = ", ".join(p.get("types", [])[:3]) if p.get("types") else "attraction"
             desc = p.get("description", "")[:100]
-            places_text.append(f"{i+1}. {name} (rating: {rating}, type: {ptype}) — {desc}")
+            est_dur = self._estimate_duration(p)
+            places_text.append(f"{i+1}. {name} (rating: {rating}, type: {ptype}, est: {est_dur}h) — {desc}")
 
         places_str = "\n".join(places_text)
 
+        used_clause = ""
+        if used_names:
+            used_clause = f". Places already used (DO NOT pick these again): {', '.join(used_names)}"
+
+        first_day_note = "\n- This is the first day — keep it lighter for arrival." if is_first_day else ""
+        last_day_note = "\n- This is the last day — wrap up before departure." if is_last_day else ""
+        other_cities = f"\n- Other cities on this trip: {', '.join(c for c in all_cities if c != city)}" if len(all_cities) > 1 else ""
+
         prompt = f"""\
-You are a travel itinerary planner. Pick the best 3 activities (morning, afternoon, evening) for Day {day_num} of a trip to {city}.
+You are a travel itinerary planner for Day {day_num} of a trip to {city}.
+
+Trip pace: {trip_style} (time budget: morning={budget['morning']}h, afternoon={budget['afternoon']}h, evening={budget['evening']}h, total={total_budget}h)
 
 Here are {len(places)} real places found via Google Maps search:
 {places_str}
@@ -102,20 +154,20 @@ Here are {len(places)} real places found via Google Maps search:
 Trip context:
 - City: {city}
 - Day {day_num} of {total_days}
-- Trip style: {trip_style}
-- {'This is the first day — keep it lighter for arrival.' if is_first_day else ''}
-- {'This is the last day — wrap up before departure.' if is_last_day else ''}
-- {'Other cities on this trip: ' + ', '.join(c for c in all_cities if c != city) if len(all_cities) > 1 else ''}
+- Trip style: {trip_style}{first_day_note}{last_day_note}{other_cities}
 
 Rules:
-1. Pick 3 different places from the list above (use the exact name)
+1. Select 2-5 different places from the list above (use the exact name)
 2. Assign each to morning, afternoon, or evening
-3. Consider variety (don't pick 3 museums or 3 restaurants)
-4. Consider logical ordering (proximity, energy levels)
-5. Write a one-sentence description for each
+3. The total estimated duration should fit within the time budget for each period
+4. Consider variety (don't pick 3 museums or 3 restaurants)
+5. Consider logical ordering (proximity, energy levels)
+6. Write a one-sentence description for each
+7. Set a realistic duration_hours based on the place type
+8. Do NOT repeat places used on previous days{used_clause}
 
-Respond with ONLY a JSON array of 3 objects:
-[{{"period": "morning", "name": "<exact name from list>", "type": "<category>", "description": "<one sentence>", "duration": "<approx>"}}, ...]
+Respond with ONLY a JSON array of 2-5 objects:
+[{{"period": "morning", "name": "<exact name from list>", "type": "<category>", "description": "<one sentence>", "duration": "<hours>", "duration_hours": <number>}}, ...]
 """
 
         try:
@@ -127,17 +179,22 @@ Respond with ONLY a JSON array of 3 objects:
             json_match = re.search(r"\[[\s\S]*\]", content)
             if json_match:
                 curated = json.loads(json_match.group())
-                if isinstance(curated, list) and len(curated) >= 3:
+                if isinstance(curated, list) and len(curated) >= 2:
                     # Enrich curated activities with real place data
-                    return self._enrich_activities(curated[:3], places)
+                    return await self._enrich_activities(curated, places)
         except Exception as e:
             logger.error(f"[ITINERARY_BUILDER] LLM curation failed: {e}")
 
         # Fallback: pick top 3 by rating
         return self._pick_top_3(places)
 
-    def _enrich_activities(self, curated: list[dict], places: list[dict]) -> list[dict]:
-        """Enrich LLM-curated activities with real place data from search results."""
+    async def _enrich_activities(self, curated: list[dict], places: list[dict]) -> list[dict]:
+        """Enrich LLM-curated activities with real place data from search results.
+
+        Resolves photo references to direct image URLs for each activity.
+        """
+        from app.services.google_places import google_places
+
         enriched = []
         for c in curated:
             name = c.get("name", "")
@@ -153,11 +210,24 @@ Respond with ONLY a JSON array of 3 objects:
                 c["coordinates"] = matching.get("coordinates", {})
                 c["rating"] = matching.get("rating")
                 c["address"] = matching.get("address", "")
-                c["photo_url"] = matching.get("photo_url", "")
                 c["website"] = matching.get("website", "")
                 c["phone"] = matching.get("phone", "")
                 if not c.get("description"):
                     c["description"] = matching.get("description", "")
+
+                # Resolve photo URL if it's a reference, not a direct URL
+                photo_url = matching.get("photo_url", "")
+                if photo_url and not photo_url.startswith("http"):
+                    try:
+                        resolved = await google_places.resolve_photo_url(photo_url)
+                        if resolved:
+                            c["photo_url"] = resolved
+                        else:
+                            c["photo_url"] = None
+                    except Exception:
+                        c["photo_url"] = None
+                else:
+                    c["photo_url"] = photo_url or None
 
             enriched.append(c)
 
@@ -179,6 +249,7 @@ Respond with ONLY a JSON array of 3 objects:
                 "coordinates": p.get("coordinates", {}),
                 "rating": p.get("rating"),
                 "address": p.get("address", ""),
+                "photo_url": p.get("photo_url", ""),
             })
         return result
 
@@ -190,10 +261,24 @@ Respond with ONLY a JSON array of 3 objects:
             {"period": "evening", "name": f"Evening in {city}", "type": "relaxation", "description": f"Wind down and enjoy the evening atmosphere of {city}.", "duration": "1-2 hours"},
         ]
 
-    def _activity_to_time_slot(self, act_data: dict) -> TimeSlot:
-        """Convert an activity dict to a TimeSlot with a populated Activity."""
+    def _activity_to_time_slot(self, act_data: dict, prev_end: str = "09:00") -> TimeSlot:
+        """Convert an activity dict to a TimeSlot with a populated Activity.
+
+        Calculates startTime/endTime from duration_hours if available,
+        chaining from the previous activity's end time.
+        """
         period = act_data.get("period", "morning")
         coords = act_data.get("coordinates", {})
+        photo_url = act_data.get("photo_url") or act_data.get("imageUrl")
+
+        # Calculate time range from duration_hours
+        duration_hours = act_data.get("duration_hours")
+        start_time = act_data.get("startTime") or prev_end
+        if duration_hours:
+            end_time = self._add_hours(start_time, duration_hours)
+        else:
+            end_time = act_data.get("endTime") or self._default_end_time(period)
+
         activity = Activity(
             name=act_data.get("name", "Free time"),
             title=act_data.get("name", "Free time"),
@@ -204,6 +289,8 @@ Respond with ONLY a JSON array of 3 objects:
             placeId=act_data.get("placeId"),
             address=act_data.get("address"),
             coordinates=coords if coords else None,
+            imageUrl=photo_url,
+            photos=[photo_url] if photo_url else None,
             location=ActivityLocation(
                 name=act_data.get("name", ""),
                 address=act_data.get("address", ""),
@@ -212,7 +299,32 @@ Respond with ONLY a JSON array of 3 objects:
             websiteUrl=act_data.get("website"),
             phoneNumber=act_data.get("phone"),
         )
-        return create_time_slot(period, activity)
+        return TimeSlot(
+            period=period,
+            startTime=start_time,
+            endTime=end_time,
+            activity=activity,
+            label=period.capitalize(),
+            time=f"{start_time}-{end_time}",
+            activities=[activity],
+        )
+
+    @staticmethod
+    def _add_hours(time_str: str, hours: float) -> str:
+        """Add hours to a HH:MM time string, returning HH:MM."""
+        try:
+            h, m = map(int, time_str.split(":"))
+            total = h * 60 + m + int(hours * 60)
+            total = total % (24 * 60)
+            return f"{total // 60:02d}:{total % 60:02d}"
+        except Exception:
+            return "18:00"
+
+    @staticmethod
+    def _default_end_time(period: str) -> str:
+        """Default end time for a period when no duration is specified."""
+        defaults = {"morning": "12:00", "afternoon": "18:00", "evening": "22:00"}
+        return defaults.get(period, "18:00")
 
     async def _build_single_city(self, ctx: dict) -> dict:
         destination = ctx["destination"]
@@ -228,12 +340,24 @@ Respond with ONLY a JSON array of 3 objects:
         if ctx.get("travelType"):
             itinerary.tripMetadata.travelType = ctx["travelType"]
 
+        used_names: list[str] = []
         for i, day in enumerate(itinerary.days):
             day.subtitle = self._generate_day_description(destination, i + 1, duration, trip_style)
             activities = await self._search_and_curate_activities(
-                destination, i + 1, duration, trip_style, help_with, [destination]
+                destination, i + 1, duration, trip_style, help_with, [destination], used_names
             )
-            day.timeSlots = [self._activity_to_time_slot(a) for a in activities]
+            for a in activities:
+                name = a.get("name", "")
+                if name:
+                    used_names.append(name)
+            # Chain time slots: each activity starts after the previous ends
+            time_slots = []
+            prev_end = "09:00"
+            for a in activities:
+                slot = self._activity_to_time_slot(a, prev_end)
+                prev_end = slot.endTime
+                time_slots.append(slot)
+            day.timeSlots = time_slots
 
         return {"itinerary": itinerary.model_dump()}
 
@@ -248,7 +372,12 @@ Respond with ONLY a JSON array of 3 objects:
         itinerary = create_itinerary(cities[0]["name"], total_days, start_date)
 
         day_idx = 0
+        used_names: list[str] = []
+        current_city = None
         for city in cities:
+            if city["name"] != current_city:
+                used_names = []
+                current_city = city["name"]
             city_days = city["days"]
             for d in range(city_days):
                 if day_idx < len(itinerary.days):
@@ -257,9 +386,20 @@ Respond with ONLY a JSON array of 3 objects:
                     day.title = f"Day {day_idx + 1} - {city['name']}"
                     day.subtitle = self._generate_day_description(city["name"], d + 1, city_days, trip_style)
                     activities = await self._search_and_curate_activities(
-                        city["name"], day_idx + 1, total_days, trip_style, help_with, all_city_names
+                        city["name"], day_idx + 1, total_days, trip_style, help_with, all_city_names, used_names
                     )
-                    day.timeSlots = [self._activity_to_time_slot(a) for a in activities]
+                    for a in activities:
+                        name = a.get("name", "")
+                        if name:
+                            used_names.append(name)
+                    # Chain time slots: each activity starts after the previous ends
+                    time_slots = []
+                    prev_end = "09:00"
+                    for a in activities:
+                        slot = self._activity_to_time_slot(a, prev_end)
+                        prev_end = slot.endTime
+                        time_slots.append(slot)
+                    day.timeSlots = time_slots
                 day_idx += 1
 
         if ctx.get("preferences"):

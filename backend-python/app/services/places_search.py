@@ -22,6 +22,8 @@ from app.services.google_places import google_places
 from app.services.places_service import places_service
 from app.utils.logger import logger
 
+import asyncio
+
 CACHE_TTL_DAYS = 30
 
 
@@ -64,6 +66,54 @@ class PlacesSearchService:
 
         return places[:limit]
 
+    async def search_with_photos(
+        self,
+        query: str,
+        city: str,
+        limit: int = 10,
+        skip_cache: bool = False,
+    ) -> list[dict]:
+        """Search for places and resolve photo references to direct image URLs.
+
+        After the standard search, any place with a photo_url that isn't already
+        a direct http URL gets resolved via the Google Places Photo API.
+        Resolved URLs are cached back into places_cache.
+        """
+        places = await self.search(query, city, limit, skip_cache)
+
+        if not places:
+            return places
+
+        # Resolve photo references in parallel
+        tasks = [self._resolve_place_photo(p) for p in places if p.get("photo_url")]
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+        return places
+
+    async def _resolve_place_photo(self, place: dict) -> None:
+        """Resolve a single place's photo_url reference to a direct image URL.
+
+        Mutates the place dict in-place and updates the cache if needed.
+        """
+        photo_url = place.get("photo_url", "")
+        if not photo_url or photo_url.startswith("http"):
+            return
+
+        try:
+            resolved = await google_places.resolve_photo_url(photo_url)
+            if resolved:
+                place["photo_url"] = resolved
+                # Update cache with resolved URL
+                async with async_session() as db:
+                    await db.execute(
+                        update(PlacesCache)
+                        .where(PlacesCache.place_id == place.get("placeId", ""))
+                        .values(photo_url=resolved)
+                    )
+                    await db.commit()
+        except Exception as e:
+            logger.warning(f"[PLACES_SEARCH] Photo resolution failed for {place.get('name', '?')}: {e}")
+
     async def search_by_name(self, name: str, city: str) -> dict | None:
         """Search for a specific place by name (for edit commands).
 
@@ -93,10 +143,8 @@ class PlacesSearchService:
         city: str,
         limit_per_query: int = 5,
     ) -> list[dict]:
-        """Run multiple queries and merge results."""
-        import asyncio
-
-        tasks = [self.search(q, city, limit_per_query) for q in queries]
+        """Run multiple queries and merge results, resolving photo references."""
+        tasks = [self.search_with_photos(q, city, limit_per_query) for q in queries]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         merged: list[dict] = []
