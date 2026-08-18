@@ -96,13 +96,18 @@ class PlacesSearchService:
         Mutates the place dict in-place and updates the cache if needed.
         """
         photo_url = place.get("photo_url", "")
-        if not photo_url or photo_url.startswith("http"):
+        if not photo_url:
+            logger.debug(f"[PLACES_SEARCH] No photo_url for '{place.get('name', '?')}'")
+            return
+        if photo_url.startswith("http"):
+            logger.debug(f"[PLACES_SEARCH] Photo already resolved for '{place.get('name', '?')}'")
             return
 
         try:
             resolved = await google_places.resolve_photo_url(photo_url)
             if resolved:
                 place["photo_url"] = resolved
+                logger.info(f"[PLACES_SEARCH] Resolved photo for '{place.get('name', '?')}' → {resolved[:80]}...")
                 # Update cache with resolved URL
                 async with async_session() as db:
                     await db.execute(
@@ -111,8 +116,10 @@ class PlacesSearchService:
                         .values(photo_url=resolved)
                     )
                     await db.commit()
+            else:
+                logger.warning(f"[PLACES_SEARCH] Photo resolution returned None for '{place.get('name', '?')}' (ref: {photo_url[:50]})")
         except Exception as e:
-            logger.warning(f"[PLACES_SEARCH] Photo resolution failed for {place.get('name', '?')}: {e}")
+            logger.warning(f"[PLACES_SEARCH] Photo resolution failed for '{place.get('name', '?')}': {e}")
 
     async def search_by_name(self, name: str, city: str) -> dict | None:
         """Search for a specific place by name (for edit commands).

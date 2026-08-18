@@ -238,9 +238,10 @@ class TravelAgent:
             "6. For trip_style, map keywords: 'beach'→'beaches', 'culture/history/temple'→'culture', "
             "'relax/spa'→'wellness', 'hiking/adventure'→'adventure', 'food/eating'→'food', 'city/urban'→'city'.\n"
             "7. For help_with, only extract if explicitly stated.\n"
-            "8. If a slot is NOT mentioned, omit it from the response.\n\n"
+            "8. If a slot is NOT mentioned, omit it from the response.\n"
+            "9. For startLocation, extract the city they're departing from if mentioned (e.g., 'from London' → 'London').\n\n"
             "Respond with ONLY a JSON object with the slots you could extract, e.g.:\n"
-            '{"destination": "Tokyo", "duration": 5, "travelers": "solo"}\n'
+            '{"destination": "Tokyo", "duration": 5, "travelers": "solo", "startLocation": "London"}\n'
             "If nothing can be extracted, return {}."
         )
 
@@ -264,6 +265,10 @@ class TravelAgent:
             for slot in SLOT_ORDER:
                 if slot in extracted and extracted[slot] is not None:
                     state = apply_slot_answer(state, slot, extracted[slot])
+
+            # Extract startLocation (not a slot, but useful for flight search)
+            if extracted.get("startLocation"):
+                state["startLocation"] = extracted["startLocation"]
 
             return state
         except Exception as e:
@@ -392,15 +397,16 @@ Respond with ONLY a JSON object:
         cities = trip_state.get("cities", [])
 
         if route_proposal and route_proposal.get("cities"):
-            build_cities = [
-                {"name": c["name"], "days": c["nights"]}
-                for c in route_proposal["cities"]
-            ]
+            build_cities = []
+            for i, c in enumerate(route_proposal["cities"]):
+                days = c["nights"] + 1 if i == 0 else c["nights"]
+                build_cities.append({"name": c["name"], "days": days})
         elif cities:
-            build_cities = [
-                {"name": c["name"], "days": c.get("nights", 1)}
-                for c in cities
-            ]
+            build_cities = []
+            for i, c in enumerate(cities):
+                nights = c.get("nights", 1)
+                days = nights + 1 if i == 0 else nights
+                build_cities.append({"name": c["name"], "days": days})
         else:
             return trip_state
 
@@ -415,6 +421,11 @@ Respond with ONLY a JSON object:
             "tripStyle": trip_state.get("tripStyle", "balanced"),
             "helpWith": trip_state.get("helpWith", []),
         }
+
+        # Pass startLocation for flight search if available
+        start_location = trip_state.get("startLocation")
+        if start_location:
+            ctx["startLocation"] = start_location
 
         dates = trip_state.get("dates")
         if dates and dates.get("start"):

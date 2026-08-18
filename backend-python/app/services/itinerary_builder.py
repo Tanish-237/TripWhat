@@ -7,18 +7,21 @@ Uses a search → curate → enrich pipeline:
   4. Build itinerary with real place data (coordinates, ratings, descriptions)
 """
 
+import asyncio
 import json
 import re
 from datetime import datetime, timedelta
 
 from langchain_openai import ChatOpenAI
 
+from app.config import settings
 from app.schemas.itinerary import (
     Itinerary, DayPlan, TimeSlot, Activity, ActivityLocation, ActivityCost,
+    HotelRecommendation, RestaurantRecommendation, FlightOption,
     create_itinerary, create_day_plan, create_time_slot,
 )
 from app.services.places_search import places_search
-from app.services.query_generator import generate_queries
+from app.services.query_generator import generate_queries, generate_hotel_queries, generate_restaurant_queries
 from app.utils.logger import logger
 
 
@@ -123,7 +126,7 @@ class ItineraryBuilder:
         budget = self._pace_to_budget(trip_style)
         total_budget = sum(budget.values())
 
-        # Format places for the LLM with estimated durations
+        # Format places for the LLM with estimated durations and coordinates
         places_text = []
         for i, p in enumerate(places):
             name = p.get("name", "Unknown")
@@ -131,7 +134,10 @@ class ItineraryBuilder:
             ptype = ", ".join(p.get("types", [])[:3]) if p.get("types") else "attraction"
             desc = p.get("description", "")[:100]
             est_dur = self._estimate_duration(p)
-            places_text.append(f"{i+1}. {name} (rating: {rating}, type: {ptype}, est: {est_dur}h) — {desc}")
+            coords = p.get("coordinates", {})
+            lat = coords.get("lat", 0) if coords else 0
+            lng = coords.get("lng", 0) if coords else 0
+            places_text.append(f"{i+1}. {name} (rating: {rating}, type: {ptype}, est: {est_dur}h, lat: {lat:.4f}, lng: {lng:.4f}) — {desc}")
 
         places_str = "\n".join(places_text)
 
@@ -157,14 +163,15 @@ Trip context:
 - Trip style: {trip_style}{first_day_note}{last_day_note}{other_cities}
 
 Rules:
-1. Select 2-5 different places from the list above (use the exact name)
-2. Assign each to morning, afternoon, or evening
-3. The total estimated duration should fit within the time budget for each period
-4. Consider variety (don't pick 3 museums or 3 restaurants)
-5. Consider logical ordering (proximity, energy levels)
-6. Write a one-sentence description for each
-7. Set a realistic duration_hours based on the place type
-8. Do NOT repeat places used on previous days{used_clause}
+1. GROUP places by geographic proximity — pick places that are close together so the traveler minimizes transit time. Use the lat/lng coordinates to cluster nearby places.
+2. Order the selected places in a logical walking/route order (nearest to farthest from a starting point, minimizing backtracking).
+3. Select 2-5 different places from the list above (use the exact name)
+4. Assign each to morning, afternoon, or evening
+5. The total estimated duration should fit within the time budget for each period
+6. Consider variety (don't pick 3 museums or 3 restaurants)
+7. Write a one-sentence description for each
+8. Set a realistic duration_hours based on the place type
+9. Do NOT repeat places used on previous days{used_clause}
 
 Respond with ONLY a JSON array of 2-5 objects:
 [{{"period": "morning", "name": "<exact name from list>", "type": "<category>", "description": "<one sentence>", "duration": "<hours>", "duration_hours": <number>}}, ...]
@@ -181,7 +188,9 @@ Respond with ONLY a JSON array of 2-5 objects:
                 curated = json.loads(json_match.group())
                 if isinstance(curated, list) and len(curated) >= 2:
                     # Enrich curated activities with real place data
-                    return await self._enrich_activities(curated, places)
+                    enriched = await self._enrich_activities(curated, places)
+                    # Sort by proximity (greedy nearest-neighbor)
+                    return self._sort_by_proximity(enriched)
         except Exception as e:
             logger.error(f"[ITINERARY_BUILDER] LLM curation failed: {e}")
 
@@ -232,6 +241,46 @@ Respond with ONLY a JSON array of 2-5 objects:
             enriched.append(c)
 
         return enriched
+
+    @staticmethod
+    def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+        """Approximate distance in km between two lat/lng points."""
+        import math
+        R = 6371.0
+        dlat = math.radians(lat2 - lat1)
+        dlng = math.radians(lng2 - lng1)
+        a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
+        return R * 2 * math.asin(math.sqrt(a))
+
+    def _sort_by_proximity(self, activities: list[dict]) -> list[dict]:
+        """Sort activities by greedy nearest-neighbor using coordinates.
+
+        Starts from the first activity and repeatedly picks the closest
+        unvisited activity, producing a route that minimizes total transit.
+        """
+        if len(activities) <= 1:
+            return activities
+
+        def get_coords(a: dict) -> tuple[float, float]:
+            c = a.get("coordinates", {})
+            if c and c.get("lat") and c.get("lng"):
+                return c["lat"], c["lng"]
+            return 0.0, 0.0
+
+        result = [activities[0]]
+        remaining = list(activities[1:])
+        while remaining:
+            last = get_coords(result[-1])
+            nearest_idx = 0
+            nearest_dist = float("inf")
+            for i, a in enumerate(remaining):
+                coords = get_coords(a)
+                dist = self._haversine_km(last[0], last[1], coords[0], coords[1])
+                if dist < nearest_dist:
+                    nearest_dist = dist
+                    nearest_idx = i
+            result.append(remaining.pop(nearest_idx))
+        return result
 
     def _pick_top_3(self, places: list[dict]) -> list[dict]:
         """Fallback: pick top 3 places by rating."""
@@ -359,6 +408,15 @@ Respond with ONLY a JSON array of 2-5 objects:
                 time_slots.append(slot)
             day.timeSlots = time_slots
 
+        # Fetch hotel and restaurant recommendations for the city
+        hotels, restaurants = await self._search_hotels_and_restaurants(destination)
+        itinerary.hotelRecommendations = hotels
+        itinerary.restaurantRecommendations = restaurants
+
+        # Search flights if start location and dates are available
+        flights = await self._search_flights_for_trip(ctx)
+        itinerary.flightOptions = flights
+
         return {"itinerary": itinerary.model_dump()}
 
     async def _build_multi_city(self, ctx: dict) -> dict:
@@ -384,7 +442,7 @@ Respond with ONLY a JSON array of 2-5 objects:
                     day = itinerary.days[day_idx]
                     day.location = city["name"]
                     day.title = f"Day {day_idx + 1} - {city['name']}"
-                    day.subtitle = self._generate_day_description(city["name"], d + 1, city_days, trip_style)
+                    day.subtitle = self._generate_day_description(city["name"], day_idx + 1, total_days, trip_style)
                     activities = await self._search_and_curate_activities(
                         city["name"], day_idx + 1, total_days, trip_style, help_with, all_city_names, used_names
                     )
@@ -406,6 +464,20 @@ Respond with ONLY a JSON array of 2-5 objects:
             itinerary.tripMetadata.preferences = ctx["preferences"]
         if ctx.get("travelType"):
             itinerary.tripMetadata.travelType = ctx["travelType"]
+
+        # Fetch hotel and restaurant recommendations per city
+        all_hotels: list[HotelRecommendation] = []
+        all_restaurants: list[RestaurantRecommendation] = []
+        for city in cities:
+            hotels, restaurants = await self._search_hotels_and_restaurants(city["name"])
+            all_hotels.extend(hotels)
+            all_restaurants.extend(restaurants)
+        itinerary.hotelRecommendations = all_hotels
+        itinerary.restaurantRecommendations = all_restaurants
+
+        # Search flights if start location and dates are available
+        flights = await self._search_flights_for_trip(ctx)
+        itinerary.flightOptions = flights
 
         return {"itinerary": itinerary.model_dump()}
 
@@ -459,6 +531,238 @@ Respond with ONLY a JSON array of 2-5 objects:
             return f"Go deeper into {city}. {activity_hint.capitalize()} and discover something unexpected."
         else:
             return f"Another day in {city} — {activity_hint} and see where the day takes you."
+
+    async def _search_flights_for_trip(self, ctx: dict) -> list[FlightOption]:
+        """Search for flights if SerpApi is configured and we have start location + dates.
+
+        Gracefully skips if SerpApi key is missing or no dates/start location.
+        """
+        from app.services.serpapi_provider import serpapi_provider
+
+        if not settings.serpapi_api_key:
+            logger.debug("[ITINERARY_BUILDER] Skipping flights — no SerpApi key")
+            return []
+
+        start_location = ctx.get("startLocation")
+        if isinstance(start_location, dict):
+            start_location = start_location.get("name")
+        if not start_location:
+            logger.debug("[ITINERARY_BUILDER] Skipping flights — no start location")
+            return []
+
+        start_date = ctx.get("startDate")
+        if not start_date:
+            logger.debug("[ITINERARY_BUILDER] Skipping flights — no start date")
+            return []
+
+        cities = ctx.get("cities") or []
+        if cities:
+            destination_city = cities[0]["name"]
+            total_days = ctx.get("totalDays") or sum(c["days"] for c in cities)
+        else:
+            destination_city = ctx.get("destination", "")
+            total_days = ctx.get("duration", 1)
+
+        if not destination_city:
+            return []
+
+        # Calculate return date
+        try:
+            dep_date = datetime.fromisoformat(start_date).date()
+            ret_date = dep_date + timedelta(days=total_days)
+            return_date = ret_date.isoformat()
+        except Exception:
+            return_date = None
+
+        # Resolve airport codes via autocomplete
+        origin_code = await self._resolve_airport_code(start_location)
+        dest_code = await self._resolve_airport_code(destination_city)
+        if not origin_code or not dest_code:
+            logger.warning(
+                f"[ITINERARY_BUILDER] Could not resolve airport codes: "
+                f"{start_location}→{destination_city}"
+            )
+            return []
+
+        adults = ctx.get("numberOfPeople", 1)
+        travel_class = "economy"
+        prefs = ctx.get("travelPreferences") or {}
+        if prefs.get("cabinClass"):
+            travel_class = prefs["cabinClass"]
+
+        try:
+            flights_data = await serpapi_provider.search_flights(
+                origin=origin_code,
+                destination=dest_code,
+                departure_date=start_date[:10],
+                return_date=return_date,
+                adults=adults,
+                travel_class=travel_class,
+            )
+        except Exception as e:
+            logger.error(f"[ITINERARY_BUILDER] Flight search failed: {e}")
+            return []
+
+        # Convert to FlightOption models (top 3)
+        flight_models = []
+        for f in flights_data[:3]:
+            flight_models.append(FlightOption(
+                id=f.get("id", ""),
+                legs=f.get("legs", []),
+                layovers=f.get("layovers", []),
+                totalDuration=f.get("totalDuration", 0),
+                price=f.get("price", 0),
+                currency=f.get("currency", "USD"),
+                type=f.get("type", ""),
+                isBest=f.get("isBest", False),
+                bookingLink=f.get("bookingLink", ""),
+            ))
+
+        logger.info(
+            f"[ITINERARY_BUILDER] Flights {start_location}→{destination_city}: "
+            f"{len(flight_models)} options"
+        )
+        return flight_models
+
+    @staticmethod
+    async def _resolve_airport_code(city_name: str) -> str | None:
+        """Resolve a city name to an airport code via SerpApi autocomplete."""
+        from app.services.serpapi_provider import serpapi_provider
+
+        if not city_name:
+            return None
+        try:
+            suggestions = await serpapi_provider.autocomplete(city_name)
+            if suggestions:
+                return suggestions[0].get("code", "")
+        except Exception as e:
+            logger.warning(f"[ITINERARY_BUILDER] Airport code resolution failed for {city_name}: {e}")
+        return None
+
+    async def _search_hotels_and_restaurants(self, city: str) -> tuple[list[HotelRecommendation], list[RestaurantRecommendation]]:
+        """Search for top hotels and restaurants in a city.
+
+        Uses Google Places Text Search API directly for richer results,
+        falling back to places_search if no API key.
+        """
+        from app.services.google_places import google_places
+
+        hotel_queries = generate_hotel_queries(city)
+        restaurant_queries = generate_restaurant_queries(city)
+
+        # Try text_search first (returns up to 20 results per query)
+        if settings.google_places_api_key:
+            hotel_tasks = [google_places.text_search(q, limit=5) for q in hotel_queries]
+            restaurant_tasks = [google_places.text_search(q, limit=5) for q in restaurant_queries]
+            hotel_results, restaurant_results = await asyncio.gather(
+                asyncio.gather(*hotel_tasks, return_exceptions=True),
+                asyncio.gather(*restaurant_tasks, return_exceptions=True),
+            )
+            hotel_places = []
+            for r in hotel_results:
+                if isinstance(r, list):
+                    hotel_places.extend(r)
+            restaurant_places = []
+            for r in restaurant_results:
+                if isinstance(r, list):
+                    restaurant_places.extend(r)
+        else:
+            # Fallback to places_search (MCP → OpenTripMap)
+            hotel_places, restaurant_places = await asyncio.gather(
+                places_search.search_multiple(hotel_queries, city, limit_per_query=3),
+                places_search.search_multiple(restaurant_queries, city, limit_per_query=3),
+            )
+
+        # Deduplicate by placeId and pick top 5 by rating
+        hotels = self._dedupe_and_rank(hotel_places, max_results=5)
+        restaurants = self._dedupe_and_rank(restaurant_places, max_results=5)
+
+        # Resolve photos and build model instances
+        hotel_models = []
+        for h in hotels:
+            photo_url = h.get("photo_url", "")
+            if photo_url and not photo_url.startswith("http"):
+                try:
+                    resolved = await google_places.resolve_photo_url(photo_url)
+                    if resolved:
+                        photo_url = resolved
+                except Exception:
+                    photo_url = None
+            else:
+                photo_url = photo_url or None
+
+            hotel_models.append(HotelRecommendation(
+                name=h.get("name", ""),
+                placeId=h.get("placeId"),
+                address=h.get("address"),
+                rating=h.get("rating"),
+                imageUrl=photo_url,
+                website=h.get("website"),
+                phone=h.get("phone"),
+                coordinates=h.get("coordinates"),
+                description=h.get("description"),
+            ))
+
+        restaurant_models = []
+        for r in restaurants:
+            photo_url = r.get("photo_url", "")
+            if photo_url and not photo_url.startswith("http"):
+                try:
+                    resolved = await google_places.resolve_photo_url(photo_url)
+                    if resolved:
+                        photo_url = resolved
+                except Exception:
+                    photo_url = None
+            else:
+                photo_url = photo_url or None
+
+            # Extract cuisine from types
+            types = r.get("types", [])
+            cuisine = None
+            for t in types:
+                if t in ("restaurant", "cafe", "bar", "meal_takeaway", "bakery"):
+                    cuisine = t.replace("_", " ").title()
+                    break
+
+            restaurant_models.append(RestaurantRecommendation(
+                name=r.get("name", ""),
+                placeId=r.get("placeId"),
+                address=r.get("address"),
+                rating=r.get("rating"),
+                imageUrl=photo_url,
+                cuisine=cuisine,
+                website=r.get("website"),
+                phone=r.get("phone"),
+                coordinates=r.get("coordinates"),
+                description=r.get("description"),
+            ))
+
+        logger.info(
+            f"[ITINERARY_BUILDER] Hotels/restaurants for {city}: "
+            f"{len(hotel_models)} hotels, {len(restaurant_models)} restaurants"
+        )
+        return hotel_models, restaurant_models
+
+    @staticmethod
+    def _dedupe_and_rank(places: list[dict], max_results: int = 5) -> list[dict]:
+        """Deduplicate places by placeId and rank by rating."""
+        seen_ids = set()
+        seen_names = set()
+        unique = []
+        for p in places:
+            pid = p.get("placeId", "")
+            name = p.get("name", "").lower()
+            if pid and pid in seen_ids:
+                continue
+            if name and name in seen_names:
+                continue
+            if pid:
+                seen_ids.add(pid)
+            if name:
+                seen_names.add(name)
+            unique.append(p)
+        ranked = sorted(unique, key=lambda p: p.get("rating") or 0, reverse=True)
+        return ranked[:max_results]
 
     def compute_day_signature(self, day: DayPlan) -> str:
         slot_count = len(day.timeSlots)

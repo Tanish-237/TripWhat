@@ -22,16 +22,16 @@ async def build_itinerary(state: Annotated[dict, InjectedState]) -> str:
     route_proposal = trip_state.get("routeProposal")
 
     if route_proposal and route_proposal.get("cities"):
-        build_cities = [
-            {"name": c["name"], "days": c["nights"]}
-            for c in route_proposal["cities"]
-        ]
+        build_cities = []
+        for i, c in enumerate(route_proposal["cities"]):
+            days = c["nights"] + 1 if i == 0 else c["nights"]
+            build_cities.append({"name": c["name"], "days": days})
     elif cities:
-        total_nights = sum(c.get("nights", 1) for c in cities)
-        build_cities = [
-            {"name": c["name"], "days": c.get("nights", 1)}
-            for c in cities
-        ]
+        build_cities = []
+        for i, c in enumerate(cities):
+            nights = c.get("nights", 1)
+            days = nights + 1 if i == 0 else nights
+            build_cities.append({"name": c["name"], "days": days})
     else:
         return "Cannot build itinerary: no cities in trip state."
 
@@ -44,7 +44,13 @@ async def build_itinerary(state: Annotated[dict, InjectedState]) -> str:
         "numberOfPeople": (trip_state.get("travelers") or {}).get("adults", 1),
         "preferences": trip_state.get("preferences", []),
         "tripStyle": trip_state.get("tripStyle", "balanced"),
+        "helpWith": trip_state.get("helpWith", []),
     }
+
+    # Pass startLocation for flight search if available
+    start_location = trip_state.get("startLocation")
+    if start_location:
+        ctx["startLocation"] = start_location
 
     dates = trip_state.get("dates")
     if dates and dates.get("start"):

@@ -93,10 +93,63 @@ class TripMetadata(BaseModel):
     travelMeans: dict | None = None
 
 
+class HotelRecommendation(BaseModel):
+    name: str = ""
+    placeId: str | None = None
+    address: str | None = None
+    rating: float | None = None
+    priceLevel: int | None = None
+    imageUrl: str | None = None
+    website: str | None = None
+    phone: str | None = None
+    coordinates: dict | None = None
+    description: str | None = None
+
+
+class RestaurantRecommendation(BaseModel):
+    name: str = ""
+    placeId: str | None = None
+    address: str | None = None
+    rating: float | None = None
+    priceLevel: int | None = None
+    imageUrl: str | None = None
+    cuisine: str | None = None
+    website: str | None = None
+    phone: str | None = None
+    coordinates: dict | None = None
+    description: str | None = None
+
+
+class FlightLeg(BaseModel):
+    departureAirport: dict = Field(default_factory=dict)
+    arrivalAirport: dict = Field(default_factory=dict)
+    airline: str = ""
+    flightNumber: str = ""
+    duration: int = 0
+    airplane: str = ""
+    travelClass: str = ""
+    overnight: bool = False
+
+
+class FlightOption(BaseModel):
+    id: str = ""
+    legs: list[FlightLeg] = []
+    layovers: list[dict] = []
+    totalDuration: int = 0
+    price: float = 0
+    currency: str = "USD"
+    type: str = ""
+    isBest: bool = False
+    bookingLink: str = ""
+
+
 class Itinerary(BaseModel):
     id: str = Field(default_factory=_uuid)
     tripMetadata: TripMetadata = Field(default_factory=TripMetadata)
     days: list[DayPlan] = []
+    hotelRecommendations: list[HotelRecommendation] = []
+    restaurantRecommendations: list[RestaurantRecommendation] = []
+    flightOptions: list[FlightOption] = []
     createdAt: datetime = Field(default_factory=datetime.utcnow)
     updatedAt: datetime = Field(default_factory=datetime.utcnow)
 

@@ -21,6 +21,7 @@ class TripState(TypedDict, total=False):
     itinerary: Optional[dict]
     onboarding: dict
     routeProposal: Optional[dict]
+    startLocation: Optional[str]
     version: int
 
 

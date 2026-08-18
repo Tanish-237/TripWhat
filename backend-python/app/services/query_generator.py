@@ -115,4 +115,8 @@ def generate_restaurant_queries(city: str) -> list[str]:
 
 def generate_hotel_queries(city: str) -> list[str]:
     """Generate hotel-specific queries."""
-    return [f"hotels in {city}", f"best areas to stay in {city}"]
+    return [
+        f"best hotels in {city}",
+        f"top rated hotels in {city}",
+        f"hotels near city center {city}",
+    ]
