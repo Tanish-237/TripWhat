@@ -4,3 +4,14 @@ __pycache__/
 *.pyc
 .DS_Store
 node_modules/
+
+# AI tooling
+.agents/
+.claude/
+.windsurf/
+.gitnexus/
+
+# Root-level AI/generated docs
+AGENTS.md
+CLAUDE.md
+PRODUCTION_READINESS.md
