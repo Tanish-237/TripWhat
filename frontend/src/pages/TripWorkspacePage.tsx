@@ -1,8 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { MapPin, Plus, Mail, Bookmark, Calendar, Plane, Hotel, Utensils, Package, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { MapPin, Plus, Mail, Bookmark, Calendar, Plane, Hotel, Utensils, Package, RefreshCw, CheckCircle2, Star, ExternalLink, Check, X, ArrowRight } from 'lucide-react';
 import { ChatPanel } from '../components/Chat/ChatPanel';
 import { TripMap } from '../components/map/TripMap';
+import { PlaceDetailPanel } from '../components/PlaceDetailPanel';
+import { FlightCard } from '../components/FlightCard';
 import { useTripStore } from '../stores/tripStore';
 import { useChatStore } from '../stores/chatStore';
 import { useUIStore } from '../stores/uiStore';
@@ -10,11 +12,12 @@ import { gmailApi } from '../lib/api';
 
 export default function TripWorkspacePage() {
   const { id } = useParams<{ id: string }>();
-  const { tripState, fetchTrip, connectSocket, disconnectSocket, setTripState, updateTrip } = useTripStore();
+  const { tripState, fetchTrip, connectSocket, disconnectSocket, setTripState, updateTrip, pendingDiff, acceptDiff, rejectDiff } = useTripStore();
   const conversationId = useChatStore((s) => s.conversationId);
   const { activeTab, setActiveTab, cityFilter, setCityFilter } = useUIStore();
   const [tripLoading, setTripLoading] = useState(true);
   const [tripError, setTripError] = useState<string | null>(null);
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const pendingSaveRef = useRef<any>(null);
 
   useEffect(() => {
@@ -46,11 +49,14 @@ export default function TripWorkspacePage() {
     setTripState(newTripState);
     if (!newTripState || !id) return;
 
+    const { conversationId, messages } = useChatStore.getState();
     const saveData = {
       generatedItinerary: newTripState.itinerary,
       cities: (newTripState.cities || []).map((c: any) => ({ name: c.name, days: c.nights ? c.nights + 1 : 1 })),
       totalDays: newTripState.duration || newTripState.itinerary?.days?.length,
       tripState: newTripState,
+      conversationId: conversationId || undefined,
+      chatHistory: messages?.length ? messages.map((m) => ({ role: m.role, content: m.content, timestamp: m.timestamp })) : undefined,
     };
 
     pendingSaveRef.current = saveData;
@@ -133,12 +139,32 @@ export default function TripWorkspacePage() {
               </div>
 
               {/* Tab content */}
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto relative">
+                {pendingDiff && (
+                  <DiffOverlay
+                    changeSummary={pendingDiff.changeSummary}
+                    onAccept={acceptDiff}
+                    onReject={rejectDiff}
+                  />
+                )}
                 {activeTab === 'plan' && (
-                  <PlanTab itinerary={itinerary} cityFilter={cityFilter} setCityFilter={setCityFilter} cities={cities} />
+                  <PlanTab
+                    itinerary={itinerary}
+                    cityFilter={cityFilter}
+                    setCityFilter={setCityFilter}
+                    cities={cities}
+                    onSelectPlace={setSelectedPlaceId}
+                  />
                 )}
                 {activeTab === 'bookings' && <BookingsTab />}
                 {activeTab === 'saved' && <SavedTab />}
+                {selectedPlaceId && (
+                  <PlaceDetailPanel
+                    placeId={selectedPlaceId}
+                    onClose={() => setSelectedPlaceId(null)}
+                    onSelectAlternate={(pid) => setSelectedPlaceId(pid)}
+                  />
+                )}
               </div>
             </div>
           </>
@@ -148,7 +174,7 @@ export default function TripWorkspacePage() {
   );
 }
 
-function PlanTab({ itinerary, cityFilter, setCityFilter, cities }: any) {
+function PlanTab({ itinerary, cityFilter, setCityFilter, cities, onSelectPlace }: any) {
   if (!itinerary || !itinerary.days) {
     return (
       <div className="flex flex-col items-center justify-center h-full py-12 text-center">
@@ -224,8 +250,13 @@ function PlanTab({ itinerary, cityFilter, setCityFilter, cities }: any) {
               {day.timeSlots?.map((slot: any, i: number) => {
                 const activityName = slot.activity?.name || slot.activities?.map((a: any) => a.name).join(', ') || '';
                 const imageUrl = slot.activity?.imageUrl || slot.activity?.photos?.[0];
+                const placeId = slot.activity?.placeId || '';
                 return (
-                  <div key={i} className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg)] transition-colors">
+                  <div
+                    key={i}
+                    className={`flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg)] transition-colors ${placeId ? 'cursor-pointer' : ''}`}
+                    onClick={() => placeId && onSelectPlace(placeId)}
+                  >
                     {imageUrl && (
                       <img
                         src={imageUrl}
@@ -261,6 +292,164 @@ function PlanTab({ itinerary, cityFilter, setCityFilter, cities }: any) {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Flight options */}
+      {itinerary.flightOptions?.length > 0 && (
+        <div className="mt-6">
+          <div className="flex items-center gap-2 mb-2">
+            <Plane className="w-4 h-4 text-[var(--muted)]" />
+            <span className="text-xs font-semibold text-[var(--ink)]">Flight Options</span>
+          </div>
+          <div className="space-y-2">
+            {itinerary.flightOptions.map((flight: any, i: number) => (
+              <FlightCard key={i} flight={flight} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Hotel recommendations */}
+      {itinerary.hotelRecommendations?.length > 0 && (
+        <div className="mt-6">
+          <div className="flex items-center gap-2 mb-2">
+            <Hotel className="w-4 h-4 text-[var(--muted)]" />
+            <span className="text-xs font-semibold text-[var(--ink)]">Hotel Recommendations</span>
+          </div>
+          <div className="space-y-2">
+            {itinerary.hotelRecommendations.map((hotel: any, i: number) => (
+              <RecommendationCard key={i} item={hotel} onSelectPlace={onSelectPlace} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Restaurant recommendations */}
+      {itinerary.restaurantRecommendations?.length > 0 && (
+        <div className="mt-6">
+          <div className="flex items-center gap-2 mb-2">
+            <Utensils className="w-4 h-4 text-[var(--muted)]" />
+            <span className="text-xs font-semibold text-[var(--ink)]">Restaurant Recommendations</span>
+          </div>
+          <div className="space-y-2">
+            {itinerary.restaurantRecommendations.map((rest: any, i: number) => (
+              <RecommendationCard key={i} item={rest} onSelectPlace={onSelectPlace} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecommendationCard({ item, onSelectPlace }: any) {
+  return (
+    <div
+      className={`flex items-center gap-3 p-3 rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:bg-[var(--bg)] transition-colors ${item.placeId ? 'cursor-pointer' : ''}`}
+      onClick={() => item.placeId && onSelectPlace(item.placeId)}
+    >
+      {item.imageUrl && (
+        <img
+          src={item.imageUrl}
+          alt={item.name}
+          className="w-12 h-12 rounded-md object-cover shrink-0"
+          loading="lazy"
+        />
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium text-[var(--ink)] truncate">{item.name}</p>
+        {item.address && (
+          <p className="text-[10px] text-[var(--muted)] truncate mt-0.5">{item.address}</p>
+        )}
+        {item.description && (
+          <p className="text-[10px] text-[var(--muted)] truncate mt-0.5">{item.description}</p>
+        )}
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        {item.rating != null && (
+          <div className="flex items-center gap-0.5">
+            <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+            <span className="text-[10px] font-medium text-[var(--ink)]">{item.rating}</span>
+          </div>
+        )}
+        {item.cuisine && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--sage)] text-[var(--muted)] capitalize">
+            {item.cuisine}
+          </span>
+        )}
+        {item.website && (
+          <a
+            href={item.website}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="p-1 rounded hover:bg-[var(--sage)] text-[var(--muted)] hover:text-[var(--ink)] transition-colors"
+          >
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DiffOverlay({ changeSummary, onAccept, onReject }: any) {
+  const ACTION_ICONS: Record<string, any> = {
+    add: Plus,
+    remove: X,
+    replace: ArrowRight,
+    move: ArrowRight,
+  };
+  const ACTION_COLORS: Record<string, string> = {
+    add: 'text-green-600',
+    remove: 'text-red-500',
+    replace: 'text-amber-600',
+    move: 'text-blue-500',
+  };
+
+  return (
+    <div className="sticky top-0 z-20 bg-[var(--surface)] border-b border-[var(--border)] shadow-sm">
+      <div className="px-4 py-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-semibold text-[var(--ink)]">Proposed changes</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onReject}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-[var(--muted)] border border-[var(--border)] hover:bg-[var(--sage)] transition-colors"
+            >
+              <X className="w-3 h-3" />
+              Reject
+            </button>
+            <button
+              onClick={onAccept}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-white bg-[var(--ink)] hover:bg-[#292524] transition-colors"
+            >
+              <Check className="w-3 h-3" />
+              Accept
+            </button>
+          </div>
+        </div>
+        <div className="space-y-1">
+          {changeSummary.map((change: any, i: number) => {
+            const Icon = ACTION_ICONS[change.action] || Plus;
+            const color = ACTION_COLORS[change.action] || 'text-[var(--muted)]';
+            const label = change.action === 'add'
+              ? `Add ${change.target || change.added?.join(', ') || 'item'}`
+              : change.action === 'remove'
+              ? `Remove ${change.target || change.removed?.join(', ') || 'item'}`
+              : change.action === 'replace'
+              ? `Replace with ${change.target}`
+              : change.action === 'move'
+              ? `Move ${change.target}`
+              : `${change.action}: ${change.target || ''}`;
+            return (
+              <div key={i} className="flex items-center gap-2 text-[10px]">
+                <Icon className={`w-3 h-3 ${color} shrink-0`} />
+                <span className="text-[var(--ink)]">{label}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

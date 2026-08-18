@@ -64,9 +64,25 @@ export function ChatPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const hasSentInitial = useRef(false);
 
+  // On mount: restore from chatStore if messages exist (reopening a trip),
+  // otherwise reset the store for a fresh chat
   useEffect(() => {
-    reset();
-  }, [reset]);
+    const msgs = useChatStore.getState().messages;
+    if (msgs && msgs.length > 0) {
+      const userMsgs = msgs.filter((m) => m.role === 'user').map((m) => m.content);
+      const lastAssistant = [...msgs].reverse().find((m) => m.role === 'assistant');
+      if (userMsgs.length > 0) {
+        setUserBubbles(userMsgs);
+        setHasStarted(true);
+      }
+      if (lastAssistant) {
+        setAssistantText(lastAssistant.content);
+      }
+    } else {
+      reset();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (initialMessage && !hasSentInitial.current && !hasStarted) {
@@ -122,6 +138,19 @@ export function ChatPanel({
 
     setAssistantText(data.message || '');
 
+    // Persist assistant message to chatStore for chatHistory saving
+    if (data.message) {
+      useChatStore.getState().addMessage({
+        role: 'assistant',
+        content: data.message,
+        timestamp: new Date().toISOString(),
+        widgets: data.widgets,
+        suggestions: data.suggestions,
+        changeSummary: data.changeSummary,
+        classification: data.classification,
+      });
+    }
+
     if (data.tripState?.itinerary && onItineraryBuilt) {
       onItineraryBuilt(data.tripState);
     }
@@ -136,6 +165,13 @@ export function ChatPanel({
     setLoading(true);
     setAgentStatus('Thinking...');
     setStreamingText('');
+
+    // Persist user message to chatStore for chatHistory saving
+    useChatStore.getState().addMessage({
+      role: 'user',
+      content: text.trim(),
+      timestamp: new Date().toISOString(),
+    });
 
     try {
       const res = await chatApi.sendMessage({
@@ -179,6 +215,13 @@ export function ChatPanel({
     setAgentStatus('Thinking...');
     setStreamingText('');
 
+    // Persist user answer to chatStore for chatHistory saving
+    useChatStore.getState().addMessage({
+      role: 'user',
+      content: answerLabel,
+      timestamp: new Date().toISOString(),
+    });
+
     try {
       const res = await chatApi.sendMessage({
         message: answerLabel,
@@ -209,6 +252,13 @@ export function ChatPanel({
     setLoading(true);
     setAgentStatus('Processing...');
     setStreamingText('');
+
+    // Persist user decision to chatStore
+    useChatStore.getState().addMessage({
+      role: 'user',
+      content: decision,
+      timestamp: new Date().toISOString(),
+    });
 
     try {
       await chatApi.resumeAgent({

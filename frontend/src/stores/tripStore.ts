@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { io, type Socket } from 'socket.io-client';
 import { useChatStore } from './chatStore';
+import { chatApi } from '../lib/api';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5001';
 
@@ -57,6 +58,8 @@ interface TripStore {
   error: string | null;
   socket: Socket | null;
   socketConnected: boolean;
+  pendingDiff: { tripState: TripState; changeSummary: any[] } | null;
+  lastEventId: string | null;
 
   fetchTrips: () => Promise<void>;
   fetchTrip: (id: string) => Promise<void>;
@@ -67,6 +70,10 @@ interface TripStore {
   connectSocket: (conversationId?: string) => void;
   disconnectSocket: () => void;
   applyTripUpdate: (trip: Trip, changeSummary?: any[]) => void;
+  setPendingDiff: (diff: { tripState: TripState; changeSummary: any[] } | null) => void;
+  acceptDiff: () => void;
+  rejectDiff: () => void;
+  replayMissedEvents: (conversationId: string) => Promise<void>;
 }
 
 const getToken = () => localStorage.getItem('tripwhat_token');
@@ -80,6 +87,8 @@ export const useTripStore = create<TripStore>((set, get) => ({
   error: null,
   socket: null,
   socketConnected: false,
+  pendingDiff: null,
+  lastEventId: null,
 
   fetchTrips: async () => {
     set({ loading: true, error: null });
@@ -107,11 +116,21 @@ export const useTripStore = create<TripStore>((set, get) => ({
       if (!res.ok) throw new Error(`Failed to fetch trip (${res.status})`);
       const data = await res.json();
       set({ currentTrip: data, tripState: data.tripState, loading: false });
-      if (data.chatHistory?.length) {
-        useChatStore.getState().setMessages(data.chatHistory);
-      }
       if (data.conversationId) {
         useChatStore.getState().setConversationId(data.conversationId);
+      }
+      // Restore chat history: prefer saved chatHistory, fall back to conversation DB
+      if (data.chatHistory?.length) {
+        useChatStore.getState().setMessages(data.chatHistory);
+      } else if (data.conversationId) {
+        try {
+          const histRes = await chatApi.getHistory(data.conversationId);
+          if (histRes.data?.messages?.length) {
+            useChatStore.getState().setMessages(histRes.data.messages);
+          }
+        } catch {
+          // Conversation may not exist — ignore
+        }
       }
     } catch (err: any) {
       set({ error: err.message, loading: false });
@@ -202,7 +221,12 @@ export const useTripStore = create<TripStore>((set, get) => ({
     const existing = get().socket;
     if (existing) {
       if (conversationId) {
-        existing.emit('join:conversation', conversationId);
+        // Replay missed events before joining the room — events may have been
+        // emitted between send_message starting the background task and us
+        // joining the room.
+        get().replayMissedEvents(conversationId).then(() => {
+          existing.emit('join:conversation', conversationId);
+        });
       }
       return;
     }
@@ -214,9 +238,11 @@ export const useTripStore = create<TripStore>((set, get) => ({
       reconnectionDelay: 1000,
     });
 
-    socket.on('connect', () => {
+    socket.on('connect', async () => {
       set({ socketConnected: true });
       if (conversationId) {
+        // Replay missed events before joining the room for live updates
+        await get().replayMissedEvents(conversationId);
         socket.emit('join:conversation', conversationId);
       }
     });
@@ -225,12 +251,31 @@ export const useTripStore = create<TripStore>((set, get) => ({
       set({ socketConnected: false });
     });
 
+    socket.on('reconnect', async () => {
+      set({ socketConnected: true });
+      if (conversationId) {
+        await get().replayMissedEvents(conversationId);
+        socket.emit('join:conversation', conversationId);
+      }
+    });
+
     socket.on('trip:updated', (data: { trip: Trip; changeSummary?: any[] }) => {
-      get().applyTripUpdate(data.trip, data.changeSummary);
+      if (data.changeSummary && data.changeSummary.length > 0) {
+        // Intercept as pending diff — user must accept/reject
+        set({
+          pendingDiff: {
+            tripState: data.trip.tripState || data.trip as any,
+            changeSummary: data.changeSummary,
+          },
+        });
+      } else {
+        get().applyTripUpdate(data.trip, data.changeSummary);
+      }
     });
 
     // Streaming events from agent
-    socket.on('agent:token', (data: { conversationId: string; text: string }) => {
+    socket.on('agent:token', (data: { conversationId: string; text: string; eventId?: string }) => {
+      if (data.eventId) set({ lastEventId: data.eventId });
       useChatStore.getState().appendStreamingText(data.text);
     });
 
@@ -238,10 +283,18 @@ export const useTripStore = create<TripStore>((set, get) => ({
       useChatStore.getState().setAgentStatus(data.status);
     });
 
-    socket.on('agent:tripState', (data: { conversationId: string; tripState: any }) => {
-      const { setTripState } = get();
+    socket.on('agent:tripState', (data: { conversationId: string; tripState: any; changeSummary?: any[] }) => {
       if (data.tripState) {
-        setTripState(data.tripState);
+        if (data.changeSummary && data.changeSummary.length > 0) {
+          set({
+            pendingDiff: {
+              tripState: data.tripState,
+              changeSummary: data.changeSummary,
+            },
+          });
+        } else {
+          get().setTripState(data.tripState);
+        }
       }
     });
 
@@ -270,10 +323,68 @@ export const useTripStore = create<TripStore>((set, get) => ({
   },
 
   disconnectSocket: () => {
-    const socket = get().socket;
-    if (socket) {
-      socket.disconnect();
-      set({ socket: null, socketConnected: false });
+    // Keep socket alive — only disconnect on explicit logout.
+    // Component unmounts should NOT kill the stream.
+  },
+
+  replayMissedEvents: async (conversationId: string) => {
+    try {
+      const { lastEventId } = get();
+      const res = await chatApi.getStreamEvents(conversationId, lastEventId || undefined);
+      const { events, isActive, lastEventId: newLastId } = res.data;
+
+      if (!events || events.length === 0) {
+        if (!isActive) {
+          // Stream is done — clear any stale loading state
+          useChatStore.getState().setLoading(false);
+          useChatStore.getState().setAgentStatus(null);
+        }
+        return;
+      }
+
+      const chatStore = useChatStore.getState();
+
+      // If stream is still active, set loading state
+      if (isActive) {
+        chatStore.setLoading(true);
+        chatStore.setAgentStatus('Reconnecting to stream...');
+      }
+
+      for (const event of events) {
+        const data = event.data;
+        switch (event.type) {
+          case 'token':
+            chatStore.appendStreamingText(data.text || '');
+            break;
+          case 'status':
+            chatStore.setAgentStatus(data.status || '');
+            break;
+          case 'tripState':
+            if (data.tripState) {
+              get().setTripState(data.tripState);
+            }
+            break;
+          case 'interrupt':
+            chatStore.setPendingInterrupt(data.payload);
+            chatStore.setLoading(false);
+            break;
+          case 'response':
+            chatStore.setStreamingText('');
+            chatStore.setPendingInterrupt(null);
+            chatStore.setLoading(false);
+            chatStore.setAgentStatus(null);
+            if (data.tripState) {
+              get().setTripState(data.tripState);
+            }
+            break;
+        }
+      }
+
+      if (newLastId) {
+        set({ lastEventId: newLastId });
+      }
+    } catch (err) {
+      console.warn('[tripStore] Failed to replay missed events:', err);
     }
   },
 
@@ -283,4 +394,15 @@ export const useTripStore = create<TripStore>((set, get) => ({
       useTripStore.getState();
     }
   },
+
+  setPendingDiff: (diff) => set({ pendingDiff: diff }),
+
+  acceptDiff: () => {
+    const { pendingDiff } = get();
+    if (pendingDiff) {
+      set({ tripState: pendingDiff.tripState, pendingDiff: null });
+    }
+  },
+
+  rejectDiff: () => set({ pendingDiff: null }),
 }));
