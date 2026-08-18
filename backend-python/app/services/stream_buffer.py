@@ -1,0 +1,129 @@
+"""Redis stream buffer — decouples stream production from Socket.IO delivery.
+
+Writes every agent event to a Redis stream keyed by conversation ID so that
+disconnected clients can replay missed events on reconnect.
+
+Key patterns:
+  stream:{conv_id}         — Redis Stream of buffered events (TTL: 1h)
+  active:{conv_id}         — String key: "streaming" while agent is running (TTL: 1h)
+"""
+
+import json
+from datetime import datetime
+
+import redis.asyncio as aioredis
+
+from app.config import settings
+from app.utils.logger import logger
+
+STREAM_TTL = 3600  # 1 hour
+
+
+class StreamBuffer:
+    def __init__(self):
+        self._redis: aioredis.Redis | None = None
+
+    async def _get_redis(self) -> aioredis.Redis:
+        if self._redis is None:
+            self._redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+        return self._redis
+
+    async def close(self):
+        if self._redis:
+            await self._redis.close()
+            self._redis = None
+
+    # --- Stream key helpers ---
+
+    @staticmethod
+    def _stream_key(conv_id: str) -> str:
+        return f"stream:{conv_id}"
+
+    @staticmethod
+    def _active_key(conv_id: str) -> str:
+        return f"active:{conv_id}"
+
+    # --- Write operations ---
+
+    async def mark_active(self, conv_id: str):
+        """Mark a conversation as having an active stream."""
+        r = await self._get_redis()
+        await r.set(self._active_key(conv_id), "streaming", ex=STREAM_TTL)
+
+    async def mark_done(self, conv_id: str):
+        """Mark a conversation's stream as complete."""
+        r = await self._get_redis()
+        await r.delete(self._active_key(conv_id))
+
+    async def is_active(self, conv_id: str) -> bool:
+        """Check if a conversation has an active stream."""
+        r = await self._get_redis()
+        val = await r.get(self._active_key(conv_id))
+        return val == "streaming"
+
+    async def push_event(self, conv_id: str, event_type: str, data: dict) -> str | None:
+        """Append an event to the Redis stream. Returns the entry ID or None on failure.
+
+        Each entry stores: {type, data(JSON), timestamp}.
+        """
+        try:
+            r = await self._get_redis()
+            entry = {
+                "type": event_type,
+                "data": json.dumps(data, default=str),
+                "ts": datetime.utcnow().isoformat(),
+            }
+            entry_id = await r.xadd(self._stream_key(conv_id), entry)
+            await r.expire(self._stream_key(conv_id), STREAM_TTL)
+            return entry_id
+        except Exception as e:
+            logger.warning(f"[STREAM_BUFFER] Failed to push event for {conv_id}: {e}")
+            return None
+
+    # --- Read operations ---
+
+    async def read_events(self, conv_id: str, after_id: str = "0", count: int = 100) -> list[dict]:
+        """Read events from the stream after a given entry ID.
+
+        Returns list of {id, type, data, timestamp}.
+        Use after_id="0" to get all events.
+        """
+        try:
+            r = await self._get_redis()
+            entries = await r.xread({self._stream_key(conv_id): after_id}, count=count)
+            events = []
+            for stream_key, stream_entries in entries:
+                for entry_id, fields in stream_entries:
+                    events.append({
+                        "id": entry_id,
+                        "type": fields.get("type", ""),
+                        "data": json.loads(fields.get("data", "{}")),
+                        "timestamp": fields.get("ts", ""),
+                    })
+            return events
+        except Exception as e:
+            logger.warning(f"[STREAM_BUFFER] Failed to read events for {conv_id}: {e}")
+            return []
+
+    async def get_last_event_id(self, conv_id: str) -> str | None:
+        """Get the ID of the most recent event in the stream, or None."""
+        try:
+            r = await self._get_redis()
+            entries = await r.xrevrange(self._stream_key(conv_id), count=1)
+            if entries:
+                return entries[0][0]
+            return None
+        except Exception:
+            return None
+
+    async def clear_stream(self, conv_id: str):
+        """Delete all stream data for a conversation."""
+        try:
+            r = await self._get_redis()
+            await r.delete(self._stream_key(conv_id))
+            await r.delete(self._active_key(conv_id))
+        except Exception as e:
+            logger.warning(f"[STREAM_BUFFER] Failed to clear stream for {conv_id}: {e}")
+
+
+stream_buffer = StreamBuffer()

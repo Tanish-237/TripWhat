@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/tripwhat"
 
+    # Redis (stream buffering)
+    redis_url: str = "redis://localhost:6379"
+
     # OpenAI
     openai_api_key: str = ""
 
