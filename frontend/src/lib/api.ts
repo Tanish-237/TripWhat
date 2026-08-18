@@ -50,6 +50,8 @@ export const chatApi = {
     api.post('/api/chat/sync-itinerary', data),
   modifyItinerary: (data: any) =>
     api.post('/api/chat/modify-itinerary', data),
+  getStreamEvents: (conversationId: string, after?: string) =>
+    api.get(`/api/chat/stream/${conversationId}`, { params: { after: after || '0' } }),
 };
 
 export const tripsApi = {
@@ -73,6 +75,8 @@ export const placesApi = {
     api.get('/api/places/search', { params: { query, limit } }),
   autocomplete: (query: string, limit = 8) =>
     api.get('/api/places/autocomplete', { params: { query, limit } }),
+  details: (placeId: string) =>
+    api.get('/api/places/details', { params: { placeId } }),
 };
 
 export const travelApi = {
