@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { ArrowUp, Sparkles, Mic, MoreHorizontal, Share2, Activity } from 'lucide-react';
 import { useChatStore } from '../../stores/chatStore';
+import { useTripStore } from '../../stores/tripStore';
 import { chatApi } from '../../lib/api';
 import { RouteProposalCard } from './widgets/RouteProposalCard';
 import { QuestionCard, CompletedQuestion } from './widgets/QuestionCard';
@@ -48,8 +49,8 @@ export function ChatPanel({
   ],
 }: ChatPanelProps) {
   const {
-    conversationId, isLoading, agentStatus,
-    setConversationId, setLoading, setAgentStatus, reset,
+    conversationId, isLoading, agentStatus, streamingText, pendingInterrupt,
+    setConversationId, setLoading, setAgentStatus, setStreamingText, setPendingInterrupt, reset,
   } = useChatStore();
 
   const [input, setInput] = useState('');
@@ -72,11 +73,31 @@ export function ChatPanel({
       hasSentInitial.current = true;
       handleSend(initialMessage);
     }
-  }, [initialMessage]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMessage, hasStarted]);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [userBubbles, answeredQuestions, activeWidget, assistantText, isLoading]);
+  }, [userBubbles, answeredQuestions, activeWidget, assistantText, isLoading, streamingText, pendingInterrupt]);
+
+  // Listen for final agent:response via Socket.IO (streaming mode)
+  useEffect(() => {
+    const socket = useTripStore.getState().socket;
+    if (!socket) return;
+
+    const handleAgentResponse = (data: any) => {
+      if (data.conversationId && data.conversationId !== conversationId) return;
+      processResponse(data);
+      setStreamingText('');
+      setPendingInterrupt(null);
+      setLoading(false);
+      setAgentStatus(null);
+    };
+
+    socket.on('agent:response', handleAgentResponse);
+    return () => { socket.off('agent:response', handleAgentResponse); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
 
   const processResponse = (data: any) => {
     if (data.conversationId && !conversationId) {
@@ -114,6 +135,7 @@ export function ChatPanel({
     setHasStarted(true);
     setLoading(true);
     setAgentStatus('Thinking...');
+    setStreamingText('');
 
     try {
       const res = await chatApi.sendMessage({
@@ -121,11 +143,23 @@ export function ChatPanel({
         conversationId: conversationId || undefined,
         currentItinerary: tripState?.itinerary || null,
       });
-      processResponse(res.data);
+
+      // Streaming mode: API returns immediately with { status: 'streaming' }
+      // The response will come via Socket.IO events (agent:token, agent:response, etc.)
+      if (res.data?.status === 'streaming') {
+        if (res.data.conversationId && !conversationId) {
+          setConversationId(res.data.conversationId);
+        }
+        // Don't setLoading(false) here — it will be set false by agent:response event
+      } else {
+        // Fallback: non-streaming response
+        processResponse(res.data);
+        setLoading(false);
+        setAgentStatus(null);
+      }
     } catch (err: any) {
       setAssistantText("I'm sorry, I couldn't process your request. Please try again.");
       setActiveWidget(null);
-    } finally {
       setLoading(false);
       setAgentStatus(null);
     }
@@ -143,6 +177,7 @@ export function ChatPanel({
 
     setLoading(true);
     setAgentStatus('Thinking...');
+    setStreamingText('');
 
     try {
       const res = await chatApi.sendMessage({
@@ -150,10 +185,39 @@ export function ChatPanel({
         conversationId: conversationId || undefined,
         currentItinerary: tripState?.itinerary || null,
       });
-      processResponse(res.data);
+
+      if (res.data?.status === 'streaming') {
+        if (res.data.conversationId && !conversationId) {
+          setConversationId(res.data.conversationId);
+        }
+      } else {
+        processResponse(res.data);
+        setLoading(false);
+        setAgentStatus(null);
+      }
     } catch (err: any) {
       setAssistantText("I'm sorry, I couldn't process your request. Please try again.");
-    } finally {
+      setLoading(false);
+      setAgentStatus(null);
+    }
+  };
+
+  const handleResume = async (decision: string) => {
+    if (!conversationId || isLoading) return;
+
+    setPendingInterrupt(null);
+    setLoading(true);
+    setAgentStatus('Processing...');
+    setStreamingText('');
+
+    try {
+      await chatApi.resumeAgent({
+        message: decision,
+        conversationId,
+      });
+      // Response will come via Socket.IO events
+    } catch (err: any) {
+      setAssistantText("I'm sorry, I couldn't process your request. Please try again.");
       setLoading(false);
       setAgentStatus(null);
     }
@@ -219,8 +283,15 @@ export function ChatPanel({
                 <CompletedQuestion key={i} question={qa.question} answer={qa.answerLabel} />
               ))}
 
-              {/* Loading indicator */}
-              {isLoading && (
+              {/* Streaming text (live token-by-token) */}
+              {streamingText && !pendingInterrupt && (
+                <div className="mt-2 mb-3">
+                  <p className="text-sm text-[var(--ink)] leading-relaxed">{streamingText}</p>
+                </div>
+              )}
+
+              {/* Loading indicator (when no streaming text yet) */}
+              {isLoading && !streamingText && (
                 <div className="flex items-center gap-2 text-xs text-[var(--muted)] mb-3 px-1 py-2">
                   <div className="flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-[var(--muted)] animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -236,15 +307,36 @@ export function ChatPanel({
                 <QuestionCard data={activeWidget.data} onAnswer={handleAnswer} />
               )}
 
-              {/* Route proposal */}
-              {routeProposal && !activeWidget && !isLoading && (
+              {/* Interrupt card (route confirmation from agent) */}
+              {pendingInterrupt && pendingInterrupt.type === 'route_confirmation' && (
+                <div className="mt-2 mb-3 p-3 rounded-xl bg-[var(--bg)] border border-[var(--border)]">
+                  <p className="text-sm text-[var(--ink)] mb-2">{pendingInterrupt.message}</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleResume('confirm')}
+                      className="px-3 py-1.5 rounded-lg bg-[var(--ink)] text-white text-xs font-medium hover:bg-[#292524] transition-colors"
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      onClick={() => handleResume('reject')}
+                      className="px-3 py-1.5 rounded-lg bg-[var(--surface)] text-[var(--ink)] text-xs font-medium border border-[var(--border)] hover:bg-[var(--sage)] transition-colors"
+                    >
+                      Modify
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Route proposal (from widget) */}
+              {routeProposal && !activeWidget && !isLoading && !pendingInterrupt && (
                 <div className="mt-2">
                   <RouteProposalCard data={routeProposal} onConfirm={() => handleSend('Confirm route and build itinerary')} />
                 </div>
               )}
 
-              {/* Assistant text (when no widget) */}
-              {assistantText && !activeWidget && !isLoading && !routeProposal && (
+              {/* Assistant text (when no widget, no streaming, no interrupt) */}
+              {assistantText && !activeWidget && !isLoading && !routeProposal && !streamingText && !pendingInterrupt && (
                 <div className="mt-2 mb-3">
                   <p className="text-sm text-[var(--ink)] leading-relaxed">{assistantText}</p>
                 </div>

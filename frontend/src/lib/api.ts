@@ -40,6 +40,8 @@ export const authApi = {
 export const chatApi = {
   sendMessage: (data: { message: string; conversationId?: string; currentItinerary?: any }) =>
     api.post('/api/chat', data),
+  resumeAgent: (data: { message: string; conversationId: string }) =>
+    api.post('/api/chat/resume', data),
   getHistory: (conversationId: string) =>
     api.get(`/api/chat/${conversationId}`),
   createConversation: () =>
@@ -75,15 +77,11 @@ export const placesApi = {
 
 export const travelApi = {
   flights: (params: Record<string, any>) =>
-    api.get('/api/travel-data/flights', { params }),
+    api.get('/api/flights/search', { params }),
   hotels: (params: Record<string, any>) =>
-    api.get('/api/travel-data/hotels', { params }),
-  events: (params: Record<string, any>) =>
-    api.get('/api/travel-data/events', { params }),
-  weather: (params: Record<string, any>) =>
-    api.get('/api/travel-data/weather', { params }),
-  restaurants: (params: Record<string, any>) =>
-    api.get('/api/travel-data/restaurants', { params }),
+    api.get('/api/hotels/search', { params }),
+  flightAutocomplete: (term: string) =>
+    api.get('/api/flights/autocomplete', { params: { term } }),
 };
 
 export const calendarApi = {

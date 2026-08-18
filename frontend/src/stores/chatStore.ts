@@ -21,6 +21,8 @@ interface ChatStore {
   isLoading: boolean;
   agentStatus: string | null;
   error: string | null;
+  streamingText: string;
+  pendingInterrupt: any | null;
 
   setConversationId: (id: string | null) => void;
   addMessage: (msg: ChatMessage) => void;
@@ -30,6 +32,9 @@ interface ChatStore {
   setAgentStatus: (status: string | null) => void;
   setError: (error: string | null) => void;
   clearError: () => void;
+  appendStreamingText: (text: string) => void;
+  setStreamingText: (text: string) => void;
+  setPendingInterrupt: (payload: any | null) => void;
   reset: () => void;
 }
 
@@ -39,6 +44,8 @@ export const useChatStore = create<ChatStore>((set) => ({
   isLoading: false,
   agentStatus: null,
   error: null,
+  streamingText: '',
+  pendingInterrupt: null,
 
   setConversationId: (id) => set({ conversationId: id }),
 
@@ -56,5 +63,11 @@ export const useChatStore = create<ChatStore>((set) => ({
 
   clearError: () => set({ error: null }),
 
-  reset: () => set({ messages: [], conversationId: null, isLoading: false, agentStatus: null, error: null }),
+  appendStreamingText: (text) => set((s) => ({ streamingText: s.streamingText + text })),
+
+  setStreamingText: (text) => set({ streamingText: text }),
+
+  setPendingInterrupt: (payload) => set({ pendingInterrupt: payload }),
+
+  reset: () => set({ messages: [], conversationId: null, isLoading: false, agentStatus: null, error: null, streamingText: '', pendingInterrupt: null }),
 }));

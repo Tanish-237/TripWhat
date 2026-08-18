@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { io, type Socket } from 'socket.io-client';
+import { useChatStore } from './chatStore';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5001';
 
@@ -31,13 +32,21 @@ export interface TripState {
 }
 
 export interface Trip {
-  _id: string;
-  tripId: string;
-  userId: string;
+  id: number;
+  _id?: string;
   title?: string;
-  tripState: TripState;
-  createdAt: string;
-  updatedAt: string;
+  tripState?: TripState;
+  generatedItinerary?: any;
+  cities?: any[];
+  totalDays?: number;
+  isUpcoming?: boolean;
+  isCompleted?: boolean;
+  tripStartDate?: string;
+  tripEndDate?: string;
+  chatHistory?: any[];
+  conversationId?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 interface TripStore {
@@ -79,6 +88,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
       const res = await fetch(`${API_URL}/api/saved-trips`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!res.ok) throw new Error(`Failed to fetch trips (${res.status})`);
       const data = await res.json();
       const tripsList = Array.isArray(data) ? data : Array.isArray(data.savedTrips) ? data.savedTrips : Array.isArray(data.trips) ? data.trips : [];
       set({ trips: tripsList, loading: false });
@@ -94,8 +104,15 @@ export const useTripStore = create<TripStore>((set, get) => ({
       const res = await fetch(`${API_URL}/api/saved-trips/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!res.ok) throw new Error(`Failed to fetch trip (${res.status})`);
       const data = await res.json();
       set({ currentTrip: data, tripState: data.tripState, loading: false });
+      if (data.chatHistory?.length) {
+        useChatStore.getState().setMessages(data.chatHistory);
+      }
+      if (data.conversationId) {
+        useChatStore.getState().setConversationId(data.conversationId);
+      }
     } catch (err: any) {
       set({ error: err.message, loading: false });
     }
@@ -106,16 +123,19 @@ export const useTripStore = create<TripStore>((set, get) => ({
     try {
       const token = getToken();
       const ts = (data.tripState || {}) as TripState;
+      const { messages, conversationId } = useChatStore.getState();
       const payload = {
         title: data.title || ts.cities?.map((c: any) => c.name).join(' → ') || 'Untitled trip',
         startDate: ts.dates?.start || new Date().toISOString(),
-        cities: ts.cities || [],
+        cities: (ts.cities || []).map((c: any) => ({ name: c.name, days: c.nights ? c.nights + 1 : 1 })),
         totalDays: ts.duration || 1,
-        people: ts.travelers || '1',
-        travelType: ts.preferences?.join(', ') || 'cultural',
-        budget: 'mid-range',
+        people: 1,
+        travelType: 'balanced',
+        budget: null,
         generatedItinerary: ts.itinerary || { days: [] },
         tripState: ts,
+        chatHistory: messages.map((m) => ({ role: m.role, content: m.content, timestamp: m.timestamp })),
+        conversationId: conversationId,
       };
       const res = await fetch(`${API_URL}/api/saved-trips`, {
         method: 'POST',
@@ -125,6 +145,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
         },
         body: JSON.stringify(payload),
       });
+      if (!res.ok) throw new Error(`Failed to create trip (${res.status})`);
       const result = await res.json();
       const trip = result.savedTrip || result;
       set({ currentTrip: trip, tripState: trip.tripState || ts, loading: false });
@@ -138,15 +159,23 @@ export const useTripStore = create<TripStore>((set, get) => ({
   updateTrip: async (id: string, data: Partial<Trip>) => {
     try {
       const token = getToken();
+      const { messages, conversationId } = useChatStore.getState();
+      const payload = {
+        ...data,
+        chatHistory: messages.map((m) => ({ role: m.role, content: m.content, timestamp: m.timestamp })),
+        conversationId: conversationId,
+      };
       const res = await fetch(`${API_URL}/api/saved-trips/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
-      const updated = await res.json();
+      if (!res.ok) throw new Error(`Failed to update trip (${res.status})`);
+      const result = await res.json();
+      const updated = result.savedTrip || result;
       set({ currentTrip: updated, tripState: updated.tripState });
     } catch (err: any) {
       set({ error: err.message });
@@ -156,11 +185,12 @@ export const useTripStore = create<TripStore>((set, get) => ({
   deleteTrip: async (id: string) => {
     try {
       const token = getToken();
-      await fetch(`${API_URL}/api/saved-trips/${id}`, {
+      const res = await fetch(`${API_URL}/api/saved-trips/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
-      set((s) => ({ trips: s.trips.filter((t) => t._id !== id) }));
+      if (!res.ok) throw new Error(`Failed to delete trip (${res.status})`);
+      set((s) => ({ trips: s.trips.filter((t) => String(t.id) !== id) }));
     } catch (err: any) {
       set({ error: err.message });
     }
@@ -197,6 +227,43 @@ export const useTripStore = create<TripStore>((set, get) => ({
 
     socket.on('trip:updated', (data: { trip: Trip; changeSummary?: any[] }) => {
       get().applyTripUpdate(data.trip, data.changeSummary);
+    });
+
+    // Streaming events from agent
+    socket.on('agent:token', (data: { conversationId: string; text: string }) => {
+      useChatStore.getState().appendStreamingText(data.text);
+    });
+
+    socket.on('agent:status', (data: { conversationId: string; status: string }) => {
+      useChatStore.getState().setAgentStatus(data.status);
+    });
+
+    socket.on('agent:tripState', (data: { conversationId: string; tripState: any }) => {
+      const { setTripState } = get();
+      if (data.tripState) {
+        setTripState(data.tripState);
+      }
+    });
+
+    socket.on('agent:interrupt', (data: { conversationId: string; payload: any }) => {
+      useChatStore.getState().setPendingInterrupt(data.payload);
+      useChatStore.getState().setLoading(false);
+    });
+
+    socket.on('agent:response', (data: any) => {
+      const chatStore = useChatStore.getState();
+      chatStore.setStreamingText('');
+      chatStore.setPendingInterrupt(null);
+      chatStore.setLoading(false);
+      chatStore.setAgentStatus(null);
+
+      if (data.conversationId && !chatStore.conversationId) {
+        chatStore.setConversationId(data.conversationId);
+      }
+
+      if (data.tripState) {
+        get().setTripState(data.tripState);
+      }
     });
 
     set({ socket });
