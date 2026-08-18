@@ -3,6 +3,7 @@
 import json
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
+from langgraph.config import get_stream_writer
 from typing import Annotated
 
 from app.services.itinerary_builder import itinerary_builder
@@ -49,12 +50,28 @@ async def build_itinerary(state: Annotated[dict, InjectedState]) -> str:
     if dates and dates.get("start"):
         ctx["startDate"] = dates["start"]
 
+    # Emit progress events via stream writer
+    try:
+        writer = get_stream_writer()
+        writer({"status": f"Building {len(build_cities)} cities..."})
+        for c in build_cities:
+            writer({"status": f"Searching places in {c['name']}..."})
+    except Exception:
+        pass  # No stream context (non-streaming caller)
+
     result = await itinerary_builder.build(ctx)
     if not result:
         return "Failed to build itinerary."
 
     itinerary = result["itinerary"]
     logger.info(f"[BUILD_ITINERARY] Built itinerary with {len(itinerary.get('days', []))} days")
+
+    # Emit completion progress
+    try:
+        writer = get_stream_writer()
+        writer({"status": f"Itinerary built: {len(itinerary.get('days', []))} days"})
+    except Exception:
+        pass
 
     return (
         f"Itinerary built successfully!\n"

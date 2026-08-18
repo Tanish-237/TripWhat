@@ -2,6 +2,7 @@
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
+from langgraph.types import interrupt, Command
 from langchain_openai import ChatOpenAI
 from typing import Annotated, Any
 import json
@@ -73,6 +74,20 @@ Respond with ONLY a JSON object:
         }
 
     logger.info(f"[PROPOSE_ROUTE] Proposal: {json.dumps(proposal)}")
+
+    # Human-in-the-loop: pause for route confirmation
+    user_decision = interrupt({
+        "type": "route_confirmation",
+        "proposal": proposal,
+        "message": f"Route proposed: {' → '.join(c['name'] for c in proposal['cities'])}. "
+                   f"Total: {proposal['totalNights']} nights. Confirm?",
+    })
+
+    # user_decision is the resume value from Command(resume=...)
+    if isinstance(user_decision, dict) and user_decision.get("confirmed"):
+        logger.info("[PROPOSE_ROUTE] Route confirmed by user")
+    else:
+        logger.info("[PROPOSE_ROUTE] Route rejected or modified by user")
 
     # Format for the agent
     city_strs = [f"{c['name']} ({c['nights']} nights)" for c in proposal["cities"]]

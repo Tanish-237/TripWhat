@@ -74,140 +74,138 @@ class TravelAgent:
             self._model = ChatOpenAI(model=self.model_name, temperature=0)
         return self._model
 
-    async def chat(self, message: str, conversation_id: str, context: dict | None = None) -> dict:
-        """Process a user message and return the agent response with state.
+    async def chat_stream(self, message: str, conversation_id: str, context: dict | None = None):
+        """Stream agent responses token-by-token, yielding structured events.
 
-        Args:
-            message: User's message text
-            conversation_id: Unique conversation ID (used as thread_id for checkpointer)
-            context: Optional context dict with tripState and history
-
-        Returns:
-            dict with response, tripState, itinerary, widgets, etc.
+        Yields dicts with "type" key:
+          - {"type": "token", "text": "..."} — LLM token delta
+          - {"type": "status", "status": "..."} — progress update
+          - {"type": "tripState", "tripState": {...}} — partial state update
+          - {"type": "interrupt", "payload": {...}} — HITL pause for route confirmation
+          - {"type": "complete", "payload": {...}} — final result (same shape as chat())
         """
         context = context or {}
         trip_state = context.get("tripState")
         history = context.get("history", [])
 
-        # Build messages: system context + history + user message
         messages = []
-
-        # Add recent history as context
         for h in history[-6:]:
             if h.startswith("user:"):
                 messages.append({"role": "user", "content": h[5:].strip()})
             elif h.startswith("assistant:"):
                 messages.append({"role": "assistant", "content": h[10:].strip()})
 
-        # Add current trip state as context (use pre-parsed state if available)
         state_context = self._build_state_context(trip_state)
         if state_context:
             messages.append({"role": "system", "content": state_context})
-
-        # Add the user's message
         messages.append({"role": "user", "content": message})
 
-        # Pre-agent slot check
         pre_check = check_slots(trip_state)
         pre_count = len(SLOT_ORDER) if pre_check["proceed"] else len(SLOT_ORDER) - len(pre_check["missingSlots"])
 
-        logger.info(f"[AGENT] Processing: {message!r} (conv={conversation_id})")
+        logger.info(f"[AGENT_STREAM] Processing: {message!r} (conv={conversation_id})")
 
-        # If this is the first message (no trip_state or no slots filled), try to pre-parse all slots
         if not trip_state or not trip_state.get("onboarding", {}).get("slotsFilled"):
             final_trip_state = await self._pre_parse_initial_message(message, trip_state)
             if final_trip_state:
                 trip_state = final_trip_state
                 pre_check = check_slots(trip_state)
                 pre_count = len(SLOT_ORDER) if pre_check["proceed"] else len(SLOT_ORDER) - len(pre_check["missingSlots"])
-                logger.info(f"[AGENT] Pre-parsed {pre_count}/{len(SLOT_ORDER)} slots from initial message")
+                logger.info(f"[AGENT_STREAM] Pre-parsed {pre_count}/{len(SLOT_ORDER)} slots")
 
-        # Invoke the agent with thread_id for state persistence
-        config = {"configurable": {"thread_id": conversation_id}}
-        result = await self.agent.ainvoke({"messages": messages}, config=config)
-
-        # Extract the last AI message with non-empty content
-        ai_messages = [m for m in result.get("messages", []) if m.type == "ai"]
+        final_trip_state = trip_state
         response_text = ""
-        for msg in reversed(ai_messages):
-            content = msg.content if isinstance(msg.content, str) else str(msg.content)
-            if content and content.strip():
-                response_text = content.strip()
-                break
 
-        # Extract trip state from the agent's state
-        # The agent's state includes trip_state if tools wrote to it via InjectedState
-        agent_state = result.get("state", {})
-        final_trip_state = agent_state.get("trip_state") or trip_state
-
-        if not response_text:
-            # Agent made tool calls but didn't produce text — use next question as response
-            temp_check = check_slots(final_trip_state)
-            if not temp_check["proceed"] and temp_check["questions"]:
-                response_text = temp_check["questions"][0]["question"]
-            else:
-                response_text = "I apologize, but I had trouble processing your request."
-
-        # Post-agent slot check
-        post_check = check_slots(final_trip_state)
-        post_count = len(SLOT_ORDER) if post_check["proceed"] else len(SLOT_ORDER) - len(post_check["missingSlots"])
-
-        # Fallback slot parsing if agent didn't fill any slots
-        if post_count == pre_count and not post_check["proceed"]:
-            missing_slot = post_check["missingSlots"][0] if post_check["missingSlots"] else None
-            next_question = post_check["questions"][0] if post_check["questions"] else None
+        if not pre_check["proceed"]:
+            missing_slot = pre_check["missingSlots"][0] if pre_check["missingSlots"] else None
+            next_question = pre_check["questions"][0] if pre_check["questions"] else None
             if missing_slot and next_question:
-                logger.info(f"[AGENT] No slots filled by LLM, trying fallback parser for '{missing_slot}'")
+                logger.info(f"[AGENT_STREAM] Onboarding — trying fallback parser for '{missing_slot}'")
                 try:
                     parsed = await slot_parser.parse(missing_slot, next_question["question"], message)
                     if parsed is not None:
-                        logger.info(f"[AGENT] Fallback parser filled '{missing_slot}' with: {parsed}")
                         final_trip_state = apply_slot_answer(final_trip_state or {}, missing_slot, parsed)
                 except Exception as e:
-                    logger.error(f"[AGENT] Fallback parser failed: {e}")
+                    logger.error(f"[AGENT_STREAM] Fallback parser failed: {e}")
 
-        # Re-check slots after fallback to get updated state
-        post_check = check_slots(final_trip_state)
-        if not response_text or not post_check["proceed"]:
+            post_check = check_slots(final_trip_state)
             if not post_check["proceed"] and post_check["questions"]:
                 response_text = post_check["questions"][0]["question"]
+            elif post_check["proceed"]:
+                response_text = ""
+            else:
+                response_text = "I apologize, but I had trouble processing your request."
+        else:
+            # Post-onboarding: stream the agent execution
+            config = {"configurable": {"thread_id": conversation_id}}
+            try:
+                stream = await self.agent.astream_events(
+                    {"messages": messages}, config=config, version="v3"
+                )
+
+                async for message_event in stream.messages:
+                    text = str(message_event.text)
+                    if text:
+                        yield {"type": "token", "text": text}
+                        response_text += text
+
+                # Check for interrupts (e.g., route confirmation)
+                if stream.interrupted:
+                    interrupt_info = stream.interrupts[0].value if stream.interrupts else {}
+                    yield {"type": "interrupt", "payload": interrupt_info}
+                    return
+
+            except Exception as e:
+                logger.error(f"[AGENT_STREAM] Streaming failed, falling back to invoke: {e}")
+                result = await self.agent.ainvoke({"messages": messages}, config=config)
+                ai_messages = [m for m in result.get("messages", []) if m.type == "ai"]
+                for msg in reversed(ai_messages):
+                    content = msg.content if isinstance(msg.content, str) else str(msg.content)
+                    if content and content.strip():
+                        response_text = content.strip()
+                        break
+
+            if not response_text:
+                response_text = "I apologize, but I had trouble processing your request."
+
+            post_check = check_slots(final_trip_state)
 
         # Auto-build route + itinerary when onboarding just completed
         if post_check["proceed"] and final_trip_state and not final_trip_state.get("itinerary"):
             if not final_trip_state.get("routeProposal"):
-                logger.info("[AGENT] Onboarding complete, auto-generating route proposal")
+                yield {"type": "status", "status": "Generating route proposal..."}
                 final_trip_state = await self._auto_propose_route(final_trip_state)
+                yield {"type": "tripState", "tripState": final_trip_state}
 
             if final_trip_state.get("routeProposal") and not final_trip_state.get("itinerary"):
-                logger.info("[AGENT] Route proposed, auto-building itinerary")
+                yield {"type": "status", "status": "Building your itinerary..."}
                 final_trip_state = await self._auto_build_itinerary(final_trip_state)
                 if final_trip_state.get("itinerary"):
                     response_text = "I've put together your itinerary! Check it out on the right — you can ask me to adjust anything."
+                yield {"type": "tripState", "tripState": final_trip_state}
 
-        # Extract itinerary from trip state if present
         itinerary = None
         if final_trip_state and final_trip_state.get("itinerary"):
             itinerary = final_trip_state["itinerary"]
 
-        # Extract route proposal from trip state
         route_proposal = None
         if final_trip_state and final_trip_state.get("routeProposal"):
             route_proposal = final_trip_state["routeProposal"]
 
-        # Build widgets
         widgets = self._build_widgets(final_trip_state, post_check)
-
-        # Build suggestions
         suggestions = self._build_suggestions(final_trip_state, post_check)
 
-        return {
-            "response": response_text,
-            "tripState": final_trip_state,
-            "itinerary": itinerary,
-            "widgets": widgets,
-            "suggestions": suggestions,
-            "classification": None,
-            "changeSummary": [],
+        yield {
+            "type": "complete",
+            "payload": {
+                "response": response_text,
+                "tripState": final_trip_state,
+                "itinerary": itinerary,
+                "widgets": widgets,
+                "suggestions": suggestions,
+                "classification": None,
+                "changeSummary": [],
+            },
         }
 
     async def _pre_parse_initial_message(self, message: str, trip_state: dict | None) -> dict | None:
