@@ -124,8 +124,12 @@ export function TripMap({ itinerary, selectedCity, destination }: TripMapProps) 
               el.textContent = String(day.dayNumber || '');
 
               const popup = new mapboxgl.Popup({ offset: 16, closeButton: false, closeOnClick: false });
+              const imgHtml = act.imageUrl
+                ? `<img src="${act.imageUrl}" style="width:100%;height:60px;object-fit:cover;border-radius:4px;margin-bottom:4px;" />`
+                : '';
               popup.setHTML(`
-                <div style="font-family: Inter, sans-serif; padding: 4px 2px;">
+                <div style="font-family: Inter, sans-serif; padding: 4px 2px; max-width: 200px;">
+                  ${imgHtml}
                   <div style="font-size: 12px; font-weight: 600; color: #1C1917; margin-bottom: 2px;">${act.name}</div>
                   <div style="font-size: 11px; color: #78716C;">Day ${day.dayNumber} · ${day.location || ''}</div>
                 </div>
