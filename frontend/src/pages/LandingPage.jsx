@@ -5,7 +5,7 @@ import { useAuth } from "../contexts/AuthContext";
 
 const SUGGESTIONS = [
   { label: "Paris", sub: "3 days", img: "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=200&h=200&fit=crop" },
-  { label: "Tokyo", sub: "7 days", img: "https://images.unsplash.com/photo-1540959733332-eab446abeeb3?w=200&h=200&fit=crop" },
+  { label: "Tokyo", sub: "7 days", img: "https://images.unsplash.com/photo-1554797589-7241bb691973?w=200&h=200&fit=crop" },
   { label: "Bali", sub: "5 days", img: "https://images.unsplash.com/photo-1537996194471-e657df975ab4?w=200&h=200&fit=crop" },
   { label: "Iceland", sub: "6 days", img: "https://images.unsplash.com/photo-1535941339077-2dd1c7963098?w=200&h=200&fit=crop" },
   { label: "New York", sub: "4 days", img: "https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?w=200&h=200&fit=crop" },

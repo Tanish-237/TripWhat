@@ -103,24 +103,21 @@ export function PlaceDetailPanel({ placeId, onClose, onSelectAlternate }: Props)
     .join(' · ');
 
   return (
-    <div className="absolute inset-0 z-30 flex justify-end bg-black/20" onClick={onClose}>
-      <div
-        className="w-[400px] h-full bg-[var(--surface)] border-l border-[var(--border)] shadow-xl flex flex-col overflow-hidden animate-in slide-in-from-right"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] shrink-0">
-          <span className="text-xs font-semibold text-[var(--ink)]">Place Details</span>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-md hover:bg-[var(--sage)] text-[var(--muted)] hover:text-[var(--ink)] transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+    <div className="absolute inset-0 z-30 bg-[var(--surface)] flex flex-col overflow-hidden animate-in slide-in-from-right">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 h-12 border-b border-[var(--border)] shrink-0">
+        <span className="text-sm font-medium text-[var(--ink)] truncate">Place Details</span>
+        <button
+          onClick={onClose}
+          className="p-1.5 rounded-md hover:bg-[var(--sage)] text-[var(--muted)] hover:text-[var(--ink)] transition-colors"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto">
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-[520px] mx-auto">
           {loading ? (
             <div className="flex flex-col items-center justify-center h-full">
               <Loader2 className="w-6 h-6 text-[var(--muted)] animate-spin mb-2" />
@@ -140,7 +137,7 @@ export function PlaceDetailPanel({ placeId, onClose, onSelectAlternate }: Props)
             <>
               {/* Photo carousel */}
               {details.photos.length > 0 && (
-                <div className="relative h-48 bg-[var(--sage)] shrink-0">
+                <div className="relative h-64 bg-[var(--sage)] shrink-0">
                   <img
                     src={details.photos[photoIndex]}
                     alt={details.name}
@@ -372,6 +369,7 @@ export function PlaceDetailPanel({ placeId, onClose, onSelectAlternate }: Props)
     </div>
   );
 }
+
 
 function InfoRow({ icon: Icon, text }: { icon: any; text: string }) {
   return (

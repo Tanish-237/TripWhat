@@ -44,12 +44,6 @@ export const chatApi = {
     api.post('/api/chat/resume', data),
   getHistory: (conversationId: string) =>
     api.get(`/api/chat/${conversationId}`),
-  createConversation: () =>
-    api.post('/api/chat/conversation', {}),
-  syncItinerary: (data: { conversationId: string; itinerary: any }) =>
-    api.post('/api/chat/sync-itinerary', data),
-  modifyItinerary: (data: any) =>
-    api.post('/api/chat/modify-itinerary', data),
   getStreamEvents: (conversationId: string, after?: string) =>
     api.get(`/api/chat/stream/${conversationId}`, { params: { after: after || '0' } }),
 };
@@ -70,6 +64,13 @@ export const tripsApi = {
     api.get('/api/saved-trips/check', { params }),
 };
 
+export const savedApi = {
+  list: () => api.get('/api/saved'),
+  save: (data: { itemType: string; name: string; data?: any; tripId?: number }) =>
+    api.post('/api/saved', data),
+  remove: (id: number) => api.delete(`/api/saved/${id}`),
+};
+
 export const placesApi = {
   search: (query: string, limit = 5) =>
     api.get('/api/places/search', { params: { query, limit } }),
@@ -77,15 +78,6 @@ export const placesApi = {
     api.get('/api/places/autocomplete', { params: { query, limit } }),
   details: (placeId: string) =>
     api.get('/api/places/details', { params: { placeId } }),
-};
-
-export const travelApi = {
-  flights: (params: Record<string, any>) =>
-    api.get('/api/flights/search', { params }),
-  hotels: (params: Record<string, any>) =>
-    api.get('/api/hotels/search', { params }),
-  flightAutocomplete: (term: string) =>
-    api.get('/api/flights/autocomplete', { params: { term } }),
 };
 
 export const calendarApi = {

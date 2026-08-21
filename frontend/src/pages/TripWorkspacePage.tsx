@@ -1,10 +1,13 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { MapPin, Plus, Mail, Bookmark, Calendar, Plane, Hotel, Utensils, Package, RefreshCw, CheckCircle2, Star, ExternalLink, Check, X, ArrowRight } from 'lucide-react';
+import { MapPin, Plus, Mail, Package, RefreshCw, CheckCircle2, Check, X, ArrowRight, Plane, Hotel, Utensils } from 'lucide-react';
 import { ChatPanel } from '../components/Chat/ChatPanel';
 import { TripMap } from '../components/map/TripMap';
 import { PlaceDetailPanel } from '../components/PlaceDetailPanel';
-import { FlightCard } from '../components/FlightCard';
+import { FlightDetailPanel } from '../components/FlightDetailPanel';
+import { PlanTab } from '../components/PlanTab';
+import { SavedTab } from '../components/SavedTab';
+import type { FlightOption } from '../components/FlightCard';
 import { useTripStore } from '../stores/tripStore';
 import { useChatStore } from '../stores/chatStore';
 import { useUIStore } from '../stores/uiStore';
@@ -18,6 +21,7 @@ export default function TripWorkspacePage() {
   const [tripLoading, setTripLoading] = useState(true);
   const [tripError, setTripError] = useState<string | null>(null);
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
+  const [selectedFlight, setSelectedFlight] = useState<FlightOption | null>(null);
   const pendingSaveRef = useRef<any>(null);
 
   useEffect(() => {
@@ -77,12 +81,25 @@ export default function TripWorkspacePage() {
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Chat panel - left 52% */}
-      <div className="w-[52%] shrink-0 border-r border-[var(--border)]">
+      <div className="w-[52%] shrink-0 border-r border-[var(--border)] relative">
         <ChatPanel
           title={tripTitle}
           tripState={tripState || undefined}
           onTripStateUpdate={handleTripStateUpdate}
         />
+        {selectedPlaceId && (
+          <PlaceDetailPanel
+            placeId={selectedPlaceId}
+            onClose={() => setSelectedPlaceId(null)}
+            onSelectAlternate={(pid) => setSelectedPlaceId(pid)}
+          />
+        )}
+        {selectedFlight && (
+          <FlightDetailPanel
+            flight={selectedFlight}
+            onClose={() => setSelectedFlight(null)}
+          />
+        )}
       </div>
 
       {/* Right panel - map + itinerary */}
@@ -154,239 +171,15 @@ export default function TripWorkspacePage() {
                     setCityFilter={setCityFilter}
                     cities={cities}
                     onSelectPlace={setSelectedPlaceId}
+                    onSelectFlight={setSelectedFlight}
+                    datesAssumed={tripState?.dates?.assumed}
                   />
                 )}
                 {activeTab === 'bookings' && <BookingsTab />}
                 {activeTab === 'saved' && <SavedTab />}
-                {selectedPlaceId && (
-                  <PlaceDetailPanel
-                    placeId={selectedPlaceId}
-                    onClose={() => setSelectedPlaceId(null)}
-                    onSelectAlternate={(pid) => setSelectedPlaceId(pid)}
-                  />
-                )}
               </div>
             </div>
           </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function PlanTab({ itinerary, cityFilter, setCityFilter, cities, onSelectPlace }: any) {
-  if (!itinerary || !itinerary.days) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full py-12 text-center">
-        <MapPin className="w-8 h-8 text-[var(--muted)] mb-2 opacity-40" />
-        <p className="text-sm text-[var(--muted)]">No itinerary yet. Start chatting to plan your trip.</p>
-      </div>
-    );
-  }
-
-  const filteredDays = cityFilter
-    ? itinerary.days.filter((d: any) => d.location === cityFilter)
-    : itinerary.days;
-
-  return (
-    <div className="p-4">
-      {/* City filter chips */}
-      {cities.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-4">
-          <button
-            onClick={() => setCityFilter(null)}
-            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-              !cityFilter ? 'bg-[var(--lavender)] text-[var(--ink)]' : 'text-[var(--muted)] hover:bg-[var(--sage)]'
-            }`}
-          >
-            All
-          </button>
-          {cities.map((c: any) => (
-            <button
-              key={c.name}
-              onClick={() => setCityFilter(c.name)}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                cityFilter === c.name ? 'bg-[var(--lavender)] text-[var(--ink)]' : 'text-[var(--muted)] hover:bg-[var(--sage)]'
-              }`}
-            >
-              {c.name}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Day cards */}
-      <div className="space-y-3">
-        {filteredDays.map((day: any) => (
-          <div key={day.dayNumber} className="rounded-lg bg-[var(--surface)] border border-[var(--border)] overflow-hidden">
-            {/* Day header */}
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--border)]">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-[var(--ink)]">Day {day.dayNumber}</span>
-                {day.location && (
-                  <span className="text-xs text-[var(--muted)] flex items-center gap-0.5">
-                    <MapPin className="w-3 h-3" />
-                    {day.location}
-                  </span>
-                )}
-              </div>
-              {day.date && (
-                <span className="text-xs text-[var(--muted)] flex items-center gap-0.5">
-                  <Calendar className="w-3 h-3" />
-                  {day.date}
-                </span>
-              )}
-            </div>
-
-            {/* Day description */}
-            {day.subtitle && (
-              <p className="px-4 py-2 text-xs text-[var(--muted)] leading-relaxed border-b border-[var(--border)]">
-                {day.subtitle}
-              </p>
-            )}
-
-            {/* Activities */}
-            <div className="divide-y divide-[var(--border)]">
-              {day.timeSlots?.map((slot: any, i: number) => {
-                const activityName = slot.activity?.name || slot.activities?.map((a: any) => a.name).join(', ') || '';
-                const imageUrl = slot.activity?.imageUrl || slot.activity?.photos?.[0];
-                const placeId = slot.activity?.placeId || '';
-                return (
-                  <div
-                    key={i}
-                    className={`flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg)] transition-colors ${placeId ? 'cursor-pointer' : ''}`}
-                    onClick={() => placeId && onSelectPlace(placeId)}
-                  >
-                    {imageUrl && (
-                      <img
-                        src={imageUrl}
-                        alt={activityName}
-                        className="w-10 h-10 rounded-md object-cover shrink-0"
-                        loading="lazy"
-                      />
-                    )}
-                    <span className="text-[10px] text-[var(--muted)] uppercase tracking-wide w-16 shrink-0">
-                      {slot.startTime && slot.endTime ? `${slot.startTime}–${slot.endTime}` : (slot.period || slot.timeSlot || '')}
-                    </span>
-                    <span className="text-xs text-[var(--ink)] flex-1 truncate">
-                      {activityName || 'Free time'}
-                    </span>
-                    {slot.activity?.duration && (
-                      <span className="text-[10px] text-[var(--muted)] shrink-0">
-                        {slot.activity.duration}
-                      </span>
-                    )}
-                    {slot.activity?.type && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--sage)] text-[var(--muted)] shrink-0">
-                        {slot.activity.type}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-              {/* Add item row */}
-              <button className="flex items-center gap-2 px-4 py-2 text-xs text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--bg)] transition-colors w-full">
-                <Plus className="w-3.5 h-3.5" />
-                Add item
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Flight options */}
-      {itinerary.flightOptions?.length > 0 && (
-        <div className="mt-6">
-          <div className="flex items-center gap-2 mb-2">
-            <Plane className="w-4 h-4 text-[var(--muted)]" />
-            <span className="text-xs font-semibold text-[var(--ink)]">Flight Options</span>
-          </div>
-          <div className="space-y-2">
-            {itinerary.flightOptions.map((flight: any, i: number) => (
-              <FlightCard key={i} flight={flight} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Hotel recommendations */}
-      {itinerary.hotelRecommendations?.length > 0 && (
-        <div className="mt-6">
-          <div className="flex items-center gap-2 mb-2">
-            <Hotel className="w-4 h-4 text-[var(--muted)]" />
-            <span className="text-xs font-semibold text-[var(--ink)]">Hotel Recommendations</span>
-          </div>
-          <div className="space-y-2">
-            {itinerary.hotelRecommendations.map((hotel: any, i: number) => (
-              <RecommendationCard key={i} item={hotel} onSelectPlace={onSelectPlace} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Restaurant recommendations */}
-      {itinerary.restaurantRecommendations?.length > 0 && (
-        <div className="mt-6">
-          <div className="flex items-center gap-2 mb-2">
-            <Utensils className="w-4 h-4 text-[var(--muted)]" />
-            <span className="text-xs font-semibold text-[var(--ink)]">Restaurant Recommendations</span>
-          </div>
-          <div className="space-y-2">
-            {itinerary.restaurantRecommendations.map((rest: any, i: number) => (
-              <RecommendationCard key={i} item={rest} onSelectPlace={onSelectPlace} />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function RecommendationCard({ item, onSelectPlace }: any) {
-  return (
-    <div
-      className={`flex items-center gap-3 p-3 rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:bg-[var(--bg)] transition-colors ${item.placeId ? 'cursor-pointer' : ''}`}
-      onClick={() => item.placeId && onSelectPlace(item.placeId)}
-    >
-      {item.imageUrl && (
-        <img
-          src={item.imageUrl}
-          alt={item.name}
-          className="w-12 h-12 rounded-md object-cover shrink-0"
-          loading="lazy"
-        />
-      )}
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-[var(--ink)] truncate">{item.name}</p>
-        {item.address && (
-          <p className="text-[10px] text-[var(--muted)] truncate mt-0.5">{item.address}</p>
-        )}
-        {item.description && (
-          <p className="text-[10px] text-[var(--muted)] truncate mt-0.5">{item.description}</p>
-        )}
-      </div>
-      <div className="flex items-center gap-2 shrink-0">
-        {item.rating != null && (
-          <div className="flex items-center gap-0.5">
-            <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-            <span className="text-[10px] font-medium text-[var(--ink)]">{item.rating}</span>
-          </div>
-        )}
-        {item.cuisine && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--sage)] text-[var(--muted)] capitalize">
-            {item.cuisine}
-          </span>
-        )}
-        {item.website && (
-          <a
-            href={item.website}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="p-1 rounded hover:bg-[var(--sage)] text-[var(--muted)] hover:text-[var(--ink)] transition-colors"
-          >
-            <ExternalLink className="w-3 h-3" />
-          </a>
         )}
       </div>
     </div>
@@ -612,20 +405,6 @@ function BookingsTab() {
           );
         })}
       </div>
-    </div>
-  );
-}
-
-function SavedTab() {
-  return (
-    <div className="flex flex-col items-center justify-center h-full py-12 text-center px-6">
-      <div className="w-10 h-10 rounded-lg bg-[var(--sage)] flex items-center justify-center mb-3">
-        <Bookmark className="w-5 h-5 text-[var(--muted)]" />
-      </div>
-      <p className="text-sm font-medium text-[var(--ink)] mb-1">No saved places yet</p>
-      <p className="text-xs text-[var(--muted)] max-w-[280px]">
-        Save restaurants, attractions, and hotels from your chat to revisit them here.
-      </p>
     </div>
   );
 }

@@ -15,6 +15,9 @@ export interface TripDates {
   start: string;
   end: string;
   flexible: boolean;
+  assumed?: boolean;
+  roughMonth?: string;
+  pending?: string;
 }
 
 export interface TripState {
