@@ -5,12 +5,14 @@ import { useTripStore } from '../../stores/tripStore';
 import { chatApi } from '../../lib/api';
 import { RouteProposalCard } from './widgets/RouteProposalCard';
 import { QuestionCard, CompletedQuestion } from './widgets/QuestionCard';
+import { ItinerarySummary } from './widgets/ItinerarySummary';
 
 interface ChatPanelProps {
   title?: string;
   tripState?: any;
   onItineraryBuilt?: (tripState: any) => void;
   onTripStateUpdate?: (tripState: any) => void;
+  onSelectPlace?: (placeId: string) => void;
   initialMessage?: string;
   emptyStatePrompts?: string[];
 }
@@ -41,6 +43,7 @@ export function ChatPanel({
   tripState,
   onItineraryBuilt,
   onTripStateUpdate,
+  onSelectPlace,
   initialMessage,
   emptyStatePrompts = [
     'Plan a 5-day Japan trip visiting Tokyo and Kyoto',
@@ -59,6 +62,7 @@ export function ChatPanel({
   const [activeWidget, setActiveWidget] = useState<any>(null);
   const [assistantText, setAssistantText] = useState<string>('');
   const [routeProposal, setRouteProposal] = useState<any>(null);
+  const [itinerarySummary, setItinerarySummary] = useState<any>(null);
   const [hasStarted, setHasStarted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -127,12 +131,18 @@ export function ChatPanel({
     const widgets = data.widgets || [];
     const qWidget = widgets.find((w: any) => w.type === 'question_card');
     const rWidget = widgets.find((w: any) => w.type === 'route_proposal');
+    const sWidget = widgets.find((w: any) => w.type === 'itinerary_summary');
 
     setActiveWidget(qWidget || null);
 
     if (rWidget) {
       setRouteProposal(rWidget.data);
     } else if (data.tripState?.itinerary) {
+      setRouteProposal(null);
+    }
+
+    if (sWidget) {
+      setItinerarySummary(sWidget.data);
       setRouteProposal(null);
     }
 
@@ -383,6 +393,11 @@ export function ChatPanel({
                 <div className="mt-2">
                   <RouteProposalCard data={routeProposal} onConfirm={() => handleSend('Confirm route and build itinerary')} />
                 </div>
+              )}
+
+              {/* Itinerary summary (photo cards + hotel) — shown after itinerary is built */}
+              {itinerarySummary && !activeWidget && !isLoading && !pendingInterrupt && (
+                <ItinerarySummary data={itinerarySummary} onSelectPlace={onSelectPlace} />
               )}
 
               {/* Assistant text (when no widget, no streaming, no interrupt) */}

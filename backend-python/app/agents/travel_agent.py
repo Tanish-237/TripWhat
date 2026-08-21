@@ -428,6 +428,67 @@ class TravelAgent:
                 "data": trip_state["routeProposal"],
             })
 
+        # Show itinerary summary widget when itinerary is built
+        itinerary = (trip_state or {}).get("itinerary")
+        if itinerary:
+            hotels = itinerary.get("hotelRecommendations", [])
+            best_hotel = hotels[0] if hotels else None
+
+            # Collect top attractions with photos from the itinerary days
+            attractions = []
+            seen_names = set()
+            for day in itinerary.get("days", []):
+                for slot in day.get("timeSlots", []):
+                    for act in slot.get("activities", [slot.get("activity")]):
+                        if not act:
+                            continue
+                        name = act.get("name", "")
+                        img = act.get("imageUrl") or (act.get("photos") or [None])[0]
+                        if name and img and name not in seen_names:
+                            seen_names.add(name)
+                            attractions.append({
+                                "name": name,
+                                "imageUrl": img,
+                                "type": act.get("type", ""),
+                                "placeId": act.get("placeId", ""),
+                                "rating": act.get("rating"),
+                            })
+                        if len(attractions) >= 6:
+                            break
+                    if len(attractions) >= 6:
+                        break
+                if len(attractions) >= 6:
+                    break
+
+            widgets.append({
+                "type": "itinerary_summary",
+                "data": {
+                    "hotel": {
+                        "name": best_hotel.get("name", ""),
+                        "imageUrl": best_hotel.get("imageUrl", ""),
+                        "images": best_hotel.get("images", []),
+                        "rating": best_hotel.get("rating"),
+                        "ratePerNight": best_hotel.get("ratePerNight"),
+                        "totalRate": best_hotel.get("totalRate"),
+                        "currency": best_hotel.get("currency", "USD"),
+                        "whyPicked": best_hotel.get("whyPicked", ""),
+                        "bookingLink": best_hotel.get("bookingLink", ""),
+                        "placeId": best_hotel.get("placeId", ""),
+                        "address": best_hotel.get("address", ""),
+                    } if best_hotel else None,
+                    "attractions": attractions,
+                    "destination": (trip_state or {}).get("cities", [{}])[0].get("name", ""),
+                    "duration": (trip_state or {}).get("duration", 0),
+                    "dates": (trip_state or {}).get("dates", {}),
+                    "preferences": (trip_state or {}).get("preferences", []),
+                    # Day-level highlights from the itinerary for the summary text
+                    "highlights": [
+                        h for day in itinerary.get("days", [])[:4]
+                        for h in (day.get("highlights") or [])[:2]
+                    ][:6],
+                },
+            })
+
         return widgets
 
     async def _auto_propose_route(self, trip_state: dict) -> dict:

@@ -86,6 +86,7 @@ export default function TripWorkspacePage() {
           title={tripTitle}
           tripState={tripState || undefined}
           onTripStateUpdate={handleTripStateUpdate}
+          onSelectPlace={setSelectedPlaceId}
         />
         {selectedPlaceId && (
           <PlaceDetailPanel
@@ -187,6 +188,9 @@ export default function TripWorkspacePage() {
 }
 
 function DiffOverlay({ changeSummary, onAccept, onReject }: any) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
   const ACTION_ICONS: Record<string, any> = {
     add: Plus,
     remove: X,
@@ -201,7 +205,14 @@ function DiffOverlay({ changeSummary, onAccept, onReject }: any) {
   };
 
   return (
-    <div className="sticky top-0 z-20 bg-[var(--surface)] border-b border-[var(--border)] shadow-sm">
+    <div
+      className="sticky top-0 z-20 bg-[var(--surface)] border-b border-[var(--border)] shadow-sm"
+      style={{
+        transform: mounted ? 'translateY(0)' : 'translateY(-100%)',
+        opacity: mounted ? 1 : 0,
+        transition: 'transform 200ms var(--ease-out), opacity 200ms var(--ease-out)',
+      }}
+    >
       <div className="px-4 py-3">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold text-[var(--ink)]">Proposed changes</span>
