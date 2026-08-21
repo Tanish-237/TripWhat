@@ -10,33 +10,7 @@ node_modules/
 .claude/
 .windsurf/
 .gitnexus/
-
-# Installed skill symlinks (point to .agents/ which is ignored)
-.devin/skills/animate
-.devin/skills/animate-expo
-.devin/skills/animation-vocabulary
-.devin/skills/apple-design
-.devin/skills/ask-sonner
-.devin/skills/emil-design-eng
-.devin/skills/find-animation-opportunities
-.devin/skills/improve-animations
-.devin/skills/pick-ui-library
-.devin/skills/prototype
-.devin/skills/review-animations
-.devin/skills/write-swift
-.devin/skills/gsap-core
-.devin/skills/gsap-frameworks
-.devin/skills/gsap-performance
-.devin/skills/gsap-plugins
-.devin/skills/gsap-react
-.devin/skills/gsap-scrolltrigger
-.devin/skills/gsap-timeline
-.devin/skills/gsap-utils
-
-# Skill files (local agent config, not app code)
-.devin/skills/langsmith-dataset/
-.devin/skills/langsmith-evaluator/
-.devin/skills/langsmith-trace/
+.devin/
 
 # Skills installer lockfile
 skills-lock.json
