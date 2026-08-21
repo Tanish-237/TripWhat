@@ -11,6 +11,23 @@ node_modules/
 .windsurf/
 .gitnexus/
 
+# Installed skill symlinks (point to .agents/ which is ignored)
+.devin/skills/animate
+.devin/skills/animate-expo
+.devin/skills/animation-vocabulary
+.devin/skills/apple-design
+.devin/skills/ask-sonner
+.devin/skills/emil-design-eng
+.devin/skills/find-animation-opportunities
+.devin/skills/improve-animations
+.devin/skills/pick-ui-library
+.devin/skills/prototype
+.devin/skills/review-animations
+.devin/skills/write-swift
+
+# Skills installer lockfile
+skills-lock.json
+
 # Root-level AI/generated docs
 AGENTS.md
 CLAUDE.md
