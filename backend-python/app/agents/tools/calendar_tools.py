@@ -13,14 +13,15 @@ async def create_calendar_event(
     location: str | None = None,
     config: RunnableConfig = None,
 ) -> str:
-    """Create a Google Calendar event for a trip activity.
+    """Create a Google Calendar event for a trip activity or flight.
+    Use this when the user asks to add something to their calendar.
 
     Args:
-        summary: Event title
-        start: Start datetime (ISO format)
-        end: End datetime (ISO format)
+        summary: Event title (e.g., "Flight to Tokyo", "Visit Senso-ji Temple")
+        start: Start datetime in ISO format (e.g., "2026-10-15T09:00:00")
+        end: End datetime in ISO format (e.g., "2026-10-15T11:00:00")
         description: Optional event description
-        location: Optional event location
+        location: Optional event location (e.g., "Senso-ji Temple, Asakusa, Tokyo")
     """
     user_id = (config.get("configurable") or {}).get("user_id") if config else None
     if not user_id:

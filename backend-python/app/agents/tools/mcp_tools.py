@@ -14,14 +14,22 @@ from app.services.places_search import places_search
 @tool
 async def mcp_search_places(text_query: str, city: str = "") -> str:
     """Search for real places using Google Maps — attractions, restaurants, hotels, etc.
-    Use this when the user asks to add a specific place, find things to do, or search for hotels/restaurants.
+    Use this when the user asks to find things to do, search for hotels/restaurants/attractions,
+    or when you need real place data (names, ratings, addresses) for an itinerary.
 
     Args:
-        text_query: Search query (e.g., "Senso-ji Temple Tokyo", "best restaurants in Kyoto", "hotels in Osaka")
-        city: City name for caching (e.g., "Tokyo")
+        text_query: What to search for (e.g., "attractions", "best sushi restaurants", "hotels near Shinjuku")
+        city: The city to search in (e.g., "Tokyo"). Always pass this when you know the city — it scopes the search.
     """
+    # If city is provided and text_query doesn't already mention it, combine them
+    # so the actual Google Maps query includes the city (e.g., "attractions in Tokyo").
+    if city and city.lower() not in text_query.lower():
+        search_query = f"{text_query} in {city}"
+    else:
+        search_query = text_query
+
     # Use cache-first search service (MCP → Google Places → OpenTripMap)
-    results = await places_search.search(text_query, city or text_query, limit=10)
+    results = await places_search.search(search_query, city or text_query, limit=10)
 
     if not results:
         return f"No places found for '{text_query}'. Try a different search term."
@@ -45,8 +53,9 @@ async def mcp_search_places(text_query: str, city: str = "") -> str:
 
 @tool
 async def mcp_resolve_names(place_names: list[str]) -> str:
-    """Resolve a batch of place names to canonical Google Maps Place IDs.
-    Use this when you need to standardize place names or get Place IDs for other lookups.
+    """Resolve place names to canonical Google Maps Place IDs.
+    Use this when you need to standardize ambiguous place names or get Place IDs
+    for other lookups. For general place search with ratings/addresses, use mcp_search_places instead.
 
     Args:
         place_names: List of place names to resolve (e.g., ["Senso-ji Temple", "Tokyo Tower"])
@@ -93,8 +102,8 @@ async def mcp_lookup_weather(location: str, date: str = "") -> str:
     Use this when the user asks about weather, what to pack, or best time to visit.
 
     Args:
-        location: Address or place name (e.g., "Tokyo, Japan")
-        date: Optional date in YYYY-MM-DD format for forecast
+        location: City or place name (e.g., "Tokyo, Japan")
+        date: Optional specific date in YYYY-MM-DD format for a forecast. Omit for current conditions.
     """
     args = {"location": {"address": location}}
 

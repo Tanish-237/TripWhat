@@ -1,39 +1,25 @@
-"""Search tools — search_destinations, web_search, resolve_places."""
+"""Search tools — web_search only.
+
+Place search is handled by mcp_search_places (in mcp_tools.py) which uses a
+cache-first chain (Google Maps MCP → Google Places API → OpenTripMap).
+Place name resolution is handled by mcp_resolve_names.
+"""
 
 from langchain_core.tools import tool
 from langchain_tavily import TavilySearch
 
 from app.config import settings
-from app.services.places_service import places_service
-from app.services.google_places import google_places
 from app.utils.logger import logger
 
 
 @tool
-async def search_destinations(query: str) -> str:
-    """Search for travel destinations, attractions, and places of interest.
-    Use this when the user asks about what to do in a place, best attractions, etc.
-
-    Args:
-        query: Search query (e.g., "best attractions in Tokyo", "things to do in Kyoto")
-    """
-    results = await places_service.search_places(query, limit=5)
-    if not results:
-        return f"No results found for '{query}'. Try a different search term."
-
-    summaries = []
-    for r in results:
-        summaries.append(f"**{r['name']}** ({r['type']}): {r['description'][:150]}...")
-
-    return f"Found {len(results)} places for '{query}':\n\n" + "\n\n".join(summaries)
-
-
-@tool
 async def web_search(query: str) -> str:
-    """Search the web for travel information, current events, visa requirements, etc.
+    """Search the web for travel information that requires current data — visa requirements,
+    travel advisories, seasonal events, news, or anything you can't answer from knowledge.
+    Do NOT use this for finding places (use mcp_search_places instead).
 
     Args:
-        query: What to search for
+        query: What to search for (e.g., "Japan visa requirements for US citizens")
     """
     if not settings.tavily_api_key:
         return "Web search unavailable: Tavily API key not configured."
@@ -70,23 +56,3 @@ async def web_search(query: str) -> str:
     except Exception as e:
         logger.error(f"Web search failed: {e}")
         return f"Web search failed: {e}"
-
-
-@tool
-async def resolve_places(place_names: list[str]) -> str:
-    """Resolve place names to canonical place information with coordinates.
-    Use this when you need to standardize city or destination names.
-
-    Args:
-        place_names: List of place names to resolve (e.g., ["Tokyo", "Kyoto"])
-    """
-    results = []
-    for name in place_names:
-        places = await google_places.search_places(name)
-        if places:
-            p = places[0]
-            results.append(f"{p['name']} ({p.get('address', '')}) — lat:{p['coordinates']['lat']}, lng:{p['coordinates']['lng']}")
-        else:
-            results.append(f"{name}: could not resolve")
-
-    return "\n".join(results)

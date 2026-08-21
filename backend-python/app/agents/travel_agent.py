@@ -27,8 +27,7 @@ from app.agents.prompts import DEEP_AGENT_SYSTEM_PROMPT
 from app.agents.state import check_slots, SLOT_ORDER, create_default_trip_state
 from app.agents.state_schema import TravelAgentState
 from app.agents.tools.slot_tools import check_trip_status, fill_trip_slot
-from app.agents.tools.search_tools import search_destinations, web_search, resolve_places
-from app.agents.tools.place_tools import get_place_details, find_nearby_attractions
+from app.agents.tools.search_tools import web_search
 from app.agents.tools.route_tools import propose_route
 from app.agents.tools.itinerary_tools import build_itinerary, edit_itinerary
 from app.agents.tools.calendar_tools import create_calendar_event
@@ -36,6 +35,11 @@ from app.agents.tools.memory_tools import remember_user_preference
 from app.agents.tools.mcp_tools import mcp_search_places, mcp_resolve_names, mcp_compute_routes, mcp_lookup_weather
 from app.services.itinerary_builder import itinerary_builder
 from app.utils.logger import logger
+
+
+async def _aon_tool_error(exc: Exception) -> str:
+    """Async error handler for ToolErrorMiddleware."""
+    return f"Tool error: {type(exc).__name__}. Please try a different approach."
 
 
 class TravelAgent:
@@ -52,11 +56,7 @@ class TravelAgent:
         self._tools = [
             check_trip_status,
             fill_trip_slot,
-            search_destinations,
             web_search,
-            resolve_places,
-            get_place_details,
-            find_nearby_attractions,
             propose_route,
             build_itinerary,
             edit_itinerary,
@@ -105,7 +105,7 @@ class TravelAgent:
 
         return [
             dynamic_model_selection,
-            ToolErrorMiddleware(aon_error=lambda exc, state, tool_call: f"Tool error: {type(exc).__name__}. Please try a different approach."),
+            ToolErrorMiddleware(aon_error=lambda exc, request: _aon_tool_error(exc)),
             ModelCallLimitMiddleware(run_limit=10),
         ]
 
@@ -402,7 +402,12 @@ class TravelAgent:
         """Build UI widgets based on current state."""
         widgets = []
 
-        if not slot_check["proceed"] and slot_check["questions"]:
+        # Only show the question card when the user is actively in the
+        # planning flow — i.e., at least one slot is already filled. This
+        # prevents the card from appearing on question/search/chitchat turns
+        # where no slots have been filled yet.
+        filled = slot_check.get("filledSlots", [])
+        if filled and not slot_check["proceed"] and slot_check["questions"]:
             q = slot_check["questions"][0]
             widgets.append({
                 "type": "question_card",

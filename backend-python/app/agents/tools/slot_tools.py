@@ -17,8 +17,9 @@ from app.utils.logger import logger
 
 @tool
 def check_trip_status(state: Annotated[dict, InjectedState]) -> str:
-    """Check the current trip planning status. Call this FIRST to understand where the user is in the flow.
-    Returns which slots are filled, which are missing, and what question to ask next."""
+    """Check the current trip planning status — which slots are filled, which are missing,
+    and what question to ask next. Only call this when the user wants to PLAN a trip
+    (not for questions, searches, or chitchat)."""
     trip_state = state.get("trip_state")
     result = check_slots(trip_state)
 
@@ -46,7 +47,10 @@ def check_trip_status(state: Annotated[dict, InjectedState]) -> str:
             f"Slots filled: {result['filledSlots']}. "
             f"Missing slots: {result['missingSlots']}. "
             f"Next slot to fill: '{next_slot}'. "
-            f"Ask the user: \"{question['question']}\""
+            f"If the user is STARTING or CONTINUING trip planning, ask: \"{question['question']}\" "
+            f"BUT if the user is asking a QUESTION or seeking RECOMMENDATIONS (e.g., 'where should I go', "
+            f"'what cities do you recommend', 'what's the weather in X'), ANSWER their question FIRST. "
+            f"Do NOT ask them to fill slots. Only ask the slot question after they agree to plan a trip."
         )
 
 
@@ -57,14 +61,20 @@ def fill_trip_slot(
     state: Annotated[dict, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId],
 ) -> Command:
-    """Fill a trip planning slot with a value.
+    """Fill a trip planning slot with a value. Only call this when the user is actively
+    planning a trip and has provided information for a specific slot.
 
     Args:
-        slot: One of 'destination', 'dates', 'duration', 'travelers', 'trip_style', 'help_with', 'budget', 'pace'
-        value: The parsed value for this slot (e.g., "Tokyo" for destination, 14 for duration, "solo" for travelers, "culture" for trip_style, "you_decide" if user wants AI to decide)
-
-    Call this when the user's message answers a slot question. Parse natural language into the correct value format.
-    If the user says "you decide", "not sure", "whatever you think", pass "you_decide" as the value.
+        slot: One of 'destination', 'dates', 'duration', 'travelers', 'trip_style', 'help_with', 'origin'
+        value: The parsed value for this slot. Examples:
+            - destination: "Tokyo" or "Tokyo, Kyoto, Osaka" (string or comma-separated)
+            - dates: "fixed", "flexible", "unsure", "you_decide", or {"start": "2026-10-15", "end": "2026-10-22"}
+            - duration: integer (e.g., 7)
+            - travelers: "solo", "couple", "family", "friends", "group"
+            - trip_style: "beaches", "culture", "adventure", "food", "city", "wellness"
+            - help_with: "everything", "itinerary", "flights", "hotels", "things_to_do", "restaurants"
+            - origin: city or airport (e.g., "London", "SFO") — only when flights are in scope
+            Pass "you_decide" ONLY if the user explicitly says "you decide", "not sure", "whatever you think".
     """
     trip_state = state.get("trip_state") or {}
 
@@ -88,13 +98,20 @@ def fill_trip_slot(
         elif baseline.get(k) != v:
             delta[k] = v
 
-    # Check what's next
+    # Check what's next. NOTE: when the agent makes parallel fill_trip_slot
+    # calls, each sees the same pre-fill state, so check_slots here only
+    # reflects THIS slot's change. We intentionally do NOT prescribe what to
+    # ask next — the agent already has check_trip_status output from the start
+    # of the turn and can reason about what's still missing after all fills
+    # are merged. Prescribing here causes conflicting guidance across parallel
+    # calls (e.g., duration says "ask destination" while destination says "ask
+    # dates"), which confuses the LLM into skipping slots or auto-filling
+    # them with you_decide.
     result = check_slots(new_state)
     if result["proceed"]:
         tool_msg = f"Slot '{slot}' filled with value '{value}'. All required slots are now filled! Ready to propose a route."
     else:
-        next_q = result["questions"][0]
-        tool_msg = f"Slot '{slot}' filled with value '{value}'. Next, ask: \"{next_q['question']}\""
+        tool_msg = f"Slot '{slot}' filled with value '{value}'. Remaining missing slots will be determined after all parallel fills merge."
 
     # Write only the delta back to graph state via Command.
     return Command(

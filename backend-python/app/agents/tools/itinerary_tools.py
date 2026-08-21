@@ -17,9 +17,10 @@ async def build_itinerary(
     state: Annotated[dict, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId],
 ) -> Command:
-    """Build a complete itinerary from the current trip state.
-    Call this when the user confirms the route proposal.
-    Returns a day-by-day itinerary with time slots for activities.
+    """Build a complete day-by-day itinerary from the current trip state.
+    Call this immediately after the user confirms the route proposal.
+    Searches for real places (hotels, restaurants, attractions) and assembles
+    a day-by-day plan with time slots. No arguments needed — reads from trip state.
     """
     trip_state = state.get("trip_state") or {}
     cities = trip_state.get("cities", [])
@@ -123,15 +124,16 @@ async def edit_itinerary(
     tool_call_id: Annotated[str, InjectedToolCallId] = None,
 ) -> Command:
     """Edit an existing itinerary by adding, removing, replacing, or moving activities.
+    Only call this when an itinerary already exists.
 
     Args:
-        action_type: One of 'add', 'remove', 'replace', 'move', 'add_day', 'remove_day'
-        day: Target day number (1-indexed)
-        time_slot: Target time slot ('morning', 'afternoon', 'evening')
-        activity_name: Name of the activity to add/remove/replace
-        activity_id: ID of the activity to remove/move
-        place_name: Place name for add/replace operations
-        new_day: Destination day for move operations
+        action_type: What to do — 'add', 'remove', 'replace', 'move', 'add_day', 'remove_day'
+        day: Target day number (1-indexed). Required for most actions.
+        time_slot: Target time slot — 'morning', 'afternoon', or 'evening'
+        activity_name: Name of the activity (for add/remove/replace)
+        activity_id: ID of the activity (for remove/move — use if you have it)
+        place_name: Real place name to add/replace (e.g., "Senso-ji Temple"). Search with mcp_search_places first.
+        new_day: Destination day number for move operations
         new_time_slot: Destination time slot for move operations
     """
     trip_state = state.get("trip_state") or {}
