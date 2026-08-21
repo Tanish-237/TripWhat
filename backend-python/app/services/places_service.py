@@ -4,7 +4,6 @@ import asyncio
 import httpx
 
 from app.config import settings
-from app.utils.logger import logger
 
 
 class PlacesService:

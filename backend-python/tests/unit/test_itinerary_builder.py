@@ -47,14 +47,6 @@ async def test_build_with_start_date():
     assert itinerary["days"][1]["date"] == "2024-10-02"
 
 
-def test_compute_day_signature():
-    from app.schemas.itinerary import DayPlan
-    day = DayPlan(dayNumber=1, date="2024-10-01", location="Tokyo")
-    sig = itinerary_builder.compute_day_signature(day)
-    assert "Tokyo" in sig
-    assert "2024-10-01" in sig
-
-
 @pytest.mark.asyncio
 async def test_curate_activities_llm_includes_used_names_in_prompt():
     """Verify that used_names appears in the LLM prompt when provided."""
@@ -128,7 +120,7 @@ async def test_build_single_city_accumulates_used_names():
 
     original = itinerary_builder._search_and_curate_activities
 
-    async def mock_search(city, day_num, total_days, trip_style, help_with, all_city_names, used_names=None):
+    async def mock_search(city, day_num, total_days, trip_style, help_with, all_city_names, used_names=None, **kwargs):
         call_args.append({
             "day": day_num,
             "used_names": list(used_names) if used_names else [],
@@ -165,7 +157,7 @@ async def test_build_multi_city_resets_used_names_per_city():
 
     original = itinerary_builder._search_and_curate_activities
 
-    async def mock_search(city, day_num, total_days, trip_style, help_with, all_city_names, used_names=None):
+    async def mock_search(city, day_num, total_days, trip_style, help_with, all_city_names, used_names=None, **kwargs):
         call_args.append({
             "city": city,
             "day": day_num,

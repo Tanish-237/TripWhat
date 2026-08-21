@@ -5,7 +5,7 @@ description) before adding activities to the itinerary.
 """
 
 import uuid
-from app.schemas.itinerary import Itinerary, DayPlan, TimeSlot, Activity, ActivityLocation, create_time_slot, create_day_plan
+from app.schemas.itinerary import Activity, ActivityLocation, create_time_slot, create_day_plan
 from app.services.places_search import places_search
 from app.utils.logger import logger
 
@@ -144,9 +144,6 @@ class ItineraryEditor:
             "message": f"Moved activity to Day {new_day}",
             "changeSummary": {"action": "move", "target": moved_activity.get("title", "activity") if moved_activity else "activity"},
         }
-
-    async def find_and_add(self, itinerary: dict, action: dict, destination: str) -> dict:
-        return await self.add_activity(itinerary, action, destination)
 
     def add_day(self, itinerary: dict) -> dict:
         days = itinerary.get("days", [])

@@ -57,20 +57,11 @@ class SerpApiProvider:
             return []
 
         flights = []
+        is_round_trip = bool(return_date)
         for item in data.get("best_flights", []) + data.get("other_flights", []):
-            flight = {
-                "id": item.get("flight_id", ""),
-                "legs": [],
-                "layovers": [],
-                "totalDuration": item.get("total_duration", 0),
-                "price": item.get("price", 0),
-                "currency": currency,
-                "type": "round-trip" if return_date else "one-way",
-                "isBest": item in data.get("best_flights", []),
-                "bookingLink": item.get("booking_token", ""),
-            }
+            all_legs = []
             for leg in item.get("flights", []):
-                flight["legs"].append({
+                all_legs.append({
                     "departureAirport": {
                         "code": leg.get("departure_airport", {}).get("id", ""),
                         "name": leg.get("departure_airport", {}).get("name", ""),
@@ -88,6 +79,35 @@ class SerpApiProvider:
                     "travelClass": leg.get("travel_class", ""),
                     "overnight": leg.get("overnight", False),
                 })
+
+            # For round-trip, split legs into outbound and return groups.
+            # The split point is the first leg that departs from the destination
+            # airport (i.e., the return journey begins).
+            outbound_legs = all_legs
+            return_legs: list[dict] = []
+            if is_round_trip and len(all_legs) > 1:
+                dest_code = destination  # arrival_id passed by caller
+                for idx, leg in enumerate(all_legs):
+                    dep_code = leg.get("departureAirport", {}).get("code", "")
+                    if dep_code and dep_code.upper() == dest_code.upper() and idx > 0:
+                        outbound_legs = all_legs[:idx]
+                        return_legs = all_legs[idx:]
+                        break
+
+            flight = {
+                "id": item.get("flight_id", ""),
+                "legs": all_legs,  # keep flat list for backwards compat
+                "outboundLegs": outbound_legs,
+                "returnLegs": return_legs,
+                "layovers": [],
+                "totalDuration": item.get("total_duration", 0),
+                "price": item.get("price", 0),
+                "currency": currency,
+                "type": "round-trip" if return_date else "one-way",
+                "isBest": item in data.get("best_flights", []),
+                "bookingLink": item.get("booking_token", ""),
+            }
+            for leg in item.get("flights", []):
                 if leg.get("layovers"):
                     for layover in leg["layovers"]:
                         flight["layovers"].append({

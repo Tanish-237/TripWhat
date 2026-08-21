@@ -9,11 +9,9 @@ Flow:
   6. Cache results in places_cache + search_cache
 """
 
-from datetime import datetime, timedelta
-from typing import Any
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session
 from app.models.places_cache import PlacesCache, SearchCache
@@ -173,7 +171,7 @@ class PlacesSearchService:
             result = await db.execute(
                 select(SearchCache).where(
                     SearchCache.query == query,
-                    SearchCache.expires_at > datetime.utcnow(),
+                    SearchCache.expires_at > datetime.now(timezone.utc),
                 )
             )
             search_entry = result.scalar_one_or_none()
@@ -196,7 +194,7 @@ class PlacesSearchService:
             await db.execute(
                 update(PlacesCache)
                 .where(PlacesCache.place_id.in_(place_ids))
-                .values(access_count=PlacesCache.access_count + 1, last_accessed=datetime.utcnow())
+                .values(access_count=PlacesCache.access_count + 1, last_accessed=datetime.now(timezone.utc))
             )
             await db.commit()
 
@@ -218,7 +216,7 @@ class PlacesSearchService:
             await db.execute(
                 update(PlacesCache)
                 .where(PlacesCache.id == place.id)
-                .values(access_count=PlacesCache.access_count + 1, last_accessed=datetime.utcnow())
+                .values(access_count=PlacesCache.access_count + 1, last_accessed=datetime.now(timezone.utc))
             )
             await db.commit()
 
@@ -247,7 +245,7 @@ class PlacesSearchService:
                 coords = p.get("coordinates", {})
                 if existing_place:
                     existing_place.access_count += 1
-                    existing_place.last_accessed = datetime.utcnow()
+                    existing_place.last_accessed = datetime.now(timezone.utc)
                 else:
                     db.add(PlacesCache(
                         place_id=pid,
@@ -263,7 +261,7 @@ class PlacesSearchService:
                         website=p.get("website", ""),
                         phone=p.get("phone", ""),
                         search_query=query,
-                        last_accessed=datetime.utcnow(),
+                        last_accessed=datetime.now(timezone.utc),
                     ))
 
             # Upsert search_cache
@@ -273,7 +271,7 @@ class PlacesSearchService:
             search_entry = existing_search.scalar_one_or_none()
             if search_entry:
                 search_entry.place_ids = place_ids
-                search_entry.expires_at = datetime.utcnow() + timedelta(days=CACHE_TTL_DAYS)
+                search_entry.expires_at = datetime.now(timezone.utc) + timedelta(days=CACHE_TTL_DAYS)
                 search_entry.result_count = len(places)
             else:
                 db.add(SearchCache(
@@ -281,7 +279,7 @@ class PlacesSearchService:
                     city=city,
                     result_count=len(places),
                     place_ids=place_ids,
-                    expires_at=datetime.utcnow() + timedelta(days=CACHE_TTL_DAYS),
+                    expires_at=datetime.now(timezone.utc) + timedelta(days=CACHE_TTL_DAYS),
                 ))
 
             await db.commit()

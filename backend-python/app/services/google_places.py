@@ -103,22 +103,6 @@ class GooglePlacesService:
             logger.warning(f"[GOOGLE_PLACES] Photo resolution failed for ref '{photo_reference[:30]}': {e}")
         return None
 
-    async def resolve_place_photos(self, place_id: str, max_photos: int = 3) -> list[str]:
-        """Get resolved photo URLs for a place via Place Details API."""
-        details = await self.get_place_details(place_id)
-        if not details:
-            return []
-
-        photos = details.get("photos", [])
-        urls = []
-        for p in photos[:max_photos]:
-            ref = p.get("photo_reference")
-            if ref:
-                url = await self.resolve_photo_url(ref)
-                if url:
-                    urls.append(url)
-        return urls
-
     async def text_search(self, query: str, limit: int = 10) -> list[dict]:
         """Search via Google Places Text Search API.
 

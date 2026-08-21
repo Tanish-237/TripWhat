@@ -11,17 +11,17 @@ import asyncio
 import json
 import re
 from datetime import datetime, timedelta
+from typing import Any
 
 from langchain_openai import ChatOpenAI
 
 from app.config import settings
 from app.schemas.itinerary import (
-    Itinerary, DayPlan, TimeSlot, Activity, ActivityLocation, ActivityCost,
-    HotelRecommendation, RestaurantRecommendation, FlightOption,
-    create_itinerary, create_day_plan, create_time_slot,
+    TimeSlot, Activity, ActivityLocation, HotelRecommendation, RestaurantRecommendation, FlightOption,
+    create_itinerary,
 )
 from app.services.places_search import places_search
-from app.services.query_generator import generate_queries, generate_hotel_queries, generate_restaurant_queries
+from app.services.query_generator import generate_queries, generate_hotel_queries, generate_restaurant_queries, generate_personalized_queries
 from app.utils.logger import logger
 
 
@@ -53,13 +53,18 @@ class ItineraryBuilder:
             self._model = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
         return self._model
 
-    async def build(self, ctx: dict) -> dict | None:
+    async def build(self, ctx: dict, status_cb=None) -> dict | None:
         cities = ctx.get("cities")
+        if status_cb:
+            await status_cb({"phase": "build_start", "cities": [c.get("name") for c in (cities or [])]})
         if cities and len(cities) > 0:
             if ctx.get("include_travel_means"):
-                return await self._build_with_travel_means(ctx)
-            return await self._build_multi_city(ctx)
-        return await self._build_single_city(ctx)
+                return await self._build_with_travel_means(ctx, status_cb)
+            return await self._build_multi_city(ctx, status_cb)
+        result = await self._build_single_city(ctx, status_cb)
+        if status_cb:
+            await status_cb({"phase": "build_complete"})
+        return result
 
     async def _search_and_curate_activities(
         self,
@@ -70,6 +75,9 @@ class ItineraryBuilder:
         help_with: list[str] | None,
         all_city_names: list[str],
         used_names: list[str] | None = None,
+        user_memories: list[dict] | None = None,
+        traveler_type: str | None = None,
+        user_interests: list[str] | None = None,
     ) -> list[dict]:
         """Search for real places and use LLM to curate activities for the day.
 
@@ -77,8 +85,16 @@ class ItineraryBuilder:
         2. Search via places_search (cache-first, with photo resolution)
         3. LLM picks 2-5 activities from real results based on time budget
         """
-        # Step 1: Generate queries procedurally
-        queries = generate_queries(city, trip_style, help_with, day_num, total_days)
+        # Step 1: Generate queries — use personalized version if personalization data available
+        if user_memories or traveler_type or user_interests:
+            queries = generate_personalized_queries(
+                city, trip_style, help_with, day_num, total_days,
+                user_memories=user_memories,
+                traveler_type=traveler_type,
+                user_interests=user_interests,
+            )
+        else:
+            queries = generate_queries(city, trip_style, help_with, day_num, total_days)
         logger.info(f"[ITINERARY_BUILDER] Generated {len(queries)} queries for {city} day {day_num}: {queries}")
 
         # Step 2: Search for real places (cache-first, with photos)
@@ -204,15 +220,21 @@ Respond with ONLY a JSON array of 2-5 objects:
         """
         from app.services.google_places import google_places
 
+        # Index places by lowercase name for O(1) matching
+        places_by_name = {p.get("name", "").lower(): p for p in places if p.get("name")}
+
         enriched = []
+        photo_tasks: list[tuple[dict, Any]] = []
         for c in curated:
             name = c.get("name", "")
             # Find matching place from search results
-            matching = None
-            for p in places:
-                if p.get("name", "").lower() == name.lower() or name.lower() in p.get("name", "").lower():
-                    matching = p
-                    break
+            matching = places_by_name.get(name.lower())
+            if not matching:
+                name_lower = name.lower()
+                matching = next(
+                    (p for pname, p in places_by_name.items() if name_lower and name_lower in pname),
+                    None,
+                )
 
             if matching:
                 c["placeId"] = matching.get("placeId", "")
@@ -227,18 +249,19 @@ Respond with ONLY a JSON array of 2-5 objects:
                 # Resolve photo URL if it's a reference, not a direct URL
                 photo_url = matching.get("photo_url", "")
                 if photo_url and not photo_url.startswith("http"):
-                    try:
-                        resolved = await google_places.resolve_photo_url(photo_url)
-                        if resolved:
-                            c["photo_url"] = resolved
-                        else:
-                            c["photo_url"] = None
-                    except Exception:
-                        c["photo_url"] = None
+                    photo_tasks.append((c, google_places.resolve_photo_url(photo_url)))
                 else:
                     c["photo_url"] = photo_url or None
 
             enriched.append(c)
+
+        # Resolve photo references in parallel
+        if photo_tasks:
+            resolved_urls = await asyncio.gather(
+                *(task for _, task in photo_tasks), return_exceptions=True
+            )
+            for (c, _), resolved in zip(photo_tasks, resolved_urls):
+                c["photo_url"] = resolved if isinstance(resolved, str) and resolved else None
 
         return enriched
 
@@ -375,12 +398,17 @@ Respond with ONLY a JSON array of 2-5 objects:
         defaults = {"morning": "12:00", "afternoon": "18:00", "evening": "22:00"}
         return defaults.get(period, "18:00")
 
-    async def _build_single_city(self, ctx: dict) -> dict:
+    async def _build_single_city(self, ctx: dict, status_cb=None) -> dict:
         destination = ctx["destination"]
         duration = ctx["duration"]
+        if status_cb:
+            await status_cb({"phase": "activities", "city": destination, "day": 1, "totalDays": duration})
         start_date = ctx.get("startDate")
         trip_style = ctx.get("tripStyle", "balanced")
         help_with = ctx.get("helpWith", [])
+        user_memories = ctx.get("userMemories")
+        traveler_type = ctx.get("travelerType")
+        user_interests = ctx.get("userInterests")
 
         itinerary = create_itinerary(destination, duration, start_date)
 
@@ -393,7 +421,8 @@ Respond with ONLY a JSON array of 2-5 objects:
         for i, day in enumerate(itinerary.days):
             day.subtitle = self._generate_day_description(destination, i + 1, duration, trip_style)
             activities = await self._search_and_curate_activities(
-                destination, i + 1, duration, trip_style, help_with, [destination], used_names
+                destination, i + 1, duration, trip_style, help_with, [destination], used_names,
+                user_memories=user_memories, traveler_type=traveler_type, user_interests=user_interests,
             )
             for a in activities:
                 name = a.get("name", "")
@@ -409,23 +438,32 @@ Respond with ONLY a JSON array of 2-5 objects:
             day.timeSlots = time_slots
 
         # Fetch hotel and restaurant recommendations for the city
-        hotels, restaurants = await self._search_hotels_and_restaurants(destination)
+        if status_cb:
+            await status_cb({"phase": "hotels_restaurants", "city": destination})
+        hotels, restaurants = await self._search_hotels_and_restaurants(destination, ctx)
         itinerary.hotelRecommendations = hotels
         itinerary.restaurantRecommendations = restaurants
 
         # Search flights if start location and dates are available
+        if status_cb:
+            await status_cb({"phase": "flights", "city": destination})
         flights = await self._search_flights_for_trip(ctx)
         itinerary.flightOptions = flights
 
         return {"itinerary": itinerary.model_dump()}
 
-    async def _build_multi_city(self, ctx: dict) -> dict:
+    async def _build_multi_city(self, ctx: dict, status_cb=None) -> dict:
         cities = ctx["cities"]
         total_days = ctx.get("totalDays") or sum(c["days"] for c in cities)
+        if status_cb:
+            await status_cb({"phase": "activities", "city": cities[0]["name"], "day": 1, "totalDays": total_days})
         start_date = ctx.get("startDate")
         trip_style = ctx.get("tripStyle", "balanced")
         help_with = ctx.get("helpWith", [])
         all_city_names = [c["name"] for c in cities]
+        user_memories = ctx.get("userMemories")
+        traveler_type = ctx.get("travelerType")
+        user_interests = ctx.get("userInterests")
 
         itinerary = create_itinerary(cities[0]["name"], total_days, start_date)
 
@@ -444,7 +482,8 @@ Respond with ONLY a JSON array of 2-5 objects:
                     day.title = f"Day {day_idx + 1} - {city['name']}"
                     day.subtitle = self._generate_day_description(city["name"], day_idx + 1, total_days, trip_style)
                     activities = await self._search_and_curate_activities(
-                        city["name"], day_idx + 1, total_days, trip_style, help_with, all_city_names, used_names
+                        city["name"], day_idx + 1, total_days, trip_style, help_with, all_city_names, used_names,
+                        user_memories=user_memories, traveler_type=traveler_type, user_interests=user_interests,
                     )
                     for a in activities:
                         name = a.get("name", "")
@@ -465,24 +504,35 @@ Respond with ONLY a JSON array of 2-5 objects:
         if ctx.get("travelType"):
             itinerary.tripMetadata.travelType = ctx["travelType"]
 
-        # Fetch hotel and restaurant recommendations per city
+        # Fetch hotel and restaurant recommendations per city (parallel across cities)
+        if status_cb:
+            await status_cb({"phase": "hotels_restaurants", "cities": [c["name"] for c in cities]})
         all_hotels: list[HotelRecommendation] = []
         all_restaurants: list[RestaurantRecommendation] = []
-        for city in cities:
-            hotels, restaurants = await self._search_hotels_and_restaurants(city["name"])
+        city_results = await asyncio.gather(
+            *(self._search_hotels_and_restaurants(city["name"], ctx) for city in cities),
+            return_exceptions=True,
+        )
+        for res in city_results:
+            if isinstance(res, Exception):
+                logger.error(f"[ITINERARY_BUILDER] Hotel/restaurant search failed for a city: {res}")
+                continue
+            hotels, restaurants = res
             all_hotels.extend(hotels)
             all_restaurants.extend(restaurants)
         itinerary.hotelRecommendations = all_hotels
         itinerary.restaurantRecommendations = all_restaurants
 
         # Search flights if start location and dates are available
+        if status_cb:
+            await status_cb({"phase": "flights", "cities": [c["name"] for c in cities]})
         flights = await self._search_flights_for_trip(ctx)
         itinerary.flightOptions = flights
 
         return {"itinerary": itinerary.model_dump()}
 
-    async def _build_with_travel_means(self, ctx: dict) -> dict:
-        result = await self._build_multi_city(ctx)
+    async def _build_with_travel_means(self, ctx: dict, status_cb=None) -> dict:
+        result = await self._build_multi_city(ctx, status_cb)
         if not result:
             return None
 
@@ -609,6 +659,8 @@ Respond with ONLY a JSON array of 2-5 objects:
             flight_models.append(FlightOption(
                 id=f.get("id", ""),
                 legs=f.get("legs", []),
+                outboundLegs=f.get("outboundLegs", []),
+                returnLegs=f.get("returnLegs", []),
                 layovers=f.get("layovers", []),
                 totalDuration=f.get("totalDuration", 0),
                 price=f.get("price", 0),
@@ -624,28 +676,118 @@ Respond with ONLY a JSON array of 2-5 objects:
         )
         return flight_models
 
+    # Common city → IATA airport code mapping for Google Flights.
+    # Google Flights requires IATA codes (e.g. "BOM", "NRT") for departure_id/arrival_id.
+    # The google_autocomplete engine returns general search suggestions (e.g. "mumbai indians")
+    # which are NOT valid airport codes — so we use this mapping instead.
+    _CITY_TO_IATA: dict[str, str] = {
+        # India
+        "mumbai": "BOM", "bombay": "BOM", "delhi": "DEL", "new delhi": "DEL",
+        "bangalore": "BLR", "bengaluru": "BLR", "chennai": "MAA", "madras": "MAA",
+        "kolkata": "CCU", "calcutta": "CCU", "hyderabad": "HYD", "pune": "PNQ",
+        "ahmedabad": "AMD", "kochi": "COK", "cochin": "COK", "goa": "GOI",
+        "jaipur": "JAI", "lucknow": "LKO", "chandigarh": "IXC",
+        # Japan
+        "tokyo": "NRT", "osaka": "KIX", "kyoto": "KIX", "nagoya": "NGO",
+        "sapporo": "CTS", "fukuoka": "FUK", "okinawa": "OKA",
+        # USA
+        "new york": "JFK", "nyc": "JFK", "manhattan": "JFK",
+        "los angeles": "LAX", "la": "LAX", "san francisco": "SFO", "sf": "SFO",
+        "chicago": "ORD", "miami": "MIA", "boston": "BOS", "seattle": "SEA",
+        "las vegas": "LAS", "washington": "IAD", "dc": "IAD", "atlanta": "ATL",
+        "dallas": "DFW", "houston": "IAH", "denver": "DEN", "phoenix": "PHX",
+        "san diego": "SAN", "portland": "PDX", "austin": "AUS",
+        # Europe
+        "london": "LHR", "paris": "CDG", "amsterdam": "AMS", "rome": "FCO",
+        "madrid": "MAD", "barcelona": "BCN", "berlin": "BER", "munich": "MUC",
+        "frankfurt": "FRA", "dublin": "DUB", "lisbon": "LIS", "prague": "PRG",
+        "vienna": "VIE", "zurich": "ZRH", "geneva": "GVA", "copenhagen": "CPH",
+        "stockholm": "ARN", "oslo": "OSL", "helsinki": "HEL", "athens": "ATH",
+        "istanbul": "IST", "milan": "MXP", "venice": "VCE", "florence": "FLR",
+        "naples": "NAP", "nice": "NCE", "edinburgh": "EDI", "manchester": "MAN",
+        # Asia Pacific
+        "singapore": "SIN", "hong kong": "HKG", "bangkok": "BKK",
+        "kuala lumpur": "KUL", "kl": "KUL", "seoul": "ICN", "incheon": "ICN",
+        "beijing": "PEK", "shanghai": "PVG", "taipei": "TPE", "manila": "MNL",
+        "jakarta": "CGK", "ho chi minh": "SGN", "saigon": "SGN", "hanoi": "HAN",
+        "sydney": "SYD", "melbourne": "MEL", "brisbane": "BNE", "perth": "PER",
+        "auckland": "AKL", "wellington": "WLG", "bali": "DPS", "denpasar": "DPS",
+        "phuket": "HKT", "chiang mai": "CNX", "kathmandu": "KTM",
+        "dhaka": "DAC", "colombo": "CMB",
+        # Middle East
+        "dubai": "DXB", "abu dhabi": "AUH", "doha": "DOH", "riyadh": "RUH",
+        "jeddah": "JED", "tel aviv": "TLV", "amman": "AMM",
+        # Africa
+        "cairo": "CAI", "johannesburg": "JNB", "cape town": "CPT",
+        "nairobi": "NBO", "lagos": "LOS", "addis ababa": "ADD",
+        # Latin America
+        "mexico city": "MEX", "cancun": "CUN", "bogota": "BOG",
+        "lima": "LIM", "santiago": "SCL", "buenos aires": "EZE",
+        "rio de janeiro": "GIG", "rio": "GIG", "sao paulo": "GRU",
+        "havana": "HAV", "san jose": "SJO",
+        # Iceland / Nordic
+        "reykjavik": "KEF", "iceland": "KEF",
+    }
+
     @staticmethod
     async def _resolve_airport_code(city_name: str) -> str | None:
-        """Resolve a city name to an airport code via SerpApi autocomplete."""
-        from app.services.serpapi_provider import serpapi_provider
+        """Resolve a city name to an IATA airport code.
 
+        Uses a hardcoded mapping of common cities. Falls back to None if
+        the city is not in the mapping (flight search will be skipped).
+        """
         if not city_name:
             return None
-        try:
-            suggestions = await serpapi_provider.autocomplete(city_name)
-            if suggestions:
-                return suggestions[0].get("code", "")
-        except Exception as e:
-            logger.warning(f"[ITINERARY_BUILDER] Airport code resolution failed for {city_name}: {e}")
+        key = city_name.lower().strip()
+        code = ItineraryBuilder._CITY_TO_IATA.get(key)
+        if code:
+            return code
+        # Try matching partial city name (e.g. "New York City" → "new york")
+        for mapped_key, mapped_code in ItineraryBuilder._CITY_TO_IATA.items():
+            if key.startswith(mapped_key) or mapped_key.startswith(key):
+                return mapped_code
+        logger.warning(f"[ITINERARY_BUILDER] No IATA code found for {city_name!r}")
         return None
 
-    async def _search_hotels_and_restaurants(self, city: str) -> tuple[list[HotelRecommendation], list[RestaurantRecommendation]]:
+    async def _search_hotels_and_restaurants(
+        self,
+        city: str,
+        ctx: dict | None = None,
+    ) -> tuple[list[HotelRecommendation], list[RestaurantRecommendation]]:
         """Search for top hotels and restaurants in a city.
 
-        Uses Google Places Text Search API directly for richer results,
-        falling back to places_search if no API key.
+        When SerpApi is configured AND the ctx provides check-in/check-out dates,
+        uses google_hotels for price/amenity/booking-link data. Falls back to
+        Google Places Text Search (no prices) when no dates or no SerpApi key.
         """
         from app.services.google_places import google_places
+
+        # --- SerpApi hotel path (with prices/amenities/booking) ---
+        # Used when SerpApi is configured AND we have check-in/check-out dates.
+        serpapi_hotels: list[dict] = []
+        if settings.serpapi_api_key and ctx:
+            start_date = ctx.get("startDate")
+            duration = ctx.get("duration") or ctx.get("totalDays") or 1
+            if start_date:
+                try:
+                    from datetime import datetime as _dt, timedelta as _td
+                    dep = _dt.fromisoformat(start_date[:10]).date()
+                    checkout = (dep + _td(days=int(duration))).isoformat()
+                    adults = ctx.get("numberOfPeople", 1) or 1
+                    from app.services.serpapi_provider import serpapi_provider
+                    serpapi_hotels = await serpapi_provider.search_hotels(
+                        destination=city,
+                        check_in=start_date[:10],
+                        check_out=checkout,
+                        adults=adults,
+                    )
+                    logger.info(
+                        f"[ITINERARY_BUILDER] SerpApi hotels for {city}: "
+                        f"{len(serpapi_hotels)} results (check-in {start_date[:10]})"
+                    )
+                except Exception as e:
+                    logger.warning(f"[ITINERARY_BUILDER] SerpApi hotel search failed: {e}")
+                    serpapi_hotels = []
 
         hotel_queries = generate_hotel_queries(city)
         restaurant_queries = generate_restaurant_queries(city)
@@ -677,31 +819,75 @@ Respond with ONLY a JSON array of 2-5 objects:
         hotels = self._dedupe_and_rank(hotel_places, max_results=5)
         restaurants = self._dedupe_and_rank(restaurant_places, max_results=5)
 
-        # Resolve photos and build model instances
-        hotel_models = []
-        for h in hotels:
-            photo_url = h.get("photo_url", "")
-            if photo_url and not photo_url.startswith("http"):
-                try:
-                    resolved = await google_places.resolve_photo_url(photo_url)
-                    if resolved:
-                        photo_url = resolved
-                except Exception:
-                    photo_url = None
-            else:
-                photo_url = photo_url or None
+        # --- Build hotel models ---
+        # Prefer SerpApi results (with prices/amenities/booking) when available.
+        hotel_models: list[HotelRecommendation] = []
+        if serpapi_hotels:
+            for h in serpapi_hotels[:5]:
+                images = h.get("images") or []
+                image_url = images[0]["original"] if images and images[0].get("original") else None
+                if not image_url and images:
+                    image_url = images[0].get("thumbnail")
 
-            hotel_models.append(HotelRecommendation(
-                name=h.get("name", ""),
-                placeId=h.get("placeId"),
-                address=h.get("address"),
-                rating=h.get("rating"),
-                imageUrl=photo_url,
-                website=h.get("website"),
-                phone=h.get("phone"),
-                coordinates=h.get("coordinates"),
-                description=h.get("description"),
-            ))
+                rate = h.get("ratePerNight")
+                rating = h.get("rating")
+                reviews = h.get("reviewsCount")
+                amenities = h.get("amenities") or []
+                currency = h.get("currency", "USD")
+
+                # Rule-based "why we picked this" rationale.
+                why_parts = []
+                if rating:
+                    why_parts.append(f"Top-rated in {city} ({rating}★")
+                    if reviews:
+                        why_parts.append(f", {reviews} reviews")
+                    why_parts.append(")")
+                if rate:
+                    why_parts.append(f" at {currency}{rate}/night")
+                if amenities:
+                    top_amenities = [a for a in amenities[:2] if isinstance(a, str)]
+                    if top_amenities:
+                        why_parts.append(f" with {', '.join(top_amenities)}")
+                why_picked = "".join(why_parts) + "." if why_parts else None
+
+                hotel_models.append(HotelRecommendation(
+                    name=h.get("name", ""),
+                    ratePerNight=rate,
+                    totalRate=h.get("totalRate"),
+                    currency=currency,
+                    rating=rating,
+                    reviewsCount=reviews,
+                    amenities=amenities,
+                    bookingLink=h.get("bookingLink"),
+                    images=[img.get("original") or img.get("thumbnail") for img in images if isinstance(img, dict)],
+                    imageUrl=image_url,
+                    whyPicked=why_picked,
+                ))
+        else:
+            # Fallback: Google Places text search (no prices/dates).
+            for h in hotels:
+                photo_url = h.get("photo_url", "")
+                if photo_url and not photo_url.startswith("http"):
+                    try:
+                        resolved = await google_places.resolve_photo_url(photo_url)
+                        if resolved:
+                            photo_url = resolved
+                    except Exception:
+                        photo_url = None
+                else:
+                    photo_url = photo_url or None
+
+                hotel_models.append(HotelRecommendation(
+                    name=h.get("name", ""),
+                    placeId=h.get("placeId"),
+                    address=h.get("address"),
+                    rating=h.get("rating"),
+                    imageUrl=photo_url,
+                    website=h.get("website"),
+                    phone=h.get("phone"),
+                    coordinates=h.get("coordinates"),
+                    description=h.get("description"),
+                ))
 
         restaurant_models = []
         for r in restaurants:
@@ -763,81 +949,5 @@ Respond with ONLY a JSON array of 2-5 objects:
             unique.append(p)
         ranked = sorted(unique, key=lambda p: p.get("rating") or 0, reverse=True)
         return ranked[:max_results]
-
-    def compute_day_signature(self, day: DayPlan) -> str:
-        slot_count = len(day.timeSlots)
-        city = day.location or "unknown"
-        date = day.date or ""
-        pace = sum(len(ts.activities) or (1 if ts.activity else 0) for ts in day.timeSlots)
-        return f"{city}|{date}|{slot_count}|{pace}"
-
-    async def build_delta(
-        self,
-        existing_itinerary: dict | None,
-        required_days: list[dict],
-        invalidated_cities: list[str] | None = None,
-    ) -> dict:
-        invalidated_cities = invalidated_cities or []
-
-        if not existing_itinerary or not existing_itinerary.get("days"):
-            itinerary = create_itinerary(
-                required_days[0].get("location", "Unknown") if required_days else "Unknown",
-                len(required_days),
-                required_days[0].get("date") if required_days else None,
-            )
-            for i, d in enumerate(required_days):
-                day = DayPlan(**d)
-                day.signature = self.compute_day_signature(day)
-                itinerary.days[i] = day
-            return {
-                "itinerary": itinerary.model_dump(),
-                "reusedDayKeys": [],
-                "newDayKeys": [d.signature for d in itinerary.days],
-            }
-
-        existing_by_sig = {}
-        for day_data in existing_itinerary["days"]:
-            day = DayPlan(**day_data)
-            sig = day.signature or self.compute_day_signature(day)
-            existing_by_sig[sig] = day
-
-        reused = []
-        new_keys = []
-        final_days = []
-
-        for req_day_data in required_days:
-            req_day = DayPlan(**req_day_data)
-            sig = self.compute_day_signature(req_day)
-            existing = existing_by_sig.get(sig)
-            is_invalidated = invalidated_cities and (req_day.location or "") in invalidated_cities
-
-            if existing and not is_invalidated:
-                final_days.append(existing)
-                reused.append(sig)
-            else:
-                req_day.signature = sig
-                final_days.append(req_day)
-                new_keys.append(sig)
-
-        # Re-pin pinned activities from invalidated days
-        if invalidated_cities and existing_itinerary:
-            for old_day_data in existing_itinerary["days"]:
-                old_day = DayPlan(**old_day_data)
-                if (old_day.location or "") in invalidated_cities:
-                    for ts in old_day.timeSlots:
-                        activities = ts.activities or ([ts.activity] if ts.activity else [])
-                        for act in activities:
-                            if act.metadata and act.metadata.get("pinned"):
-                                target = next((d for d in final_days if d.location == old_day.location), None)
-                                if target and target.timeSlots:
-                                    slot = target.timeSlots[0]
-                                    slot.activities.insert(0, act)
-
-        for i, d in enumerate(final_days):
-            d.dayNumber = i + 1
-
-        itinerary_data = {**existing_itinerary, "days": [d.model_dump() for d in final_days]}
-        return {"itinerary": itinerary_data, "reusedDayKeys": reused, "newDayKeys": new_keys}
-
 
 itinerary_builder = ItineraryBuilder()
