@@ -24,6 +24,14 @@ node_modules/
 .devin/skills/prototype
 .devin/skills/review-animations
 .devin/skills/write-swift
+.devin/skills/gsap-core
+.devin/skills/gsap-frameworks
+.devin/skills/gsap-performance
+.devin/skills/gsap-plugins
+.devin/skills/gsap-react
+.devin/skills/gsap-scrolltrigger
+.devin/skills/gsap-timeline
+.devin/skills/gsap-utils
 
 # Skill files (local agent config, not app code)
 .devin/skills/langsmith-dataset/
