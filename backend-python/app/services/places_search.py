@@ -25,6 +25,11 @@ import asyncio
 CACHE_TTL_DAYS = 30
 
 
+def _utcnow_naive() -> datetime:
+    """Naive UTC datetime for DB columns that are TIMESTAMP WITHOUT TIME ZONE."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 class PlacesSearchService:
     """Cache-first places search with MCP → Google Places → OpenTripMap fallback."""
 
@@ -171,7 +176,7 @@ class PlacesSearchService:
             result = await db.execute(
                 select(SearchCache).where(
                     SearchCache.query == query,
-                    SearchCache.expires_at > datetime.now(timezone.utc),
+                    SearchCache.expires_at > _utcnow_naive(),
                 )
             )
             search_entry = result.scalar_one_or_none()
@@ -194,7 +199,7 @@ class PlacesSearchService:
             await db.execute(
                 update(PlacesCache)
                 .where(PlacesCache.place_id.in_(place_ids))
-                .values(access_count=PlacesCache.access_count + 1, last_accessed=datetime.now(timezone.utc))
+                .values(access_count=PlacesCache.access_count + 1, last_accessed=_utcnow_naive())
             )
             await db.commit()
 
@@ -216,7 +221,7 @@ class PlacesSearchService:
             await db.execute(
                 update(PlacesCache)
                 .where(PlacesCache.id == place.id)
-                .values(access_count=PlacesCache.access_count + 1, last_accessed=datetime.now(timezone.utc))
+                .values(access_count=PlacesCache.access_count + 1, last_accessed=_utcnow_naive())
             )
             await db.commit()
 
@@ -245,7 +250,7 @@ class PlacesSearchService:
                 coords = p.get("coordinates", {})
                 if existing_place:
                     existing_place.access_count += 1
-                    existing_place.last_accessed = datetime.now(timezone.utc)
+                    existing_place.last_accessed = _utcnow_naive()
                 else:
                     db.add(PlacesCache(
                         place_id=pid,
@@ -261,7 +266,7 @@ class PlacesSearchService:
                         website=p.get("website", ""),
                         phone=p.get("phone", ""),
                         search_query=query,
-                        last_accessed=datetime.now(timezone.utc),
+                        last_accessed=_utcnow_naive(),
                     ))
 
             # Upsert search_cache
@@ -271,7 +276,7 @@ class PlacesSearchService:
             search_entry = existing_search.scalar_one_or_none()
             if search_entry:
                 search_entry.place_ids = place_ids
-                search_entry.expires_at = datetime.now(timezone.utc) + timedelta(days=CACHE_TTL_DAYS)
+                search_entry.expires_at = _utcnow_naive() + timedelta(days=CACHE_TTL_DAYS)
                 search_entry.result_count = len(places)
             else:
                 db.add(SearchCache(
@@ -279,7 +284,7 @@ class PlacesSearchService:
                     city=city,
                     result_count=len(places),
                     place_ids=place_ids,
-                    expires_at=datetime.now(timezone.utc) + timedelta(days=CACHE_TTL_DAYS),
+                    expires_at=_utcnow_naive() + timedelta(days=CACHE_TTL_DAYS),
                 ))
 
             await db.commit()
@@ -312,9 +317,17 @@ class PlacesSearchService:
         return []
 
     async def _search_opentripmap(self, query: str, city: str, limit: int) -> list[dict]:
-        """Search via OpenTripMap API."""
+        """Search via OpenTripMap API.
+
+        OpenTripMap's /geoname endpoint is a geocoder — it expects a city
+        name like "Tokyo", not a full query like "best attractions in Tokyo".
+        We geocode using the city parameter, then fetch places in radius.
+        """
         try:
-            results = await places_service.search_places(query, limit=limit)
+            # Use the city name for geocoding, not the full text query.
+            # If city is empty, fall back to extracting it from the query.
+            geoname = city or query
+            results = await places_service.search_places(geoname, limit=limit)
             if results:
                 for r in results:
                     coords = r.get("coordinates", {})
