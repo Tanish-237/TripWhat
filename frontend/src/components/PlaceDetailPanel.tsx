@@ -102,8 +102,17 @@ export function PlaceDetailPanel({ placeId, onClose, onSelectAlternate }: Props)
     .slice(0, 2)
     .join(' · ');
 
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
   return (
-    <div className="absolute inset-0 z-30 bg-[var(--surface)] flex flex-col overflow-hidden animate-in slide-in-from-right">
+    <div
+      className="absolute inset-0 z-30 bg-[var(--surface)] flex flex-col overflow-hidden"
+      style={{
+        transform: mounted ? 'translateX(0)' : 'translateX(100%)',
+        transition: 'transform 250ms var(--ease-drawer)',
+      }}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-4 h-12 border-b border-[var(--border)] shrink-0">
         <span className="text-sm font-medium text-[var(--ink)] truncate">Place Details</span>

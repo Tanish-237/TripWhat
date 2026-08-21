@@ -37,7 +37,8 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`${w} shrink-0 h-screen sticky top-0 border-r border-[var(--border)] bg-[var(--surface)] flex flex-col transition-all duration-200 z-30`}
+      className={`${w} shrink-0 h-screen sticky top-0 border-r border-[var(--border)] bg-[var(--surface)] flex flex-col z-30`}
+      style={{ transition: 'width 200ms var(--ease-out)' }}
     >
       {/* Brand + collapse */}
       <div className="flex items-center gap-2 px-4 h-14 border-b border-[var(--border)]">

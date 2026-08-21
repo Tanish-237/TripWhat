@@ -44,12 +44,12 @@ export default {
           "100%": { opacity: "1" },
         },
         slideUp: {
-          "0%": { transform: "translateY(16px)", opacity: "0" },
-          "100%": { transform: "translateY(0)", opacity: "1" },
+          "0%": { transform: "translateY(16px) scale(0.97)", opacity: "0" },
+          "100%": { transform: "translateY(0) scale(1)", opacity: "1" },
         },
         widgetMount: {
-          "0%": { transform: "translateY(8px)", opacity: "0" },
-          "100%": { transform: "translateY(0)", opacity: "1" },
+          "0%": { transform: "translateY(6px) scale(0.97)", opacity: "0" },
+          "100%": { transform: "translateY(0) scale(1)", opacity: "1" },
         },
       },
     },

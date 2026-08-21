@@ -18,6 +18,11 @@
   --success-border: #BBF7D0;
   --success-text: #166534;
 
+  /* Easing tokens — custom curves with punch */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
   font-family: var(--font-sans);
   line-height: 1.5;
   font-weight: 400;
@@ -66,4 +71,19 @@ input:-webkit-autofill:active {
 
 .mapboxgl-canvas {
   outline: none;
+}
+
+/* Global button press feedback — subtle scale on :active */
+button:active:not(:disabled) {
+  transform: scale(0.97);
+  transition: transform 120ms var(--ease-out);
+}
+
+/* Reduced motion — kill movement, keep opacity/color transitions */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
