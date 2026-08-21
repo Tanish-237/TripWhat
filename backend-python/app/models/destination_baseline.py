@@ -1,8 +1,8 @@
 """DestinationBaseline ORM model."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import String, Integer, Float
+from sqlalchemy import String, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base, PortableJSON
@@ -22,7 +22,7 @@ class DestinationBaseline(Base):
     top_restaurants: Mapped[list | None] = mapped_column(PortableJSON, nullable=True, default=list)
     neighborhoods: Mapped[list | None] = mapped_column(PortableJSON, nullable=True, default=list)
     route_templates: Mapped[list | None] = mapped_column(PortableJSON, nullable=True, default=list)
-    refreshed_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    refreshed_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc))
     ttl_days: Mapped[int] = mapped_column(Integer, default=30)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))

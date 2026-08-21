@@ -1,6 +1,6 @@
 """Trip ORM model."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import String, Integer, Boolean, Date
 from sqlalchemy.orm import Mapped, mapped_column
@@ -33,5 +33,5 @@ class Trip(Base):
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     trip_start_date: Mapped[datetime | None] = mapped_column(Date, nullable=True)
     trip_end_date: Mapped[datetime | None] = mapped_column(Date, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))

@@ -1,6 +1,14 @@
 """Integration tests for trips routes."""
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
+
+
+def _future_z_date(days_ahead: int = 30) -> str:
+    """ISO 8601 date with Z suffix (JS toISOString style), always in the future."""
+    dt = datetime.now(timezone.utc) + timedelta(days=days_ahead)
+    return dt.isoformat().replace("+00:00", "Z")
 
 
 async def _get_auth_token(client) -> str:
@@ -174,7 +182,7 @@ async def test_create_trip_with_trip_state_z_suffix_date(client):
         "people": 1,
         "travelType": "cultural",
         "tripState": {
-            "dates": {"start": "2026-08-18T06:17:36.248Z"},
+            "dates": {"start": _future_z_date()},
             "cities": [{"name": "Paris", "nights": 4, "order": 0}],
             "duration": 5,
         },

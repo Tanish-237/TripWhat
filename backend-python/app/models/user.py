@@ -1,8 +1,8 @@
 """User ORM model."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import String, Boolean, Integer
+from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base, PortableJSON
@@ -19,5 +19,5 @@ class User(Base):
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     preferences: Mapped[dict | None] = mapped_column(PortableJSON, nullable=True, default=dict)
     google_tokens: Mapped[dict | None] = mapped_column(PortableJSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))

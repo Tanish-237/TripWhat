@@ -1,6 +1,6 @@
 """Travel routes — travel means calculation."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.deps import get_current_user
@@ -67,12 +67,6 @@ async def recommendations(
     routes: list[dict],
     user: User = Depends(get_current_user),
 ):
-    recommendations = [
-        {
-            "type": "COST_EFFECTIVE",
-            "routeIndices": [0, 1],
-            "description": "Most budget-friendly options",
-            "estimatedSavings": 150,
-        }
-    ]
-    return {"success": True, "data": {"recommendations": recommendations}}
+    from app.services.travel_means import travel_means_service
+    recs = travel_means_service._generate_recommendations(routes)
+    return {"success": True, "data": {"recommendations": recs}}

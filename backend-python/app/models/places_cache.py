@@ -1,8 +1,8 @@
 """Places cache ORM models — stores real place data from MCP/API searches."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import String, Integer, Float, DateTime, Index, Text
+from sqlalchemy import String, Integer, Float, DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base, PortableJSON
@@ -29,7 +29,7 @@ class PlacesCache(Base):
     search_query: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
     access_count: Mapped[int] = mapped_column(Integer, default=1)
     last_accessed: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    cached_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    cached_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
 
 
 class SearchCache(Base):
@@ -40,5 +40,5 @@ class SearchCache(Base):
     city: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
     result_count: Mapped[int] = mapped_column(Integer, default=0)
     place_ids: Mapped[list | None] = mapped_column(PortableJSON, nullable=True, default=list)
-    cached_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
-    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True, default=lambda: datetime.utcnow() + timedelta(days=30))
+    cached_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True, default=lambda: datetime.now(timezone.utc) + timedelta(days=30))

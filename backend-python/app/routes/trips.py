@@ -1,6 +1,6 @@
 """Trips routes — full CRUD + statistics + upcoming/completed."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -82,7 +82,7 @@ async def create_trip(
                 trip.trip_start_date = start.date()
                 if req.totalDays:
                     trip.trip_end_date = (start + timedelta(days=req.totalDays)).date()
-                if start.date() >= datetime.utcnow().date():
+                if start.date() >= datetime.now(timezone.utc).date():
                     trip.is_upcoming = True
             except (ValueError, TypeError):
                 pass
@@ -308,7 +308,7 @@ async def update_trip(
                         trip.trip_start_date = start.date()
                         if trip.total_days:
                             trip.trip_end_date = (start + timedelta(days=trip.total_days)).date()
-                        if start.date() >= datetime.utcnow().date():
+                        if start.date() >= datetime.now(timezone.utc).date():
                             trip.is_upcoming = True
                             trip.is_completed = False
                     except (ValueError, TypeError):
@@ -359,7 +359,7 @@ async def mark_completed(
     if not trip:
         raise HTTPException(status_code=404, detail="Saved trip not found")
     trip.is_completed = True
-    trip.trip_end_date = datetime.utcnow().date()
+    trip.trip_end_date = datetime.now(timezone.utc).date()
     await db.commit()
     await db.refresh(trip)
     return {"message": "Trip marked as completed successfully", "savedTrip": _trip_to_dict(trip)}

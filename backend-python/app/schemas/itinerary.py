@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 import uuid
 
@@ -104,6 +104,15 @@ class HotelRecommendation(BaseModel):
     phone: str | None = None
     coordinates: dict | None = None
     description: str | None = None
+    # SerpApi google_hotels fields (populated when booking search is used)
+    ratePerNight: float | None = None
+    totalRate: float | None = None
+    currency: str | None = None
+    amenities: list[str] | None = None
+    reviewsCount: int | None = None
+    bookingLink: str | None = None
+    images: list[str] | None = None
+    whyPicked: str | None = None
 
 
 class RestaurantRecommendation(BaseModel):
@@ -134,6 +143,8 @@ class FlightLeg(BaseModel):
 class FlightOption(BaseModel):
     id: str = ""
     legs: list[FlightLeg] = []
+    outboundLegs: list[FlightLeg] = []
+    returnLegs: list[FlightLeg] = []
     layovers: list[dict] = []
     totalDuration: int = 0
     price: float = 0
@@ -150,38 +161,8 @@ class Itinerary(BaseModel):
     hotelRecommendations: list[HotelRecommendation] = []
     restaurantRecommendations: list[RestaurantRecommendation] = []
     flightOptions: list[FlightOption] = []
-    createdAt: datetime = Field(default_factory=datetime.utcnow)
-    updatedAt: datetime = Field(default_factory=datetime.utcnow)
-
-
-class ItineraryAction(BaseModel):
-    type: str = "add"
-    target: dict = {}
-    details: dict | None = None
-
-
-class EditorResult(BaseModel):
-    itinerary: Itinerary
-    message: str
-    changeSummary: dict | None = None
-
-
-class BuildContext(BaseModel):
-    destination: str = ""
-    duration: int = 0
-    startDate: str | None = None
-    preferences: list[str] | None = None
-    travelType: str | None = None
-    dailyBudget: float | None = None
-    activityLevel: str | None = None
-    pacing: str | None = None
-    numberOfPeople: int | None = None
-    startLocation: str | dict | None = None
-    cities: list[dict] | None = None
-    totalDays: int | None = None
-    budget: dict | None = None
-    budgetMode: str | None = None
-    travelPreferences: dict | None = None
+    createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updatedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # --- Factory helpers ---

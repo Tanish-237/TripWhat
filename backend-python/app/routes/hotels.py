@@ -1,6 +1,6 @@
 """Hotels routes — search via SerpApi."""
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 
 from app.services.serpapi_provider import serpapi_provider
 

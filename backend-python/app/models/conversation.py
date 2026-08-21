@@ -1,8 +1,8 @@
 """Conversation ORM model."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import String, Integer, ForeignKey
+from sqlalchemy import String, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base, PortableJSON
@@ -18,5 +18,5 @@ class Conversation(Base):
     meta: Mapped[dict | None] = mapped_column("metadata", PortableJSON, nullable=True, default=dict)
     itinerary: Mapped[dict | None] = mapped_column(PortableJSON, nullable=True)
     trip_state: Mapped[dict | None] = mapped_column(PortableJSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
