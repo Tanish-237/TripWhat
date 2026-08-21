@@ -6,7 +6,6 @@ Scopes: gmail.readonly — to search for booking confirmation emails.
 
 import re
 import base64
-from datetime import datetime
 
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow

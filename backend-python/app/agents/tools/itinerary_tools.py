@@ -1,9 +1,10 @@
 """Itinerary tools — build_itinerary and edit_itinerary."""
 
-import json
-from langchain_core.tools import tool
+from langchain_core.tools import tool, InjectedToolCallId
+from langchain_core.messages import ToolMessage
 from langgraph.prebuilt import InjectedState
 from langgraph.config import get_stream_writer
+from langgraph.types import Command
 from typing import Annotated
 
 from app.services.itinerary_builder import itinerary_builder
@@ -12,7 +13,10 @@ from app.utils.logger import logger
 
 
 @tool
-async def build_itinerary(state: Annotated[dict, InjectedState]) -> str:
+async def build_itinerary(
+    state: Annotated[dict, InjectedState],
+    tool_call_id: Annotated[str, InjectedToolCallId],
+) -> Command:
     """Build a complete itinerary from the current trip state.
     Call this when the user confirms the route proposal.
     Returns a day-by-day itinerary with time slots for activities.
@@ -33,7 +37,11 @@ async def build_itinerary(state: Annotated[dict, InjectedState]) -> str:
             days = nights + 1 if i == 0 else nights
             build_cities.append({"name": c["name"], "days": days})
     else:
-        return "Cannot build itinerary: no cities in trip state."
+        return Command(
+            update={
+                "messages": [ToolMessage(content="Cannot build itinerary: no cities in trip state.", tool_call_id=tool_call_id)],
+            }
+        )
 
     ctx = {
         "destination": build_cities[0]["name"],
@@ -67,7 +75,11 @@ async def build_itinerary(state: Annotated[dict, InjectedState]) -> str:
 
     result = await itinerary_builder.build(ctx)
     if not result:
-        return "Failed to build itinerary."
+        return Command(
+            update={
+                "messages": [ToolMessage(content="Failed to build itinerary.", tool_call_id=tool_call_id)],
+            }
+        )
 
     itinerary = result["itinerary"]
     logger.info(f"[BUILD_ITINERARY] Built itinerary with {len(itinerary.get('days', []))} days")
@@ -79,11 +91,21 @@ async def build_itinerary(state: Annotated[dict, InjectedState]) -> str:
     except Exception:
         pass
 
-    return (
+    # Write itinerary to trip_state and return a ToolMessage for the LLM
+    new_trip_state = dict(trip_state)
+    new_trip_state["itinerary"] = itinerary
+
+    tool_msg = (
         f"Itinerary built successfully!\n"
         f"Days: {len(itinerary.get('days', []))}\n"
-        f"Cities: {', '.join(c['name'] for c in build_cities)}\n\n"
-        f"Itinerary data: {json.dumps(itinerary)}"
+        f"Cities: {', '.join(c['name'] for c in build_cities)}"
+    )
+
+    return Command(
+        update={
+            "trip_state": new_trip_state,
+            "messages": [ToolMessage(content=tool_msg, tool_call_id=tool_call_id)],
+        }
     )
 
 
@@ -98,7 +120,8 @@ async def edit_itinerary(
     new_day: int | None = None,
     new_time_slot: str | None = None,
     state: Annotated[dict, InjectedState] = None,
-) -> str:
+    tool_call_id: Annotated[str, InjectedToolCallId] = None,
+) -> Command:
     """Edit an existing itinerary by adding, removing, replacing, or moving activities.
 
     Args:
@@ -115,7 +138,11 @@ async def edit_itinerary(
     itinerary = trip_state.get("itinerary")
 
     if not itinerary:
-        return "No itinerary found. Build an itinerary first."
+        return Command(
+            update={
+                "messages": [ToolMessage(content="No itinerary found. Build an itinerary first.", tool_call_id=tool_call_id)],
+            }
+        )
 
     action = {
         "type": action_type,
@@ -148,10 +175,28 @@ async def edit_itinerary(
         elif action_type == "remove_day":
             result = itinerary_editor.remove_day(itinerary, day or 1)
         else:
-            return f"Unknown action type: {action_type}"
+            return Command(
+                update={
+                    "messages": [ToolMessage(content=f"Unknown action type: {action_type}", tool_call_id=tool_call_id)],
+                }
+            )
 
         logger.info(f"[EDIT_ITINERARY] {action_type}: {result['message']}")
-        return f"{result['message']}\n\nUpdated itinerary: {json.dumps(result['itinerary'])}"
+
+        # Write updated itinerary to trip_state
+        new_trip_state = dict(trip_state)
+        new_trip_state["itinerary"] = result["itinerary"]
+
+        return Command(
+            update={
+                "trip_state": new_trip_state,
+                "messages": [ToolMessage(content=result["message"], tool_call_id=tool_call_id)],
+            }
+        )
     except Exception as e:
         logger.error(f"[EDIT_ITINERARY] Error: {e}")
-        return f"Failed to edit itinerary: {e}"
+        return Command(
+            update={
+                "messages": [ToolMessage(content=f"Failed to edit itinerary: {e}", tool_call_id=tool_call_id)],
+            }
+        )

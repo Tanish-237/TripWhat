@@ -1,15 +1,17 @@
 """Slot tools — fill_trip_slot and check_trip_status.
 
-Uses InjectedState to read/write agent state natively — this fixes the
-state persistence bug that plagued the JS deep agent.
+Uses InjectedState to read agent state natively, and Command(update=...) to
+write trip_state back to graph state. This fixes the state persistence bug
+that plagued the JS deep agent.
 """
 
-from langchain_core.tools import tool
+from langchain_core.tools import tool, InjectedToolCallId
+from langchain_core.messages import ToolMessage
 from langgraph.prebuilt import InjectedState
-from langgraph.graph.message import MessagesState
+from langgraph.types import Command
 from typing import Annotated, Any
 
-from app.agents.state import check_slots, apply_slot_answer, SLOT_QUESTIONS
+from app.agents.state import check_slots, apply_slot_answer, create_default_trip_state
 from app.utils.logger import logger
 
 
@@ -20,12 +22,20 @@ def check_trip_status(state: Annotated[dict, InjectedState]) -> str:
     trip_state = state.get("trip_state")
     result = check_slots(trip_state)
 
+    # If itinerary already exists, the user is in post-build mode — they can
+    # edit, ask questions, or search. Don't block on missing conditional slots.
+    itinerary = (trip_state or {}).get("itinerary")
+    if itinerary:
+        return (
+            "All core slots filled. Itinerary has been built. "
+            "The user may want to edit the itinerary (add/remove/replace activities), "
+            "ask questions, search for places, or modify trip parameters. "
+            "Handle their request directly — do NOT ask about missing conditional slots."
+        )
+
     if result["proceed"]:
         route_proposal = (trip_state or {}).get("routeProposal")
-        itinerary = (trip_state or {}).get("itinerary")
-        if itinerary:
-            return "All slots filled. Itinerary has been built. The user may want to edit it or ask questions."
-        elif route_proposal:
+        if route_proposal:
             return "All slots filled. Route has been proposed but not yet confirmed. Wait for user confirmation, then call build_itinerary."
         else:
             return "All slots filled. Call propose_route to generate a route proposal."
@@ -45,7 +55,8 @@ def fill_trip_slot(
     slot: str,
     value: Any,
     state: Annotated[dict, InjectedState],
-) -> str:
+    tool_call_id: Annotated[str, InjectedToolCallId],
+) -> Command:
     """Fill a trip planning slot with a value.
 
     Args:
@@ -57,17 +68,38 @@ def fill_trip_slot(
     """
     trip_state = state.get("trip_state") or {}
 
-    # Apply the slot answer
+    # Apply the slot answer to get the new state.
     new_state = apply_slot_answer(trip_state, slot, value)
 
-    # Store back to state — this is the key: we write to the graph state
     logger.info(f"[FILL_SLOT] Filled {slot}={value}, state version={new_state.get('version')}")
+
+    # Compute the delta — only the fields that changed.
+    # Use the normalized baseline (what apply_slot_answer would produce with
+    # no changes) so we don't include fields that were just defaulted.
+    # This is critical for parallel tool calls: when the agent calls fill_trip_slot
+    # multiple times in one turn, each returns only its delta, and the merge reducer
+    # in state_schema.py combines them without overwriting each other.
+    baseline = create_default_trip_state() if not trip_state else trip_state
+    delta = {}
+    for k, v in new_state.items():
+        if k == "onboarding":
+            # Always include onboarding — the merge reducer unions slotsFilled
+            delta[k] = v
+        elif baseline.get(k) != v:
+            delta[k] = v
 
     # Check what's next
     result = check_slots(new_state)
     if result["proceed"]:
-        return f"Slot '{slot}' filled with value '{value}'. All required slots are now filled! Ready to propose a route. Updated trip state: {new_state}"
+        tool_msg = f"Slot '{slot}' filled with value '{value}'. All required slots are now filled! Ready to propose a route."
     else:
-        next_slot = result["missingSlots"][0]
         next_q = result["questions"][0]
-        return f"Slot '{slot}' filled with value '{value}'. Next, ask: \"{next_q['question']}\". Updated trip state: {new_state}"
+        tool_msg = f"Slot '{slot}' filled with value '{value}'. Next, ask: \"{next_q['question']}\""
+
+    # Write only the delta back to graph state via Command.
+    return Command(
+        update={
+            "trip_state": delta,
+            "messages": [ToolMessage(content=tool_msg, tool_call_id=tool_call_id)],
+        }
+    )

@@ -9,7 +9,6 @@ from langchain_core.tools import tool
 
 from app.services.mcp_client import maps_mcp
 from app.services.places_search import places_search
-from app.utils.logger import logger
 
 
 @tool

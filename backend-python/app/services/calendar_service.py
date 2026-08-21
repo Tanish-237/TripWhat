@@ -5,7 +5,6 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 
 from app.config import settings
-from app.utils.logger import logger
 
 
 class CalendarService:
@@ -89,10 +88,10 @@ class CalendarService:
 
     async def list_upcoming_events(self, user_id: str, max_results: int = 20) -> list[dict]:
         service = await self._get_authorized_client(user_id)
-        from datetime import datetime
+        from datetime import datetime, timezone
         events_result = service.events().list(
             calendarId="primary",
-            timeMin=datetime.utcnow().isoformat() + "Z",
+            timeMin=datetime.now(timezone.utc).isoformat() + "Z",
             maxResults=max_results,
             singleEvents=True,
             orderBy="startTime",

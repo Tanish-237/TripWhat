@@ -1,7 +1,7 @@
 """Search tools — search_destinations, web_search, resolve_places."""
 
-import httpx
 from langchain_core.tools import tool
+from langchain_tavily import TavilySearch
 
 from app.config import settings
 from app.services.places_service import places_service
@@ -35,27 +35,38 @@ async def web_search(query: str) -> str:
     Args:
         query: What to search for
     """
+    if not settings.tavily_api_key:
+        return "Web search unavailable: Tavily API key not configured."
+
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(
-                "https://api.openai.com/v1/responses",
-                headers={"Authorization": f"Bearer {settings.openai_api_key}"},
-                json={
-                    "model": "gpt-4o-mini",
-                    "tools": [{"type": "web_search"}],
-                    "input": query,
-                },
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                # Extract text from the response
-                for item in data.get("output", []):
-                    if item.get("type") == "message":
-                        for content in item.get("content", []):
-                            if content.get("type") == "output_text":
-                                return content["text"][:1000]
-                return "Search completed but no text content found."
-            return f"Web search failed with status {resp.status_code}"
+        tavily = TavilySearch(
+            max_results=5,
+            search_depth="basic",
+            include_answer=True,
+            tavily_api_key=settings.tavily_api_key,
+        )
+        result = await tavily.ainvoke(query)
+
+        # TavilySearch returns a list of content blocks or a dict
+        if isinstance(result, list):
+            parts = []
+            for block in result:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    parts.append(block["text"])
+                elif isinstance(block, str):
+                    parts.append(block)
+            return "\n\n".join(parts)[:2000] if parts else str(result)[:2000]
+        elif isinstance(result, dict):
+            answer = result.get("answer", "")
+            results_list = result.get("results", [])
+            parts = []
+            if answer:
+                parts.append(answer)
+            for r in results_list[:5]:
+                parts.append(f"**{r.get('title', '')}**: {r.get('content', '')[:200]}")
+            return "\n\n".join(parts)[:2000] if parts else str(result)[:2000]
+        else:
+            return str(result)[:2000]
     except Exception as e:
         logger.error(f"Web search failed: {e}")
         return f"Web search failed: {e}"

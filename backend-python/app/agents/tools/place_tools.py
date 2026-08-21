@@ -3,8 +3,6 @@
 from langchain_core.tools import tool
 
 from app.services.google_places import google_places
-from app.services.places_service import places_service
-from app.utils.logger import logger
 
 
 @tool
@@ -31,7 +29,7 @@ async def get_place_details(place_id: str) -> str:
     if website:
         result += f"\nWebsite: {website}"
     if hours:
-        result += f"\nHours:\n" + "\n".join(hours)
+        result += "\nHours:\n" + "\n".join(hours)
 
     return result
 

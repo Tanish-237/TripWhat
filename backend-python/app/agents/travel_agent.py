@@ -4,29 +4,36 @@ This replaces both travel-agent.ts (70KB LangGraph StateGraph) and
 deep-travel-agent.ts (10KB JS deep agent with broken state).
 
 Key fix: Python's InjectedState annotation lets tools read/write agent
-state natively. The MemorySaver checkpointer persists state per
-conversation_id (thread_id). No mutable context hacks needed.
+state natively. Persistence is handled by AsyncPostgresSaver (wired in
+from app lifespan; falls back to MemorySaver) per conversation_id
+(thread_id). A Postgres-backed store holds long-term user preferences
+across conversations. No mutable context hacks needed.
 """
 
-import json
-import re
-from typing import Any
 
 from langchain_openai import ChatOpenAI
+from langchain.agents import create_agent
+from langchain.agents.middleware import (
+    ToolErrorMiddleware,
+    ModelCallLimitMiddleware,
+    wrap_model_call,
+    ModelRequest,
+    ModelResponse,
+)
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.prebuilt import create_react_agent as create_agent
+from langgraph.types import Command
 
-from app.config import settings
 from app.agents.prompts import DEEP_AGENT_SYSTEM_PROMPT
-from app.agents.state import check_slots, apply_slot_answer, SLOT_ORDER, create_default_trip_state
+from app.agents.state import check_slots, SLOT_ORDER, create_default_trip_state
+from app.agents.state_schema import TravelAgentState
 from app.agents.tools.slot_tools import check_trip_status, fill_trip_slot
 from app.agents.tools.search_tools import search_destinations, web_search, resolve_places
 from app.agents.tools.place_tools import get_place_details, find_nearby_attractions
 from app.agents.tools.route_tools import propose_route
 from app.agents.tools.itinerary_tools import build_itinerary, edit_itinerary
 from app.agents.tools.calendar_tools import create_calendar_event
+from app.agents.tools.memory_tools import remember_user_preference
 from app.agents.tools.mcp_tools import mcp_search_places, mcp_resolve_names, mcp_compute_routes, mcp_lookup_weather
-from app.services.slot_parser import slot_parser, SLOT_DESCRIPTIONS
 from app.services.itinerary_builder import itinerary_builder
 from app.utils.logger import logger
 
@@ -36,7 +43,10 @@ class TravelAgent:
 
     def __init__(self):
         self.model_name = "gpt-4o-mini"
+        # Default in-memory checkpointer; replaced by AsyncPostgresSaver
+        # from the app lifespan via set_persistence().
         self.checkpointer = MemorySaver()
+        self.store = None
         self._agent = None
         self._model = None
         self._tools = [
@@ -51,10 +61,52 @@ class TravelAgent:
             build_itinerary,
             edit_itinerary,
             create_calendar_event,
+            remember_user_preference,
             mcp_search_places,
             mcp_resolve_names,
             mcp_compute_routes,
             mcp_lookup_weather,
+        ]
+
+    def set_persistence(self, checkpointer, store) -> None:
+        """Wire in persistent checkpointer/store (called once from app lifespan)."""
+        self.checkpointer = checkpointer
+        self.store = store
+        self._agent = None  # force agent rebuild with new persistence
+
+    def _build_middleware(self) -> list:
+        """Build the middleware stack for the agent."""
+        # Dynamic model selection: gpt-4o for onboarding (parsing-critical),
+        # gpt-4o-mini for post-onboarding chat (cost-optimized).
+        onboarding_model = ChatOpenAI(model="gpt-4o", temperature=0.7)
+        post_onboarding_model = ChatOpenAI(model=self.model_name, temperature=0.7)
+
+        @wrap_model_call
+        async def dynamic_model_selection(request: ModelRequest, handler) -> ModelResponse:
+            """Route to the appropriate model based on trip_state.
+
+            Inspects trip_state in graph state to determine if the user is
+            still in onboarding (needs stronger reasoning) or post-onboarding
+            (can use a cheaper model).
+            """
+            trip_state = request.state.get("trip_state") or {}
+            onboarding = trip_state.get("onboarding", {})
+            slots_filled = onboarding.get("slotsFilled", [])
+            has_itinerary = bool(trip_state.get("itinerary"))
+
+            # Onboarding phase: use onboarding model
+            # Post-onboarding: use post-onboarding model
+            if not has_itinerary and len(slots_filled) < len(SLOT_ORDER):
+                model = onboarding_model
+            else:
+                model = post_onboarding_model
+
+            return await handler(request.override(model=model))
+
+        return [
+            dynamic_model_selection,
+            ToolErrorMiddleware(aon_error=lambda exc, state, tool_call: f"Tool error: {type(exc).__name__}. Please try a different approach."),
+            ModelCallLimitMiddleware(run_limit=10),
         ]
 
     @property
@@ -63,8 +115,11 @@ class TravelAgent:
             self._agent = create_agent(
                 model=ChatOpenAI(model=self.model_name, temperature=0.7),
                 tools=self._tools,
-                prompt=DEEP_AGENT_SYSTEM_PROMPT,
+                system_prompt=DEEP_AGENT_SYSTEM_PROMPT,
+                state_schema=TravelAgentState,
+                middleware=self._build_middleware(),
                 checkpointer=self.checkpointer,
+                store=self.store,
             )
         return self._agent
 
@@ -86,89 +141,171 @@ class TravelAgent:
         """
         context = context or {}
         trip_state = context.get("tripState")
-        history = context.get("history", [])
 
+        # Build messages: only the new user message + preferences context.
+        # The LangGraph checkpointer restores previous messages and trip_state
+        # from the same thread_id — do NOT replay history as messages (causes
+        # duplication) and do NOT pass trip_state in input (overwrites checkpoint).
         messages = []
-        for h in history[-6:]:
-            if h.startswith("user:"):
-                messages.append({"role": "user", "content": h[5:].strip()})
-            elif h.startswith("assistant:"):
-                messages.append({"role": "assistant", "content": h[10:].strip()})
 
-        state_context = self._build_state_context(trip_state)
-        if state_context:
-            messages.append({"role": "system", "content": state_context})
+        prefs_context = self._build_preferences_context(
+            context.get("userPreferences"), context.get("userMemories")
+        )
+        if prefs_context:
+            messages.append({"role": "system", "content": prefs_context})
         messages.append({"role": "user", "content": message})
-
-        pre_check = check_slots(trip_state)
-        pre_count = len(SLOT_ORDER) if pre_check["proceed"] else len(SLOT_ORDER) - len(pre_check["missingSlots"])
 
         logger.info(f"[AGENT_STREAM] Processing: {message!r} (conv={conversation_id})")
 
-        if not trip_state or not trip_state.get("onboarding", {}).get("slotsFilled"):
-            final_trip_state = await self._pre_parse_initial_message(message, trip_state)
-            if final_trip_state:
-                trip_state = final_trip_state
-                pre_check = check_slots(trip_state)
-                pre_count = len(SLOT_ORDER) if pre_check["proceed"] else len(SLOT_ORDER) - len(pre_check["missingSlots"])
-                logger.info(f"[AGENT_STREAM] Pre-parsed {pre_count}/{len(SLOT_ORDER)} slots")
-
-        final_trip_state = trip_state
+        final_trip_state = trip_state or create_default_trip_state()
         response_text = ""
 
-        if not pre_check["proceed"]:
-            missing_slot = pre_check["missingSlots"][0] if pre_check["missingSlots"] else None
-            next_question = pre_check["questions"][0] if pre_check["questions"] else None
-            if missing_slot and next_question:
-                logger.info(f"[AGENT_STREAM] Onboarding — trying fallback parser for '{missing_slot}'")
-                try:
-                    parsed = await slot_parser.parse(missing_slot, next_question["question"], message)
-                    if parsed is not None:
-                        final_trip_state = apply_slot_answer(final_trip_state or {}, missing_slot, parsed)
-                except Exception as e:
-                    logger.error(f"[AGENT_STREAM] Fallback parser failed: {e}")
+        config = {
+            "configurable": {"thread_id": conversation_id, "user_id": context.get("userId")},
+            "metadata": {
+                "conversation_id": conversation_id,
+                "user_id": context.get("userId", ""),
+                "app": "tripwhat",
+            },
+        }
 
-            post_check = check_slots(final_trip_state)
-            if not post_check["proceed"] and post_check["questions"]:
-                response_text = post_check["questions"][0]["question"]
-            elif post_check["proceed"]:
-                response_text = ""
+        # Check if the graph is in an interrupted state (e.g., route confirmation).
+        # If so, resume the interrupt with the user's message as the decision,
+        # instead of starting a new turn.
+        try:
+            state_snapshot = await self.agent.aget_state(config)
+            has_interrupt = any(
+                task.interrupts for task in (state_snapshot.tasks or [])
+            )
+            if has_interrupt:
+                logger.info("[AGENT_STREAM] Detected pending interrupt, will resume")
+        except Exception as e:
+            logger.warning(f"[AGENT_STREAM] Failed to check interrupt state: {e}")
+            has_interrupt = False
+
+        if has_interrupt:
+            # Resume from interrupt — pass the user's message as the resume value.
+            # The propose_route tool will interpret this as confirmation/rejection.
+            # Use word-boundary matching to avoid false positives (e.g., "ok" in "Tokyo").
+            import re
+            msg_lower = message.lower()
+            # Check for explicit rejection first
+            rejected = re.search(r'\b(no|nope|reject|change|modify|different|not really)\b', msg_lower) is not None
+            if rejected:
+                confirmed = False
             else:
-                response_text = "I apologize, but I had trouble processing your request."
+                confirmed = any(re.search(r'\b' + re.escape(w) + r'\b', msg_lower) for w in
+                    ["yes", "confirm", "looks good", "build", "great", "perfect", "ok", "sure", "approve", "go ahead", "do it"])
+            resume_value = {"confirmed": confirmed, "message": message}
+            logger.info(f"[AGENT_STREAM] Resuming interrupt with confirmed={confirmed}, agent={self.agent is not None}")
+
+            # Use ainvoke (not astream_events) with Command(resume=...) — v3 events
+            # protocol doesn't support Command input, and astream yields middleware
+            # chunks not the final state. ainvoke returns the full result.
+            try:
+                result = await self.agent.ainvoke(
+                    Command(resume=resume_value),
+                    config=config,
+                )
+                if result and isinstance(result, dict):
+                    updated_trip_state = result.get("trip_state")
+                    if updated_trip_state:
+                        final_trip_state = updated_trip_state
+                    # Extract the last AI message text
+                    msgs = result.get("messages", [])
+                    for msg in reversed(msgs):
+                        if hasattr(msg, "type") and msg.type == "ai":
+                            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+                            if content and content.strip():
+                                response_text = content.strip()
+                                yield {"type": "token", "text": response_text}
+                                break
+
+                # Check if a new interrupt was triggered (e.g., re-proposed route)
+                new_state = await self.agent.aget_state(config)
+                new_interrupts = any(task.interrupts for task in (new_state.tasks or []))
+                if new_interrupts:
+                    # Get the interrupt info
+                    for task in (new_state.tasks or []):
+                        if task.interrupts:
+                            interrupt_info = task.interrupts[0].value
+                            if isinstance(interrupt_info, dict):
+                                interrupt_info["tripState"] = final_trip_state
+                            yield {"type": "interrupt", "payload": interrupt_info}
+                            return
+
+            except Exception as e:
+                logger.error(f"[AGENT_STREAM] Resume failed: {e}", exc_info=True)
+                response_text = "I'm sorry, I had trouble resuming your trip planning. Could you repeat your request?"
+
         else:
-            # Post-onboarding: stream the agent execution
-            config = {"configurable": {"thread_id": conversation_id}}
             try:
                 stream = await self.agent.astream_events(
-                    {"messages": messages}, config=config, version="v3"
+                    {"messages": messages},
+                    config=config, version="v3"
                 )
 
                 async for message_event in stream.messages:
-                    text = str(message_event.text)
-                    if text:
-                        yield {"type": "token", "text": text}
-                        response_text += text
+                    # Only stream text from the model node — tools node text is
+                    # internal LLM calls (e.g., propose_route's route generation)
+                    # that should not be shown to the user.
+                    if message_event.node != "model":
+                        # Still consume the projection to drive the stream forward
+                        async for _ in message_event.text:
+                            pass
+                        continue
+                    # message_event.text is an AsyncProjection — async iterable of deltas
+                    async for delta in message_event.text:
+                        if delta:
+                            yield {"type": "token", "text": delta}
+                            response_text += delta
 
                 # Check for interrupts (e.g., route confirmation)
-                if stream.interrupted:
-                    interrupt_info = stream.interrupts[0].value if stream.interrupts else {}
+                is_interrupted = await stream.interrupted()
+                if is_interrupted:
+                    interrupts = await stream.interrupts()
+                    interrupt_info = interrupts[0].value if interrupts else {}
+                    # Get the current trip_state from the stream output
+                    # so it can be saved to DB for the resume turn
+                    try:
+                        interrupt_output = await stream.output()
+                        if interrupt_output and isinstance(interrupt_output, dict):
+                            interrupt_ts = interrupt_output.get("trip_state")
+                            if interrupt_ts:
+                                interrupt_info["tripState"] = interrupt_ts
+                    except Exception:
+                        pass
                     yield {"type": "interrupt", "payload": interrupt_info}
                     return
 
+                # Read the final state from the stream — tools may have updated trip_state
+                final_output = await stream.output()
+                if final_output and isinstance(final_output, dict):
+                    updated_trip_state = final_output.get("trip_state")
+                    if updated_trip_state:
+                        final_trip_state = updated_trip_state
+
             except Exception as e:
                 logger.error(f"[AGENT_STREAM] Streaming failed, falling back to invoke: {e}")
-                result = await self.agent.ainvoke({"messages": messages}, config=config)
+                result = await self.agent.ainvoke(
+                    {"messages": messages, "trip_state": final_trip_state},
+                    config=config,
+                )
                 ai_messages = [m for m in result.get("messages", []) if m.type == "ai"]
                 for msg in reversed(ai_messages):
                     content = msg.content if isinstance(msg.content, str) else str(msg.content)
                     if content and content.strip():
                         response_text = content.strip()
                         break
+                if isinstance(result, dict):
+                    updated_trip_state = result.get("trip_state")
+                    if updated_trip_state:
+                        final_trip_state = updated_trip_state
 
-            if not response_text:
-                response_text = "I apologize, but I had trouble processing your request."
+        if not response_text:
+            response_text = "I apologize, but I had trouble processing your request."
 
-            post_check = check_slots(final_trip_state)
+        post_check = check_slots(final_trip_state)
 
         # Auto-build route + itinerary when onboarding just completed
         if post_check["proceed"] and final_trip_state and not final_trip_state.get("itinerary"):
@@ -179,7 +316,48 @@ class TravelAgent:
 
             if final_trip_state.get("routeProposal") and not final_trip_state.get("itinerary"):
                 yield {"type": "status", "status": "Building your itinerary..."}
-                final_trip_state = await self._auto_build_itinerary(final_trip_state)
+
+                # Use a queue to stream granular build status events in real time.
+                import asyncio as _aio
+                status_queue: _aio.Queue = _aio.Queue()
+
+                async def _build_status_cb(update: dict):
+                    phase = update.get("phase", "")
+                    msg = ""
+                    if phase == "activities":
+                        city = update.get("city", "")
+                        msg = f"Finding activities in {city}..."
+                    elif phase == "hotels_restaurants":
+                        cities = update.get("cities") or [update.get("city", "")]
+                        cities_str = ", ".join(c for c in cities if c)
+                        msg = f"Searching hotels & restaurants in {cities_str}..."
+                    elif phase == "flights":
+                        msg = "Searching flights..."
+                    elif phase == "build_complete":
+                        msg = "Finalizing your itinerary..."
+                    if msg:
+                        await status_queue.put({"type": "status", "status": msg})
+
+                # Run the build as a task so we can drain status events concurrently.
+                build_task = _aio.create_task(
+                    self._auto_build_itinerary(
+                        final_trip_state,
+                        status_cb=_build_status_cb,
+                        user_memories=context.get("userMemories"),
+                        traveler_type=(trip_state or {}).get("travelers") if isinstance((trip_state or {}).get("travelers"), str) else None,
+                        user_interests=context.get("userInterests"),
+                    )
+                )
+                while not build_task.done():
+                    try:
+                        event = await _aio.wait_for(status_queue.get(), timeout=0.5)
+                        yield event
+                    except _aio.TimeoutError:
+                        pass
+                # Drain any remaining events.
+                while not status_queue.empty():
+                    yield await status_queue.get()
+                final_trip_state = await build_task
                 if final_trip_state.get("itinerary"):
                     response_text = "I've put together your itinerary! Check it out on the right — you can ask me to adjust anything."
                 yield {"type": "tripState", "tripState": final_trip_state}
@@ -187,10 +365,6 @@ class TravelAgent:
         itinerary = None
         if final_trip_state and final_trip_state.get("itinerary"):
             itinerary = final_trip_state["itinerary"]
-
-        route_proposal = None
-        if final_trip_state and final_trip_state.get("routeProposal"):
-            route_proposal = final_trip_state["routeProposal"]
 
         widgets = self._build_widgets(final_trip_state, post_check)
         suggestions = self._build_suggestions(final_trip_state, post_check)
@@ -208,103 +382,20 @@ class TravelAgent:
             },
         }
 
-    async def _pre_parse_initial_message(self, message: str, trip_state: dict | None) -> dict | None:
-        """Pre-parse the initial user message to extract all possible slots at once.
-        
-        This lets us skip questions that the user already answered in their first message
-        (e.g., "5 day solo Japan trip" fills destination, duration, and travelers).
-        """
-        from app.agents.state import SLOT_ORDER, SLOT_QUESTIONS
-
-        system_prompt = (
-            "You are a travel planning slot extractor. Given a user's initial trip request, "
-            "extract any information that answers these onboarding questions:\n\n"
-        )
-        for slot in SLOT_ORDER:
-            q = SLOT_QUESTIONS[slot]
-            system_prompt += f"- {slot}: {q['question']}\n"
-            if q.get("options"):
-                valid_vals = [o["value"] for o in q["options"]]
-                system_prompt += f"  Valid values: {valid_vals}\n"
-            system_prompt += f"  Description: {SLOT_DESCRIPTIONS.get(slot, '')}\n"
-
-        system_prompt += (
-            "\nRules:\n"
-            "1. Only extract info that is clearly stated in the message.\n"
-            "2. For destination, extract city names. Multiple cities = array.\n"
-            "3. For duration, return a number of days.\n"
-            "4. For dates, return 'flexible' if they mention flexibility, 'unsure' if not sure.\n"
-            "5. For travelers, map 'solo/alone/just me' to 'solo', 'with wife/partner' to 'couple', etc.\n"
-            "6. For trip_style, map keywords: 'beach'→'beaches', 'culture/history/temple'→'culture', "
-            "'relax/spa'→'wellness', 'hiking/adventure'→'adventure', 'food/eating'→'food', 'city/urban'→'city'.\n"
-            "7. For help_with, only extract if explicitly stated.\n"
-            "8. If a slot is NOT mentioned, omit it from the response.\n"
-            "9. For startLocation, extract the city they're departing from if mentioned (e.g., 'from London' → 'London').\n\n"
-            "Respond with ONLY a JSON object with the slots you could extract, e.g.:\n"
-            '{"destination": "Tokyo", "duration": 5, "travelers": "solo", "startLocation": "London"}\n'
-            "If nothing can be extracted, return {}."
-        )
-
-        try:
-            response = await self.model.ainvoke([
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": message},
-            ])
-            content = response.content if isinstance(response.content, str) else str(response.content)
-            json_match = re.search(r"\{[\s\S]*\}", content)
-            if not json_match:
-                return None
-
-            extracted = json.loads(json_match.group())
-            if not extracted:
-                return None
-
-            logger.info(f"[AGENT] Pre-parse extracted: {json.dumps(extracted)}")
-
-            state = trip_state or create_default_trip_state()
-            for slot in SLOT_ORDER:
-                if slot in extracted and extracted[slot] is not None:
-                    state = apply_slot_answer(state, slot, extracted[slot])
-
-            # Extract startLocation (not a slot, but useful for flight search)
-            if extracted.get("startLocation"):
-                state["startLocation"] = extracted["startLocation"]
-
-            return state
-        except Exception as e:
-            logger.error(f"[AGENT] Pre-parse failed: {e}")
-            return None
-
-    def _build_state_context(self, trip_state: dict | None) -> str:
-        """Build a system context string describing the current trip state."""
-        if not trip_state:
+    def _build_preferences_context(self, preferences: dict | None, memories: list[str] | None) -> str:
+        """Build a system context string with the user's long-term profile/preferences."""
+        parts = []
+        if preferences:
+            pref_strs = [f"{k}: {v}" for k, v in preferences.items() if v]
+            if pref_strs:
+                parts.append("User profile preferences: " + "; ".join(pref_strs))
+        if memories:
+            parts.append("Remembered user preferences (from past trips):")
+            parts.extend(f"  - {m}" for m in memories)
+        if not parts:
             return ""
-
-        parts = ["Current trip state:"]
-        parts.append(f"  Status: {trip_state.get('status', 'planning')}")
-
-        onboarding = trip_state.get("onboarding", {})
-        slots_filled = onboarding.get("slotsFilled", [])
-        parts.append(f"  Slots filled: {slots_filled}")
-
-        cities = trip_state.get("cities", [])
-        if cities:
-            parts.append(f"  Cities: {', '.join(c.get('name', '') for c in cities)}")
-
-        dates = trip_state.get("dates")
-        if dates:
-            parts.append(f"  Dates: {dates}")
-
-        travelers = trip_state.get("travelers")
-        if travelers:
-            parts.append(f"  Travelers: {travelers}")
-
-        if trip_state.get("routeProposal"):
-            parts.append("  Route proposed: YES (user has seen it)")
-
-        if trip_state.get("itinerary"):
-            parts.append("  Itinerary built: YES")
-
+        parts.append("Use these to personalize recommendations. When the user reveals a new "
+                     "durable preference, save it with remember_user_preference.")
         return "\n".join(parts)
 
     def _build_widgets(self, trip_state: dict | None, slot_check: dict) -> list[dict]:
@@ -340,16 +431,22 @@ class TravelAgent:
         from langchain_openai import ChatOpenAI as _LLM
 
         cities = trip_state.get("cities", [])
-        duration = sum(c.get("nights", 0) for c in cities)
 
-        if not cities or duration == 0:
+        # Calculate total nights: prefer sum of city nights, fall back to duration field.
+        duration = sum(c.get("nights", 0) for c in cities)
+        if duration == 0:
+            duration = trip_state.get("duration", 0)
+        # Convert days to nights (3 days = 2 nights)
+        total_nights = max(1, duration - 1) if duration > 1 else 1
+
+        if not cities or total_nights == 0:
             return trip_state
 
         city_names = [c["name"] for c in cities]
         model = _LLM(model="gpt-4o-mini", temperature=0.3)
         prompt = f"""\
 You are a travel route planner. Given these cities: {city_names}
-Total nights available: {duration}
+Total nights available: {total_nights}
 
 Propose a route with night splits per city. Consider:
 - Logical geographic order (minimize travel time)
@@ -359,7 +456,7 @@ Propose a route with night splits per city. Consider:
 Respond with ONLY a JSON object:
 {{
   "cities": [{{"name": "CityName", "nights": N, "order": 0}}],
-  "totalNights": {duration},
+  "totalNights": {total_nights},
   "rationale": "Brief explanation of the route"
 }}
 """
@@ -367,22 +464,25 @@ Respond with ONLY a JSON object:
             import re as _re
             response = await model.ainvoke([{"role": "user", "content": prompt}])
             content = response.content if isinstance(response.content, str) else str(response.content)
+            # Strip markdown code fences if present
+            content = _re.sub(r"^```(?:json)?\s*", "", content.strip())
+            content = _re.sub(r"\s*```\s*$", "", content)
             json_match = _re.search(r"\{[\s\S]*\}", content)
             if json_match:
                 proposal = _json.loads(json_match.group())
             else:
-                nights_per = max(1, duration // len(cities))
+                nights_per = max(1, total_nights // len(cities))
                 proposal = {
                     "cities": [{"name": c["name"], "nights": nights_per, "order": i} for i, c in enumerate(cities)],
-                    "totalNights": duration,
+                    "totalNights": total_nights,
                     "rationale": f"Even split of {nights_per} nights per city.",
                 }
         except Exception as e:
             logger.error(f"[AUTO_ROUTE] LLM failed: {e}")
-            nights_per = max(1, duration // len(cities))
+            nights_per = max(1, total_nights // len(cities))
             proposal = {
                 "cities": [{"name": c["name"], "nights": nights_per, "order": i} for i, c in enumerate(cities)],
-                "totalNights": duration,
+                "totalNights": total_nights,
                 "rationale": f"Even split of {nights_per} nights per city.",
             }
 
@@ -391,7 +491,7 @@ Respond with ONLY a JSON object:
         logger.info(f"[AUTO_ROUTE] Proposal: {_json.dumps(proposal)}")
         return trip_state
 
-    async def _auto_build_itinerary(self, trip_state: dict) -> dict:
+    async def _auto_build_itinerary(self, trip_state: dict, status_cb=None, user_memories=None, traveler_type=None, user_interests=None) -> dict:
         """Auto-build itinerary directly using the itinerary builder service."""
         route_proposal = trip_state.get("routeProposal")
         cities = trip_state.get("cities", [])
@@ -422,6 +522,14 @@ Respond with ONLY a JSON object:
             "helpWith": trip_state.get("helpWith", []),
         }
 
+        # Pass personalization params if available
+        if user_memories:
+            ctx["userMemories"] = user_memories
+        if traveler_type:
+            ctx["travelerType"] = traveler_type
+        if user_interests:
+            ctx["userInterests"] = user_interests
+
         # Pass startLocation for flight search if available
         start_location = trip_state.get("startLocation")
         if start_location:
@@ -432,7 +540,7 @@ Respond with ONLY a JSON object:
             ctx["startDate"] = dates["start"]
 
         try:
-            result = await itinerary_builder.build(ctx)
+            result = await itinerary_builder.build(ctx, status_cb=status_cb)
             if result and result.get("itinerary"):
                 trip_state = dict(trip_state)
                 trip_state["itinerary"] = result["itinerary"]

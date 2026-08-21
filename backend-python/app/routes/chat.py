@@ -1,9 +1,8 @@
 """Chat routes — conversation management + agent chat."""
 
 import uuid
-import json
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,11 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db, async_session
 from app.deps import get_current_user
 from app.models import Conversation, User
-from app.schemas.chat import SendMessageRequest, SyncItineraryRequest, ModifyItineraryRequest
+from app.schemas.chat import SendMessageRequest
+from app.services.memory import get_user_memories
 from app.services.stream_buffer import stream_buffer
 from app.utils.logger import logger
 
 router = APIRouter()
+
+# Cap persisted conversation history to keep the JSONB column bounded
+MAX_CONVERSATION_MESSAGES = 100
 
 
 def _sanitize_json(obj):
@@ -65,21 +68,40 @@ async def send_message(
     messages.append({
         "role": "user",
         "content": req.message,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     })
-    conversation.messages = messages
-
-    if req.currentItinerary and not conversation.itinerary:
-        conversation.itinerary = req.currentItinerary
+    conversation.messages = messages[-MAX_CONVERSATION_MESSAGES:]
 
     await db.commit()
 
     # Build history
     history = [f"{m['role']}: {m['content']}" for m in messages[-8:]]
 
+    # Load long-term user memories (LangGraph store) for personalization
+    memories = await get_user_memories(user.id)
+
+    # Inject home city (from preferences or memories) so the agent can
+    # auto-fill the origin slot when flights are in scope.
+    prefs = user.preferences or {}
+    home_city = prefs.get("homeCity") or prefs.get("home_city")
+    if not home_city:
+        # Check memories for a home_city entry.
+        for m in memories:
+            ml = (m or "").lower()
+            if "home_city" in ml or "home city" in ml or "home airport" in ml:
+                # Memory format: "home_city: Kolkata" or similar.
+                parts = m.split(":", 1)
+                if len(parts) == 2:
+                    home_city = parts[1].strip()
+                    break
+
     agent_context = {
         "tripState": conversation.trip_state,
         "history": history,
+        "userId": user.id,
+        "userPreferences": user.preferences or {},
+        "userMemories": memories,
+        "homeCity": home_city,
     }
 
     logger.info(f"Processing (streaming): {req.message!r}")
@@ -138,6 +160,20 @@ async def _process_agent_stream(
                 }, room=conv_id)
 
             elif event["type"] == "interrupt":
+                # Save trip_state to DB so it's available on resume
+                interrupt_payload = event.get("payload", {})
+                trip_state_from_stream = interrupt_payload.get("tripState")
+                if trip_state_from_stream:
+                    async with async_session() as db:
+                        result = await db.execute(
+                            select(Conversation).where(Conversation.conversation_id == conv_id)
+                        )
+                        conversation = result.scalar_one_or_none()
+                        if conversation:
+                            conversation.trip_state = _sanitize_json(trip_state_from_stream)
+                            await db.commit()
+                            logger.info("Saved tripState to conversation (interrupt)")
+
                 eid = await stream_buffer.push_event(conv_id, "interrupt", {"payload": event["payload"]})
                 await sio.emit("agent:interrupt", {
                     "conversationId": conv_id,
@@ -160,13 +196,9 @@ async def _process_agent_stream(
                         msgs.append({
                             "role": "assistant",
                             "content": ai_response,
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
                         })
-                        conversation.messages = msgs
-
-                        if payload.get("itinerary"):
-                            conversation.itinerary = _sanitize_json(payload["itinerary"])
-                            logger.info("Saved itinerary to conversation")
+                        conversation.messages = msgs[-MAX_CONVERSATION_MESSAGES:]
 
                         if payload.get("tripState"):
                             conversation.trip_state = _sanitize_json(payload["tripState"])
@@ -189,7 +221,7 @@ async def _process_agent_stream(
                 await sio.emit("agent:response", final_payload, room=conv_id)
 
     except Exception as e:
-        logger.error(f"[STREAM_TASK] Failed: {e}")
+        logger.error(f"[STREAM_TASK] Failed: {e}", exc_info=True)
         error_payload = {
             "message": "I'm sorry, I encountered an error processing your request.",
             "conversationId": conv_id,
@@ -256,7 +288,7 @@ async def _process_agent_resume(conv_id: str, resume_value: dict, user_id: str):
     from langgraph.types import Command
 
     try:
-        config = {"configurable": {"thread_id": conv_id}}
+        config = {"configurable": {"thread_id": conv_id, "user_id": user_id}}
 
         # Load current trip_state from DB
         async with async_session() as db:
@@ -331,13 +363,9 @@ async def _process_agent_resume(conv_id: str, resume_value: dict, user_id: str):
                 msgs.append({
                     "role": "assistant",
                     "content": response_text,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
-                conversation.messages = msgs
-
-                if final_trip_state and final_trip_state.get("itinerary"):
-                    conversation.itinerary = _sanitize_json(final_trip_state["itinerary"])
-                    logger.info("Saved itinerary to conversation after resume")
+                conversation.messages = msgs[-MAX_CONVERSATION_MESSAGES:]
 
                 if final_trip_state:
                     conversation.trip_state = _sanitize_json(final_trip_state)
@@ -383,68 +411,6 @@ async def _process_agent_resume(conv_id: str, resume_value: dict, user_id: str):
 
     finally:
         await stream_buffer.mark_done(conv_id)
-
-
-@router.post("/sync-itinerary")
-async def sync_itinerary(
-    req: SyncItineraryRequest,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    if not req.conversationId or not req.itinerary:
-        raise HTTPException(status_code=400, detail="ConversationId and itinerary are required")
-
-    result = await db.execute(select(Conversation).where(Conversation.conversation_id == req.conversationId))
-    conversation = result.scalar_one_or_none()
-
-    if not conversation:
-        conversation = Conversation(
-            conversation_id=req.conversationId,
-            user_id=user.id,
-            messages=[],
-            meta={},
-        )
-        db.add(conversation)
-
-    conversation.itinerary = req.itinerary
-    await db.commit()
-
-    return {"success": True, "message": "Itinerary synced successfully", "conversationId": req.conversationId}
-
-
-@router.post("/modify-itinerary")
-async def modify_itinerary(
-    req: ModifyItineraryRequest,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    if not req.message or not req.conversationId:
-        raise HTTPException(status_code=400, detail="Message and conversationId are required")
-
-    result = await db.execute(select(Conversation).where(Conversation.conversation_id == req.conversationId))
-    conversation = result.scalar_one_or_none()
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    if not conversation.itinerary:
-        raise HTTPException(status_code=400, detail="No itinerary found. Please create an itinerary first.")
-
-    history = [f"{m['role']}: {m['content']}" for m in (conversation.messages or [])[-8:]]
-
-    agent_context = {
-        "tripState": conversation.trip_state,
-        "history": history,
-    }
-
-    logger.info(f"Modify itinerary (streaming): {req.message!r}")
-
-    asyncio.create_task(_process_agent_stream(
-        req.conversationId, req.message, agent_context, user.id
-    ))
-
-    return {
-        "conversationId": req.conversationId,
-        "status": "streaming",
-    }
 
 
 @router.get("/history/{conversation_id}")
@@ -502,4 +468,5 @@ async def delete_conversation(
         raise HTTPException(status_code=404, detail="Conversation not found")
     await db.delete(conversation)
     await db.commit()
+    await stream_buffer.clear_stream(conversation_id)
     return {"message": "Conversation deleted successfully"}
