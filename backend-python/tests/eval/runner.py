@@ -223,15 +223,36 @@ async def get_auth_token(base_url: str) -> str:
         raise Exception(f"Auth failed: {r.status_code} {r.text}")
 
 
-async def run_case(case: TestCase, base_url: str, max_retries: int = 2) -> CaseResult:
+async def run_case(case: TestCase, base_url: str, max_retries: int = 2, abort_event: asyncio.Event | None = None) -> CaseResult:
     """Run a single test case and return results with assertions checked.
 
     If a turn gets a rate-limit error (detected via empty response + no trip_state),
     the entire case is retried after a backoff delay.
+
+    If abort_event is provided and gets set (by another case hitting a 429),
+    this case aborts immediately without sending more requests.
     """
     start_time = time.time()
 
     for attempt in range(max_retries + 1):
+        # Check if we should abort due to a global rate-limit signal
+        if abort_event and abort_event.is_set():
+            result = CaseResult(
+                case_id=case.id,
+                category=case.category,
+                description=case.description,
+            )
+            result.assertions.append({
+                "type": "aborted",
+                "passed": False,
+                "expected": "no rate limit",
+                "actual": "aborted: global rate-limit signal",
+                "message": "Aborted: another case hit a 429 — stopping to conserve tokens",
+            })
+            result.duration_seconds = time.time() - start_time
+            result.passed = False
+            return result
+
         result = CaseResult(
             case_id=case.id,
             category=case.category,
@@ -245,14 +266,39 @@ async def run_case(case: TestCase, base_url: str, max_retries: int = 2) -> CaseR
             rate_limited = False
 
             for i, turn in enumerate(case.turns):
+                # Check abort before each turn
+                if abort_event and abort_event.is_set():
+                    result.assertions.append({
+                        "type": "aborted",
+                        "passed": False,
+                        "expected": "no rate limit",
+                        "actual": "aborted: global rate-limit signal",
+                        "message": f"Turn {i+1}: aborted before sending (global 429)",
+                    })
+                    result.duration_seconds = time.time() - start_time
+                    result.passed = False
+                    return result
+
                 turn_result = await conv.send(turn.user_message)
                 result.turns.append(turn_result)
 
                 if turn_result.error:
                     # Check if this looks like a rate limit error
                     err_lower = (turn_result.error or "").lower()
-                    if ("429" in err_lower or "rate limit" in err_lower) and attempt < max_retries:
-                        rate_limited = True
+                    if "429" in err_lower or "rate limit" in err_lower:
+                        # Signal all other cases to abort
+                        if abort_event:
+                            abort_event.set()
+                        if attempt < max_retries:
+                            rate_limited = True
+                            break
+                        result.assertions.append({
+                            "type": "no_error",
+                            "passed": False,
+                            "expected": "no error",
+                            "actual": turn_result.error,
+                            "message": f"Turn {i+1}: {turn_result.error}",
+                        })
                         break
                     result.assertions.append({
                         "type": "no_error",
@@ -266,17 +312,22 @@ async def run_case(case: TestCase, base_url: str, max_retries: int = 2) -> CaseR
                 # Detect rate limit from empty response + no trip_state + no interrupt
                 # (agent returned an error message but didn't crash)
                 if (not turn_result.response and not turn_result.trip_state
-                        and not turn_result.interrupt and not turn_result.timeout
-                        and attempt < max_retries):
-                    rate_limited = True
-                    break
+                        and not turn_result.interrupt and not turn_result.timeout):
+                    # Likely a rate limit — signal abort
+                    if abort_event:
+                        abort_event.set()
+                    if attempt < max_retries:
+                        rate_limited = True
+                        break
 
                 # Also detect if response contains rate limit language
                 resp_lower = (turn_result.response or "").lower()
-                if ("rate limit" in resp_lower or "try again" in resp_lower
-                        or "too many requests" in resp_lower) and attempt < max_retries:
-                    rate_limited = True
-                    break
+                if "rate limit" in resp_lower or "try again" in resp_lower or "too many requests" in resp_lower:
+                    if abort_event:
+                        abort_event.set()
+                    if attempt < max_retries:
+                        rate_limited = True
+                        break
 
                 if turn_result.timeout:
                     result.assertions.append({
@@ -451,8 +502,13 @@ async def run_cases(
     Args:
         stagger_delay: Seconds to wait between starting each concurrent case.
             Helps avoid rate limit spikes when many cases start simultaneously.
+
+    A global abort event is shared across all concurrent cases. If any case
+    detects a 429 / rate-limit error, the event is set and all remaining cases
+    abort immediately without sending more requests (to conserve tokens).
     """
     semaphore = asyncio.Semaphore(concurrency)
+    abort_event = asyncio.Event()
     results: list[CaseResult] = []
     completed = 0
 
@@ -462,7 +518,7 @@ async def run_cases(
         if stagger_delay > 0 and index > 0:
             await asyncio.sleep(stagger_delay * (index % concurrency))
         async with semaphore:
-            result = await run_case(case, base_url)
+            result = await run_case(case, base_url, abort_event=abort_event)
             completed += 1
             if progress_callback:
                 await progress_callback(completed, len(cases), result)
