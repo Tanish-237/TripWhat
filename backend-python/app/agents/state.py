@@ -293,9 +293,13 @@ def apply_slot_answer(trip_state: dict, slot: str, value: Any) -> dict:
 
     if slot == "destination":
         if isinstance(value, list):
-            trip_state["cities"] = [{"name": v, "order": i} for i, v in enumerate(value)]
+            city_list = [str(v).strip() for v in value if str(v).strip()]
+        elif isinstance(value, str) and "," in value:
+            # "Tokyo, Kyoto, Osaka" → split into multiple cities
+            city_list = [c.strip() for c in value.split(",") if c.strip()]
         else:
-            trip_state["cities"] = [{"name": value, "order": 0}]
+            city_list = [str(value).strip()]
+        trip_state["cities"] = [{"name": c, "order": i} for i, c in enumerate(city_list)]
 
         # If duration was already set (filled before destination in parallel),
         # distribute nights across the new cities now.
@@ -397,11 +401,22 @@ def apply_slot_answer(trip_state: dict, slot: str, value: Any) -> dict:
     elif slot == "trip_style":
         if value == "you_decide":
             trip_state["tripStyle"] = "balanced"
+        elif isinstance(value, str) and " and " in value:
+            # "food and culture" → primary style is the first, all go to preferences
+            parts = [p.strip() for p in value.split(" and ")]
+            trip_state["tripStyle"] = parts[0]
+        elif isinstance(value, list):
+            trip_state["tripStyle"] = value[0] if value else "balanced"
         else:
             trip_state["tripStyle"] = value
         trip_state["preferences"] = trip_state.get("preferences", []) or []
-        if value != "you_decide" and value not in trip_state["preferences"]:
-            trip_state["preferences"].append(value)
+        # Add all style values to preferences
+        if value != "you_decide":
+            style_vals = value.split(" and ") if isinstance(value, str) and " and " in value else [value]
+            for sv in style_vals:
+                sv = sv.strip() if isinstance(sv, str) else sv
+                if sv not in trip_state["preferences"]:
+                    trip_state["preferences"].append(sv)
     elif slot == "help_with":
         if value == "you_decide":
             trip_state["helpWith"] = ["itinerary", "flights", "hotels", "things_to_do", "restaurants"]

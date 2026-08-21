@@ -54,7 +54,13 @@ async def propose_route(
         proposal = existing_proposal
     else:
         # Use LLM to propose night splits
-        model = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
+        model = ChatOpenAI(
+            model="gpt-4o-mini",
+            temperature=0.3,
+            # Force the API to return valid JSON — prevents unquoted keys,
+            # trailing commas, and other common LLM JSON mistakes.
+            model_kwargs={"response_format": {"type": "json_object"}},
+        )
         prefs_line = f"\nUser preferences: {preferences}\n" if preferences else ""
         prompt = f"""\
 You are a travel route planner. Given these cities: {city_names}
@@ -66,7 +72,7 @@ Propose a route with night splits per city. Consider:
 - First and last cities may need fewer nights (arrival/departure)
 - If user preferences are specified, follow them as closely as possible
 
-Respond with ONLY a JSON object:
+Respond with ONLY a JSON object with this exact structure:
 {{
   "cities": [{{"name": "CityName", "nights": N, "order": 0}}],
   "totalNights": {total_nights},
@@ -83,7 +89,21 @@ Respond with ONLY a JSON object:
             content = re.sub(r"\s*```\s*$", "", content)
             json_match = re.search(r"\{[\s\S]*\}", content)
             if json_match:
-                proposal = json.loads(json_match.group())
+                raw_json = json_match.group()
+                try:
+                    proposal = json.loads(raw_json)
+                except json.JSONDecodeError:
+                    # Repair common LLM JSON mistakes: unquoted keys,
+                    # single quotes, trailing commas
+                    repaired = raw_json
+                    repaired = re.sub(r"([{,]\s*)([a-zA-Z_]\w*)\s*:", r'\1"\2":', repaired)
+                    repaired = repaired.replace("'", '"')
+                    repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
+                    try:
+                        proposal = json.loads(repaired)
+                        logger.info("[PROPOSE_ROUTE] JSON repaired successfully")
+                    except json.JSONDecodeError:
+                        raise ValueError(f"Could not parse JSON even after repair: {raw_json[:200]}")
             else:
                 # Fallback: even split
                 nights_per = max(1, total_nights // len(cities))
@@ -100,6 +120,22 @@ Respond with ONLY a JSON object:
                 "totalNights": total_nights,
                 "rationale": f"Even split of {nights_per} nights per city.",
             }
+
+        # Validate the proposal has the expected structure
+        if not isinstance(proposal, dict) or not proposal.get("cities") or not isinstance(proposal["cities"], list):
+            logger.warning(f"[PROPOSE_ROUTE] Invalid proposal structure, using fallback")
+            nights_per = max(1, total_nights // len(cities))
+            proposal = {
+                "cities": [{"name": c["name"], "nights": nights_per, "order": i} for i, c in enumerate(cities)],
+                "totalNights": total_nights,
+                "rationale": f"Even split of {nights_per} nights per city.",
+            }
+        else:
+            # Ensure totalNights matches the sum of city nights
+            actual_nights = sum(c.get("nights", 0) for c in proposal["cities"])
+            if actual_nights != total_nights:
+                logger.info(f"[PROPOSE_ROUTE] Adjusting totalNights from {proposal.get('totalNights')} to {actual_nights}")
+                proposal["totalNights"] = actual_nights
 
         logger.info(f"[PROPOSE_ROUTE] Proposal: {json.dumps(proposal)}")
 
