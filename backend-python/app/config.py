@@ -29,6 +29,15 @@ class Settings(BaseSettings):
     # Google Maps MCP (Grounding Lite)
     google_mcp_access_token: str = ""
 
+    # Tavily (web search)
+    tavily_api_key: str = ""
+
+    # LangSmith (tracing + evaluation)
+    langsmith_api_key: str = ""
+    langsmith_tracing: bool = False
+    langsmith_project: str = "tripwhat-agent"
+    langsmith_workspace_id: str = ""
+
     # GeoDB
     geodb_api_key: str = ""
     geodb_host: str = "wft-geo-db.p.rapidapi.com"
