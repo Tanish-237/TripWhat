@@ -46,7 +46,41 @@ async def leave_conversation(sid, conversation_id):
 async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
-    yield
+
+    # Wire LangGraph persistence: Postgres checkpointer + cross-conversation store
+    conn_str = settings.database_url.replace("+asyncpg", "")
+    yielded = False
+    try:
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        from langgraph.store.postgres.aio import AsyncPostgresStore
+        from app.agents.travel_agent import travel_agent
+        from app.services.memory import set_store
+        from app.services.stream_buffer import stream_buffer
+        from app.services.mcp_client import maps_mcp
+
+        async with AsyncPostgresSaver.from_conn_string(conn_str) as checkpointer, \
+                   AsyncPostgresStore.from_conn_string(conn_str) as store:
+            await checkpointer.setup()
+            await store.setup()
+            travel_agent.set_persistence(checkpointer, store)
+            set_store(store)
+            logger.info("LangGraph Postgres checkpointer + store initialized")
+            yielded = True
+            yield
+    except Exception:
+        logger.exception("LangGraph Postgres persistence unavailable — falling back to in-memory")
+        if not yielded:
+            yield
+    finally:
+        # Close external connections on shutdown
+        try:
+            await stream_buffer.close()
+        except Exception:
+            logger.warning("stream_buffer close failed on shutdown")
+        try:
+            await maps_mcp.close()
+        except Exception:
+            logger.warning("maps_mcp close failed on shutdown")
 
 
 app = FastAPI(title="TripWhat API", lifespan=lifespan)
@@ -69,6 +103,7 @@ from app.routes.hotels import router as hotels_router
 from app.routes.places import router as places_router
 from app.routes.calendar import router as calendar_router
 from app.routes.gmail import router as gmail_router
+from app.routes.saved import router as saved_router
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
@@ -79,6 +114,7 @@ app.include_router(hotels_router, prefix="/api/hotels", tags=["hotels"])
 app.include_router(places_router, prefix="/api/places", tags=["places"])
 app.include_router(calendar_router, prefix="/api/google", tags=["calendar"])
 app.include_router(gmail_router, prefix="/api/google", tags=["gmail"])
+app.include_router(saved_router, tags=["saved"])
 
 
 @app.get("/health")

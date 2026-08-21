@@ -110,25 +110,6 @@ class MapsMCPClient:
         except json.JSONDecodeError:
             return None
 
-    async def _list_tools(self) -> list[dict]:
-        """List available MCP tools."""
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list",
-            "params": {},
-        }
-
-        try:
-            resp = await self.client.post(MCP_ENDPOINT, json=payload, headers=self._get_auth_headers())
-            if resp.status_code != 200:
-                return []
-            data = resp.json()
-            return data.get("result", {}).get("tools", [])
-        except Exception as e:
-            logger.error(f"[MCP] List tools failed: {e}")
-            return []
-
     async def search_places(self, text_query: str, location_bias: dict | None = None,
                             language_code: str | None = None, region_code: str | None = None) -> list[dict]:
         """Search for places using Google Maps MCP.

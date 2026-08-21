@@ -9,7 +9,7 @@ Key patterns:
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
 
@@ -71,7 +71,7 @@ class StreamBuffer:
             entry = {
                 "type": event_type,
                 "data": json.dumps(data, default=str),
-                "ts": datetime.utcnow().isoformat(),
+                "ts": datetime.now(timezone.utc).isoformat(),
             }
             entry_id = await r.xadd(self._stream_key(conv_id), entry)
             await r.expire(self._stream_key(conv_id), STREAM_TTL)
@@ -104,17 +104,6 @@ class StreamBuffer:
         except Exception as e:
             logger.warning(f"[STREAM_BUFFER] Failed to read events for {conv_id}: {e}")
             return []
-
-    async def get_last_event_id(self, conv_id: str) -> str | None:
-        """Get the ID of the most recent event in the stream, or None."""
-        try:
-            r = await self._get_redis()
-            entries = await r.xrevrange(self._stream_key(conv_id), count=1)
-            if entries:
-                return entries[0][0]
-            return None
-        except Exception:
-            return None
 
     async def clear_stream(self, conv_id: str):
         """Delete all stream data for a conversation."""
