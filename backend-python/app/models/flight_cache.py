@@ -17,5 +17,5 @@ class FlightCache(Base):
     destination: Mapped[str] = mapped_column(String(10))
     departure_date: Mapped[str] = mapped_column(String(10))
     flight_data: Mapped[dict] = mapped_column(PortableJSON)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc).replace(tzinfo=None))
     expires_at: Mapped[datetime] = mapped_column(index=True)

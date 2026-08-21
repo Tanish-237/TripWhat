@@ -18,5 +18,5 @@ class Conversation(Base):
     meta: Mapped[dict | None] = mapped_column("metadata", PortableJSON, nullable=True, default=dict)
     itinerary: Mapped[dict | None] = mapped_column(PortableJSON, nullable=True)
     trip_state: Mapped[dict | None] = mapped_column(PortableJSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))

@@ -33,5 +33,5 @@ class Trip(Base):
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     trip_start_date: Mapped[datetime | None] = mapped_column(Date, nullable=True)
     trip_end_date: Mapped[datetime | None] = mapped_column(Date, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc).replace(tzinfo=None), onupdate=datetime.now(timezone.utc).replace(tzinfo=None))

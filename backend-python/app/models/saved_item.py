@@ -17,4 +17,4 @@ class SavedItem(Base):
     item_type: Mapped[str] = mapped_column(String(50))  # hotel | flight | place | restaurant
     name: Mapped[str] = mapped_column(String(500))
     data: Mapped[dict | None] = mapped_column(PortableJSON, nullable=True, default=dict)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now(timezone.utc).replace(tzinfo=None))
