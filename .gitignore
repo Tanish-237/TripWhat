@@ -25,6 +25,11 @@ node_modules/
 .devin/skills/review-animations
 .devin/skills/write-swift
 
+# Skill files (local agent config, not app code)
+.devin/skills/langsmith-dataset/
+.devin/skills/langsmith-evaluator/
+.devin/skills/langsmith-trace/
+
 # Skills installer lockfile
 skills-lock.json
 
