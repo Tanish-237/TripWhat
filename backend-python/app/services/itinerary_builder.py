@@ -25,6 +25,109 @@ from app.services.query_generator import generate_queries, generate_hotel_querie
 from app.utils.logger import logger
 
 
+def _extract_content(response) -> str:
+    """Extract text content from an LLM response, handling both string and
+    list-of-content-blocks formats.
+
+    OpenAI models sometimes return content as a list of blocks:
+    [{'type': 'text', 'text': '...'}, {'type': 'text', 'text': '...'}]
+    instead of a plain string. This extracts and concatenates all text blocks.
+    """
+    content = response.content
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text", ""))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "".join(parts)
+    return str(content)
+
+
+def _repair_json(text: str) -> str:
+    """Attempt to fix common LLM JSON mistakes.
+
+    Handles:
+    - Markdown code fences (```json ... ```)
+    - Single-quoted strings → double-quoted
+    - Unquoted property names → quoted
+    - Trailing commas before } or ]
+    - Smart quotes → straight quotes
+    - Missing commas between items
+    """
+    # Strip markdown code fences
+    text = re.sub(r"^```(?:json)?\s*", "", text.strip())
+    text = re.sub(r"\s*```\s*$", "", text)
+
+    # Replace smart quotes with straight quotes
+    text = text.replace("\u201c", '"').replace("\u201d", '"')
+    text = text.replace("\u2018", "'").replace("\u2019", "'")
+
+    # Replace single-quoted strings with double-quoted ones.
+    # Match '...' that appear in JSON delimiter positions:
+    # After [, {, :, ,  or  before ], }, :, ,
+    text = re.sub(r"([\[{,:])\s*'([^']*)'", r'\1 "\2"', text)
+    text = re.sub(r"'([^']*)'\s*([,\]}:])", r'"\1" \2', text)
+    # Handle single-quoted strings at the very start/end
+    text = re.sub(r"^\s*'([^']*)'", r'"\1"', text)
+    text = re.sub(r"'([^']*)'\s*$", r'"\1"', text)
+
+    # Quote unquoted property names: {name: ... → {"name": ...
+    text = re.sub(r'([{,]\s*)([a-zA-Z_]\w*)\s*:', r'\1"\2":', text)
+
+    # Remove trailing commas before } or ]
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+
+    # Fix missing commas between items: }" → },"  ]" → ],"  }{ → },{  ]{ → ],{
+    text = re.sub(r'(["\d\w\]\}])\s*(\{["\[])', r'\1,\2', text)
+    # Fix missing comma between number/bool/null and a quoted property name: 4 "order" → 4, "order"
+    text = re.sub(r'(\b\d+|true|false|null)\s+(")', r'\1, \2', text)
+    # Fix missing comma between adjacent strings: "value" "key" → "value", "key"
+    # (safe because in valid JSON, "": "" has a colon between the quotes)
+    text = re.sub(r'"\s+"', '", "', text)
+
+    return text
+
+
+def _parse_json_robust(text: str) -> Any | None:
+    """Parse JSON from LLM output with multiple repair attempts.
+
+    Tries direct parse, then regex extraction, then repair.
+    Returns None if all attempts fail.
+    """
+    # Attempt 1: direct parse
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Attempt 2: extract JSON array or object via regex, then parse
+    for pattern in [r"\[[\s\S]*\]", r"\{[\s\S]*\}"]:
+        match = re.search(pattern, text)
+        if match:
+            raw = match.group()
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                # Attempt 3: repair and retry
+                repaired = _repair_json(raw)
+                try:
+                    return json.loads(repaired)
+                except json.JSONDecodeError:
+                    # Attempt 4: extract again after repair
+                    match2 = re.search(pattern, repaired)
+                    if match2:
+                        try:
+                            return json.loads(match2.group())
+                        except json.JSONDecodeError:
+                            pass
+
+    return None
+
+
 TIME_BUDGETS = {
     "relaxed": {"morning": 3, "afternoon": 3, "evening": 2},
     "moderate": {"morning": 4, "afternoon": 4, "evening": 3},
@@ -98,7 +201,7 @@ class ItineraryBuilder:
         logger.info(f"[ITINERARY_BUILDER] Generated {len(queries)} queries for {city} day {day_num}: {queries}")
 
         # Step 2: Search for real places (cache-first, with photos)
-        places = await places_search.search_multiple(queries, city, limit_per_query=5)
+        places = await places_search.search_multiple(queries, city, limit_per_query=10)
 
         if not places:
             logger.warning(f"[ITINERARY_BUILDER] No places found for {city}, using LLM fallback")
@@ -198,20 +301,20 @@ Respond with ONLY a JSON array of 2-5 objects:
                 {"role": "system", "content": "You are a knowledgeable travel planner. Always respond with valid JSON only."},
                 {"role": "user", "content": prompt},
             ])
-            content = response.content if isinstance(response.content, str) else str(response.content)
-            json_match = re.search(r"\[[\s\S]*\]", content)
-            if json_match:
-                curated = json.loads(json_match.group())
-                if isinstance(curated, list) and len(curated) >= 2:
-                    # Enrich curated activities with real place data
-                    enriched = await self._enrich_activities(curated, places)
-                    # Sort by proximity (greedy nearest-neighbor)
-                    return self._sort_by_proximity(enriched)
+            content = _extract_content(response)
+            curated = _parse_json_robust(content)
+            if curated and isinstance(curated, list) and len(curated) >= 2:
+                # Enrich curated activities with real place data
+                enriched = await self._enrich_activities(curated, places)
+                # Sort by proximity (greedy nearest-neighbor)
+                return self._sort_by_proximity(enriched)
+            else:
+                logger.warning(f"[ITINERARY_BUILDER] LLM returned unparseable JSON, using fallback. Content: {content[:200]}")
         except Exception as e:
             logger.error(f"[ITINERARY_BUILDER] LLM curation failed: {e}")
 
-        # Fallback: pick top 3 by rating
-        return self._pick_top_3(places)
+        # Fallback: pick top 3 by rating (with dedup)
+        return self._pick_top_3(places, used_names)
 
     async def _enrich_activities(self, curated: list[dict], places: list[dict]) -> list[dict]:
         """Enrich LLM-curated activities with real place data from search results.
@@ -305,12 +408,18 @@ Respond with ONLY a JSON array of 2-5 objects:
             result.append(remaining.pop(nearest_idx))
         return result
 
-    def _pick_top_3(self, places: list[dict]) -> list[dict]:
-        """Fallback: pick top 3 places by rating."""
+    def _pick_top_3(self, places: list[dict], used_names: list[str] | None = None) -> list[dict]:
+        """Fallback: pick top 3 places by rating, excluding already-used names."""
+        used_lower = {n.lower() for n in (used_names or [])}
         sorted_places = sorted(places, key=lambda p: p.get("rating") or 0, reverse=True)
+        # Filter out already-used places
+        available = [p for p in sorted_places if p.get("name", "").lower() not in used_lower]
+        # If everything was used, fall back to the full list (better than empty)
+        if len(available) < 3:
+            available = sorted_places
         periods = ["morning", "afternoon", "evening"]
         result = []
-        for i, p in enumerate(sorted_places[:3]):
+        for i, p in enumerate(available[:3]):
             result.append({
                 "period": periods[i],
                 "name": p.get("name", "Free time"),

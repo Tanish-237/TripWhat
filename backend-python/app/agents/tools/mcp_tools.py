@@ -4,11 +4,32 @@ These tools wrap the Google Maps Grounding Lite MCP client as LangGraph @tool fu
 so the agent can call them autonomously during chat.
 """
 
+import contextvars
 import json
 from langchain_core.tools import tool
 
 from app.services.mcp_client import maps_mcp
 from app.services.places_search import places_search
+
+# Contextvar holding a mutable list. chat_stream sets a fresh list before
+# streaming; mcp_search_places appends structured results to it. After the
+# stream completes, chat_stream reads the list to build a search_results
+# widget. The contextvar holds a reference to the same list object, so
+# mutations made inside tool calls (which may run in child tasks) are
+# visible to the parent.
+_search_results_var: contextvars.ContextVar[list] = contextvars.ContextVar(
+    "search_results", default=None
+)
+
+
+def init_search_results() -> None:
+    """Call at the start of a chat turn to reset the search results buffer."""
+    _search_results_var.set([])
+
+
+def get_search_results() -> list:
+    """Call after the stream completes to retrieve accumulated search results."""
+    return _search_results_var.get() or []
 
 
 @tool
@@ -30,6 +51,11 @@ async def mcp_search_places(text_query: str, city: str = "") -> str:
 
     # Use cache-first search service (MCP → Google Places → OpenTripMap)
     results = await places_search.search(search_query, city or text_query, limit=10)
+
+    # Stash structured results for the search_results widget
+    container = _search_results_var.get()
+    if container is not None:
+        container.extend(results)
 
     if not results:
         return f"No places found for '{text_query}'. Try a different search term."
