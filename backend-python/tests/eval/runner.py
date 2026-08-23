@@ -125,9 +125,8 @@ class Conversation:
 
         Tool calls are inferred from trip_state changes since the server
         doesn't emit explicit tool_call events:
-        - check_trip_status: always assumed called (agent always calls it first)
-        - fill_trip_slot: inferred if slots are filled
-        - propose_route: inferred if routeProposal exists
+        - plan_trip: inferred if routeProposal exists or cities are set
+        - ask_question: inferred if a widget event was emitted
         - build_itinerary: inferred if itinerary exists and didn't before
         - edit_itinerary: inferred if itinerary changed between turns
         """
@@ -136,6 +135,7 @@ class Conversation:
         trip_state: dict | None = None
         interrupt_payload: dict | None = None
         tool_calls: list[str] = []
+        had_widget = False
 
         for e in events:
             etype = e.get("type", "")
@@ -147,48 +147,54 @@ class Conversation:
             elif etype == "response":
                 response_msg = data.get("message", "")
                 trip_state = data.get("tripState", trip_state)
-            elif etype == "interrupt":
-                interrupt_payload = data.get("payload", interrupt_payload)
-                # Interrupt payloads contain the tripState — extract it
-                if isinstance(interrupt_payload, dict) and interrupt_payload.get("tripState"):
-                    trip_state = interrupt_payload["tripState"]
+            elif etype == "widget":
+                had_widget = True
 
         result.response = response_msg or "".join(tokens)
         result.trip_state = trip_state
         result.interrupt = interrupt_payload
 
         # Infer tool calls from trip_state
-        inferred_tools: list[str] = ["check_trip_status"]  # always called first
+        inferred_tools: list[str] = []
+
+        if had_widget:
+            inferred_tools.append("ask_question")
 
         if trip_state:
-            onboarding = trip_state.get("onboarding", {})
-            slots = onboarding.get("slotsFilled", {})
-            if isinstance(slots, dict):
-                result.slots_filled = list(slots.keys())
-            elif isinstance(slots, list):
-                result.slots_filled = slots
-            else:
-                result.slots_filled = []
+            # Extract filled slots from trip_state fields
+            slots_filled = []
+            if trip_state.get("cities"):
+                slots_filled.append("destination")
+            if trip_state.get("dates"):
+                slots_filled.append("dates")
+            if trip_state.get("duration"):
+                slots_filled.append("duration")
+            if trip_state.get("travelers"):
+                slots_filled.append("travelers")
+            if trip_state.get("tripStyle"):
+                slots_filled.append("trip_style")
+            if trip_state.get("helpWith"):
+                slots_filled.append("help_with")
+            if trip_state.get("startLocation"):
+                slots_filled.append("origin")
+            result.slots_filled = slots_filled
 
-            if result.slots_filled:
-                inferred_tools.append("fill_trip_slot")
+            if trip_state.get("routeProposal") or trip_state.get("cities"):
+                inferred_tools.append("plan_trip")
 
             # Extract itinerary days
             if trip_state.get("itinerary"):
                 days = trip_state["itinerary"].get("days", [])
                 result.itinerary_days = len(days)
-                # Check if this is a new build or an edit
                 if self._prev_itinerary_days is None:
                     inferred_tools.append("build_itinerary")
                 elif len(days) != self._prev_itinerary_days:
                     inferred_tools.append("edit_itinerary")
                 else:
-                    # Same day count — could be an edit (activity changed)
-                    # We'll mark edit_itinerary if the user's message suggests editing
                     inferred_tools.append("edit_itinerary")
                 self._prev_itinerary_days = len(days)
 
-            # Extract route cities — could be in routeProposal, top-level cities, or interrupt payload
+            # Extract route cities
             route_cities: list[str] = []
             if trip_state.get("routeProposal"):
                 cities = trip_state["routeProposal"].get("cities", [])
@@ -196,16 +202,8 @@ class Conversation:
             elif trip_state.get("cities"):
                 route_cities = [c.get("name", "") for c in trip_state["cities"]]
 
-            # Also check interrupt payload for route proposal
-            if interrupt_payload and isinstance(interrupt_payload, dict):
-                proposal = interrupt_payload.get("proposal", {})
-                if proposal and not route_cities:
-                    cities = proposal.get("cities", [])
-                    route_cities = [c.get("name", "") for c in cities]
-
             if route_cities:
                 result.route_cities = route_cities
-                inferred_tools.append("propose_route")
 
         result.tool_calls = inferred_tools
 

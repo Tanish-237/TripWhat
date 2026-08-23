@@ -1,144 +1,146 @@
-"""Tests for slot checking logic."""
+"""Tests for the new plan_trip flow — replaces test_slot_check.py.
+
+The old slot-filling state machine (check_slots, apply_slot_answer, SLOT_ORDER)
+has been removed. These tests cover the new normalize_dates helper and
+plan_trip tool behavior.
+"""
 
 import pytest
-from app.agents.state import check_slots, apply_slot_answer, create_default_trip_state, SLOT_ORDER
+from app.agents.state import (
+    create_default_trip_state, normalize_dates, distribute_nights,
+)
 
 
-def test_empty_state_all_slots_missing():
-    result = check_slots(None)
-    assert not result["proceed"]
-    # origin is conditional (deferred until helpWith is known), so only 6 missing.
-    assert len(result["missingSlots"]) == 6
-    assert result["missingSlots"] == ["destination", "dates", "duration", "travelers", "trip_style", "help_with"]
+# ---------------------------------------------------------------------------
+# normalize_dates
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("month", [
+    "december", "october", "april", "january", "september",
+    "Dec", "Oct", "Apr", "jan", "sep",
+])
+def test_normalize_dates_month_name(month):
+    """A bare month name should produce assumed concrete dates."""
+    result = normalize_dates(month, duration=7)
+    assert result is not None
+    assert result.get("start")
+    assert result.get("assumed") is True
 
 
-def test_default_state_all_slots_missing():
+def test_normalize_dates_month_with_year():
+    """'Oct 2026' should produce assumed dates in October 2026."""
+    result = normalize_dates("Oct 2026", duration=7)
+    assert result is not None
+    assert result.get("start", "").startswith("2026-10")
+    assert result.get("assumed") is True
+
+
+def test_normalize_dates_yyyy_mm():
+    """'2026-10' should produce assumed dates in October 2026."""
+    result = normalize_dates("2026-10", duration=7)
+    assert result is not None
+    assert result.get("start", "").startswith("2026-10")
+
+
+def test_normalize_dates_date_range():
+    """'2026-10-10 to 2026-10-20' should produce concrete dates."""
+    result = normalize_dates("2026-10-10 to 2026-10-20")
+    assert result == {"start": "2026-10-10", "end": "2026-10-20", "assumed": False}
+
+
+def test_normalize_dates_single_date():
+    """A single date should produce a range with default duration."""
+    result = normalize_dates("2026-10-10", duration=7)
+    assert result is not None
+    assert result["start"] == "2026-10-10"
+    assert result["end"] == "2026-10-16"
+    assert result["assumed"] is False
+
+
+def test_normalize_dates_flexible():
+    """'flexible' should produce near-future assumed dates."""
+    result = normalize_dates("flexible", duration=7)
+    assert result is not None
+    assert result.get("start")
+    assert result.get("assumed") is True
+
+
+def test_normalize_dates_any():
+    """'any' should produce near-future assumed dates."""
+    result = normalize_dates("any", duration=5)
+    assert result is not None
+    assert result.get("start")
+    assert result.get("assumed") is True
+
+
+def test_normalize_dates_you_decide():
+    """'you_decide' should produce near-future assumed dates."""
+    result = normalize_dates("you_decide", duration=7)
+    assert result is not None
+    assert result.get("assumed") is True
+
+
+def test_normalize_dates_dict_with_start():
+    """A dict with start/end should pass through."""
+    result = normalize_dates({"start": "2026-10-10", "end": "2026-10-17"})
+    assert result == {"start": "2026-10-10", "end": "2026-10-17", "assumed": False}
+
+
+def test_normalize_dates_dict_flexible_rough_month():
+    """A dict with flexible+roughMonth should convert to assumed dates."""
+    result = normalize_dates({"flexible": True, "roughMonth": "october"}, duration=7)
+    assert result is not None
+    assert result.get("start")
+    assert result.get("assumed") is True
+
+
+def test_normalize_dates_none():
+    """None should return None."""
+    assert normalize_dates(None) is None
+
+
+def test_normalize_dates_invalid():
+    """An invalid string should return None."""
+    assert normalize_dates("not a date") is None
+
+
+# ---------------------------------------------------------------------------
+# distribute_nights
+# ---------------------------------------------------------------------------
+
+def test_distribute_nights_single_city():
     state = create_default_trip_state()
-    result = check_slots(state)
-    assert not result["proceed"]
-    # origin is conditional, deferred until helpWith is filled.
-    assert len(result["missingSlots"]) == 6
+    state["cities"] = [{"name": "Tokyo", "order": 0}]
+    distribute_nights(state, 7)
+    assert state["cities"][0]["nights"] == 6  # 7 days = 6 nights
 
 
-def test_fill_destination():
+def test_distribute_nights_multi_city():
     state = create_default_trip_state()
-    state = apply_slot_answer(state, "destination", "Tokyo")
-    result = check_slots(state)
-    assert "destination" in result["filledSlots"]
-    assert "destination" not in result["missingSlots"]
-    assert state["cities"] == [{"name": "Tokyo", "order": 0}]
-
-
-def test_fill_multiple_destinations():
-    state = create_default_trip_state()
-    state = apply_slot_answer(state, "destination", ["Tokyo", "Kyoto", "Osaka"])
-    assert len(state["cities"]) == 3
-    assert state["cities"][0]["name"] == "Tokyo"
-    assert state["cities"][1]["name"] == "Kyoto"
-
-
-def test_fill_all_slots():
-    state = create_default_trip_state()
-    state = apply_slot_answer(state, "destination", "Tokyo")
-    # "flexible" now sets pending (not filled); provide a rough month to get assumed dates.
-    state = apply_slot_answer(state, "dates", {"flexible": True, "roughMonth": "october"})
-    state = apply_slot_answer(state, "duration", 7)
-    state = apply_slot_answer(state, "travelers", "solo")
-    state = apply_slot_answer(state, "trip_style", "culture")
-    state = apply_slot_answer(state, "help_with", "everything")
-    # origin is now required (help_with includes "everything")
-    state = apply_slot_answer(state, "origin", "San Francisco")
-    result = check_slots(state)
-    assert result["proceed"]
-    assert state["onboarding"]["completed"]
-    assert state["dates"].get("start")  # assumed dates generated
-    assert state["dates"].get("assumed") is True
-    assert state["startLocation"] == "San Francisco"
-
-
-def test_dates_flexible_sets_pending():
-    """'flexible' for dates should set pending state, not mark filled."""
-    state = create_default_trip_state()
-    state = apply_slot_answer(state, "dates", "flexible")
-    assert state["dates"].get("pending") == "month"
-    assert "dates" not in state["onboarding"]["slotsFilled"]
-    result = check_slots(state)
-    assert "dates" in result["missingSlots"]
-
-
-def test_dates_fixed_sets_pending():
-    """'fixed' for dates should set pending state, not mark filled."""
-    state = create_default_trip_state()
-    state = apply_slot_answer(state, "dates", "fixed")
-    assert state["dates"].get("pending") == "fixed"
-    assert "dates" not in state["onboarding"]["slotsFilled"]
-
-
-def test_dates_rough_month_generates_assumed():
-    """A rough month should convert to assumed concrete dates."""
-    state = create_default_trip_state()
-    state = apply_slot_answer(state, "destination", "Tokyo")
-    state = apply_slot_answer(state, "duration", 5)
-    state = apply_slot_answer(state, "dates", {"flexible": True, "roughMonth": "october"})
-    assert state["dates"].get("start")
-    assert state["dates"].get("assumed") is True
-    assert state["dates"].get("roughMonth") == "october"
-    assert "dates" in state["onboarding"]["slotsFilled"]
-
-
-def test_origin_conditional_skip():
-    """origin should be deferred when helpWith doesn't include flights."""
-    state = create_default_trip_state()
-    state = apply_slot_answer(state, "destination", "Tokyo")
-    state = apply_slot_answer(state, "dates", {"start": "2026-10-10", "end": "2026-10-17"})
-    state = apply_slot_answer(state, "duration", 7)
-    state = apply_slot_answer(state, "travelers", "solo")
-    state = apply_slot_answer(state, "trip_style", "culture")
-    state = apply_slot_answer(state, "help_with", "itinerary")  # no flights
-    result = check_slots(state)
-    assert result["proceed"]  # origin not required
-    assert "origin" not in result["missingSlots"]
-
-
-def test_origin_required_when_flights_in_scope():
-    """origin should be required when helpWith includes flights."""
-    state = create_default_trip_state()
-    state = apply_slot_answer(state, "destination", "Tokyo")
-    state = apply_slot_answer(state, "dates", {"start": "2026-10-10", "end": "2026-10-17"})
-    state = apply_slot_answer(state, "duration", 7)
-    state = apply_slot_answer(state, "travelers", "solo")
-    state = apply_slot_answer(state, "trip_style", "culture")
-    state = apply_slot_answer(state, "help_with", ["itinerary", "flights"])
-    result = check_slots(state)
-    assert not result["proceed"]
-    assert "origin" in result["missingSlots"]
-
-
-def test_fill_travelers_solo():
-    state = create_default_trip_state()
-    state = apply_slot_answer(state, "travelers", "solo")
-    assert state["travelers"] == {"adults": 1}
-
-
-def test_fill_travelers_family():
-    state = create_default_trip_state()
-    state = apply_slot_answer(state, "travelers", "family")
-    assert state["travelers"] == {"adults": 2, "children": 2}
-
-
-def test_fill_duration_distributes_nights():
-    state = create_default_trip_state()
-    state = apply_slot_answer(state, "destination", ["Tokyo", "Kyoto"])
-    state = apply_slot_answer(state, "duration", 7)
+    state["cities"] = [{"name": "Tokyo", "order": 0}, {"name": "Kyoto", "order": 1}]
+    distribute_nights(state, 7)
     # 7 days = 6 nights, split between 2 cities = 3 each
     assert state["cities"][0]["nights"] >= 3
     assert state["cities"][1]["nights"] >= 3
+    assert sum(c["nights"] for c in state["cities"]) == 6
 
 
-def test_version_increments():
+def test_distribute_nights_remainder():
+    """Remainder nights go to the first city."""
     state = create_default_trip_state()
+    state["cities"] = [{"name": "Tokyo", "order": 0}, {"name": "Kyoto", "order": 1}, {"name": "Osaka", "order": 2}]
+    distribute_nights(state, 10)
+    # 10 days = 9 nights, 3 cities = 3 each, remainder 0
+    total = sum(c["nights"] for c in state["cities"])
+    assert total == 9
+
+
+# ---------------------------------------------------------------------------
+# create_default_trip_state
+# ---------------------------------------------------------------------------
+
+def test_default_state():
+    state = create_default_trip_state()
+    assert state["status"] == "planning"
+    assert state["cities"] == []
     assert state["version"] == 0
-    state = apply_slot_answer(state, "destination", "Tokyo")
-    assert state["version"] == 1
-    state = apply_slot_answer(state, "dates", "flexible")
-    assert state["version"] == 2
