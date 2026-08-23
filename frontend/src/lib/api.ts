@@ -40,8 +40,6 @@ export const authApi = {
 export const chatApi = {
   sendMessage: (data: { message: string; conversationId?: string; currentItinerary?: any }) =>
     api.post('/api/chat', data),
-  resumeAgent: (data: { message: string; conversationId: string }) =>
-    api.post('/api/chat/resume', data),
   getHistory: (conversationId: string) =>
     api.get(`/api/chat/${conversationId}`),
   getStreamEvents: (conversationId: string, after?: string) =>

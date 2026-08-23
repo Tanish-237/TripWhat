@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Star, Bookmark, ExternalLink, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
 import { useSavedStore } from '../../../stores/savedStore';
+import { HighlightedText } from './HighlightedText';
 
 interface AttractionCard {
   name: string;
@@ -188,57 +189,6 @@ function HotelCard({ hotel, onSelectPlace }: { hotel: HotelData; onSelectPlace?:
   );
 }
 
-/** Render summary text with highlighted/underlined place names that are clickable. */
-function HighlightedText({ text, attractions, onSelectPlace }: {
-  text: string;
-  attractions: AttractionCard[];
-  onSelectPlace?: (pid: string) => void;
-}) {
-  // Build a list of place names sorted by length (longest first for greedy matching)
-  const names = attractions
-    .filter((a) => a.name && a.placeId)
-    .sort((a, b) => b.name.length - a.name.length);
-
-  if (names.length === 0) {
-    return <p className="text-xs text-[var(--muted)] leading-relaxed px-1">{text}</p>;
-  }
-
-  // Split text by place names and highlight them
-  const parts: (string | React.ReactNode)[] = [text];
-  for (const place of names) {
-    const newParts: (string | React.ReactNode)[] = [];
-    for (const part of parts) {
-      if (typeof part !== 'string') {
-        newParts.push(part);
-        continue;
-      }
-      const idx = part.toLowerCase().indexOf(place.name.toLowerCase());
-      if (idx === -1) {
-        newParts.push(part);
-        continue;
-      }
-      const before = part.slice(0, idx);
-      const match = part.slice(idx, idx + place.name.length);
-      const after = part.slice(idx + place.name.length);
-      if (before) newParts.push(before);
-      newParts.push(
-        <button
-          key={`${place.name}-${idx}`}
-          onClick={(e) => { e.stopPropagation(); onSelectPlace?.(place.placeId); }}
-          className="font-medium text-[var(--ink)] underline decoration-[var(--peach)] decoration-2 underline-offset-2 hover:decoration-[var(--ink)] transition-colors cursor-pointer"
-        >
-          {match}
-        </button>
-      );
-      if (after) newParts.push(after);
-    }
-    parts.length = 0;
-    parts.push(...newParts);
-  }
-
-  return <p className="text-xs text-[var(--muted)] leading-relaxed px-1">{parts}</p>;
-}
-
 export function ItinerarySummary({ data, onSelectPlace }: ItinerarySummaryProps) {
   const { hotel, attractions, destination, duration, dates, preferences, summary, highlights } = data;
 
@@ -267,7 +217,7 @@ export function ItinerarySummary({ data, onSelectPlace }: ItinerarySummaryProps)
       {hotel && <HotelCard hotel={hotel} onSelectPlace={onSelectPlace} />}
 
       {/* Summary paragraph with highlighted place names */}
-      <HighlightedText text={summaryText} attractions={attractions} onSelectPlace={onSelectPlace} />
+      <HighlightedText text={summaryText} places={attractions} onSelectPlace={onSelectPlace} className="text-xs text-[var(--muted)] leading-relaxed px-1" />
 
       {/* Featured attraction photos — simple image + name below, no overlay */}
       {featuredAttractions.length > 0 && (
@@ -295,7 +245,7 @@ export function ItinerarySummary({ data, onSelectPlace }: ItinerarySummaryProps)
 
       {/* Highlights paragraph with highlighted names */}
       {highlightsText && (
-        <HighlightedText text={highlightsText} attractions={attractions} onSelectPlace={onSelectPlace} />
+        <HighlightedText text={highlightsText} places={attractions} onSelectPlace={onSelectPlace} className="text-xs text-[var(--muted)] leading-relaxed px-1" />
       )}
 
       {/* Refinement hint */}

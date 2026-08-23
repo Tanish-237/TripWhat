@@ -97,6 +97,7 @@ export default function NewTripPage() {
           title="New trip"
           initialMessage={initialQuery}
           onTripStateUpdate={handleTripStateUpdate}
+          onSelectPlace={setSelectedPlaceId}
         />
         {selectedPlaceId && (
           <PlaceDetailPanel

@@ -1,29 +1,33 @@
 import { useState } from 'react';
 import { Check, ArrowRight, Pencil } from 'lucide-react';
 
+interface QuestionOption {
+  label: string;
+  value: string | number;
+}
+
 interface QuestionCardProps {
   data: {
-    slot: string;
     question: string;
-    type?: 'text' | 'date' | 'number' | 'choice' | 'chip_group' | 'date_picker';
-    options?: Array<{ label: string; value: string }>;
+    options?: QuestionOption[] | null;
+    allowCustom?: boolean;
+    allowMultiSelect?: boolean;
     placeholder?: string;
   };
   onAnswer: (answer: any) => void;
 }
 
-const MULTI_SELECT_SLOTS = ['help_with'];
-
 export function QuestionCard({ data, onAnswer }: QuestionCardProps) {
-  const [selectedValues, setSelectedValues] = useState<string[]>([]);
+  const [selectedValues, setSelectedValues] = useState<(string | number)[]>([]);
   const [textValue, setTextValue] = useState('');
   const [showTextInput, setShowTextInput] = useState(false);
 
-  const isMulti = MULTI_SELECT_SLOTS.includes(data.slot);
-  const isChoice = data.type === 'choice' || data.type === 'chip_group' || data.type === 'date_picker';
+  const isMulti = data.allowMultiSelect ?? false;
   const options = data.options || [];
+  const allowCustom = data.allowCustom ?? true;
+  const hasOptions = options.length > 0;
 
-  const toggleOption = (value: string) => {
+  const toggleOption = (value: string | number) => {
     if (isMulti) {
       setSelectedValues((prev) =>
         prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
@@ -61,14 +65,19 @@ export function QuestionCard({ data, onAnswer }: QuestionCardProps) {
       {/* Question text */}
       <p className="text-sm font-medium text-[var(--ink)] mb-3">{data.question}</p>
 
+      {/* Multi-select label */}
+      {isMulti && hasOptions && (
+        <p className="text-xs text-[var(--muted)] mb-2">Select all that apply</p>
+      )}
+
       {/* Options as numbered rows */}
-      {isChoice && options.length > 0 && !showTextInput ? (
+      {hasOptions && !showTextInput ? (
         <div className="space-y-1.5">
           {options.map((opt, i) => {
             const isSelected = selectedValues.includes(opt.value);
             return (
               <button
-                key={opt.value}
+                key={String(opt.value)}
                 onClick={() => toggleOption(opt.value)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all text-left ${
                   isSelected
@@ -86,28 +95,30 @@ export function QuestionCard({ data, onAnswer }: QuestionCardProps) {
           })}
 
           {/* Type something else */}
-          <button
-            onClick={() => setShowTextInput(true)}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all text-left ${
-              showTextInput
-                ? 'border-blue-300 bg-blue-50'
-                : 'border-[var(--border)] bg-white hover:bg-[var(--sage)]'
-            }`}
-          >
-            <span className="text-[10px] font-mono w-4 text-center text-[var(--muted)]">
-              {options.length + 1}
-            </span>
-            <span className="text-sm text-[var(--muted)] flex-1">Type something else...</span>
-            <Pencil className="w-3 h-3 text-[var(--muted)]" />
-          </button>
+          {allowCustom && (
+            <button
+              onClick={() => setShowTextInput(true)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all text-left ${
+                showTextInput
+                  ? 'border-blue-300 bg-blue-50'
+                  : 'border-[var(--border)] bg-white hover:bg-[var(--sage)]'
+              }`}
+            >
+              <span className="text-[10px] font-mono w-4 text-center text-[var(--muted)]">
+                {options.length + 1}
+              </span>
+              <span className="text-sm text-[var(--muted)] flex-1">{data.placeholder || 'Type something else...'}</span>
+              <Pencil className="w-3 h-3 text-[var(--muted)]" />
+            </button>
+          )}
         </div>
       ) : null}
 
-      {/* Text input (for text type or "type something else") */}
-      {(!isChoice || showTextInput) && (
+      {/* Text input (for text-only questions or "type something else") */}
+      {(!hasOptions || showTextInput) && (
         <div className="flex items-center gap-2">
           <input
-            type={data.type === 'number' ? 'number' : 'text'}
+            type="text"
             value={textValue}
             onChange={(e) => setTextValue(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleTextSubmit()}
@@ -126,7 +137,7 @@ export function QuestionCard({ data, onAnswer }: QuestionCardProps) {
       )}
 
       {/* Bottom controls */}
-      {isChoice && !showTextInput && (
+      {hasOptions && !showTextInput && (
         <div className="flex items-center justify-end gap-2 mt-3">
           <button
             onClick={handleLetDecide}

@@ -3,9 +3,10 @@ import { ArrowUp, Sparkles, Mic, MoreHorizontal, Share2, Activity } from 'lucide
 import { useChatStore } from '../../stores/chatStore';
 import { useTripStore } from '../../stores/tripStore';
 import { chatApi } from '../../lib/api';
-import { RouteProposalCard } from './widgets/RouteProposalCard';
 import { QuestionCard, CompletedQuestion } from './widgets/QuestionCard';
 import { ItinerarySummary } from './widgets/ItinerarySummary';
+import { SearchResults } from './widgets/SearchResults';
+import { FormattedText } from './widgets/HighlightedText';
 
 interface ChatPanelProps {
   title?: string;
@@ -17,26 +18,10 @@ interface ChatPanelProps {
   emptyStatePrompts?: string[];
 }
 
-interface AnsweredQuestion {
-  slot: string;
-  question: string;
-  answer: string;
-  answerLabel: string;
-}
-
-const SLOT_LABELS: Record<string, Record<string, string>> = {
-  dates: { fixed: 'I have specific dates', flexible: "I'm flexible", unsure: 'Not sure yet' },
-  travelers: { solo: 'Solo', couple: 'Couple', family: 'Family', friends: 'Friends', group: 'Group' },
-  trip_style: { beaches: 'Beaches', culture: 'Culture', wellness: 'Wellness', adventure: 'Adventure', food: 'Food & Drink', city: 'City exploration', balanced: 'Balanced', you_decide: 'You decide' },
-  help_with: { itinerary: 'Itinerary', flights: 'Flights', hotels: 'Hotels', things_to_do: 'Things to do', restaurants: 'Restaurants', everything: 'Everything', you_decide: 'You decide' },
-};
-
-function getAnswerLabel(slot: string, answer: any): string {
-  if (answer === 'you_decide') return 'You decide';
-  if (SLOT_LABELS[slot]?.[answer]) return SLOT_LABELS[slot][answer];
-  if (Array.isArray(answer)) return answer.map((a) => SLOT_LABELS[slot]?.[a] || a).join(', ');
-  return String(answer);
-}
+type ChatEntry =
+  | { kind: 'user'; text: string }
+  | { kind: 'assistant'; text: string; widgets?: any[] }
+  | { kind: 'answered'; question: string; answerLabel: string };
 
 export function ChatPanel({
   title = 'New trip',
@@ -52,35 +37,37 @@ export function ChatPanel({
   ],
 }: ChatPanelProps) {
   const {
-    conversationId, isLoading, agentStatus, streamingText, pendingInterrupt,
-    setConversationId, setLoading, setAgentStatus, setStreamingText, setPendingInterrupt, reset,
+    conversationId, isLoading, agentStatus, streamingText,
+    setConversationId, setLoading, setAgentStatus, setStreamingText, reset,
   } = useChatStore();
 
   const [input, setInput] = useState('');
-  const [userBubbles, setUserBubbles] = useState<string[]>([]);
-  const [answeredQuestions, setAnsweredQuestions] = useState<AnsweredQuestion[]>([]);
+  const [chatEntries, setChatEntries] = useState<ChatEntry[]>([]);
   const [activeWidget, setActiveWidget] = useState<any>(null);
   const [assistantText, setAssistantText] = useState<string>('');
-  const [routeProposal, setRouteProposal] = useState<any>(null);
   const [itinerarySummary, setItinerarySummary] = useState<any>(null);
+  const [searchResults, setSearchResults] = useState<any>(null);
   const [hasStarted, setHasStarted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const hasSentInitial = useRef(false);
 
-  // On mount: restore from chatStore if messages exist (reopening a trip),
-  // otherwise reset the store for a fresh chat
+  // On mount: restore from chatStore if messages exist
   useEffect(() => {
     const msgs = useChatStore.getState().messages;
     if (msgs && msgs.length > 0) {
-      const userMsgs = msgs.filter((m) => m.role === 'user').map((m) => m.content);
-      const lastAssistant = [...msgs].reverse().find((m) => m.role === 'assistant');
-      if (userMsgs.length > 0) {
-        setUserBubbles(userMsgs);
+      const entries: ChatEntry[] = msgs.map((m) =>
+        m.role === 'user'
+          ? { kind: 'user', text: m.content }
+          : { kind: 'assistant', text: m.content, widgets: m.widgets }
+      );
+      if (entries.length > 0) {
+        setChatEntries(entries);
         setHasStarted(true);
-      }
-      if (lastAssistant) {
-        setAssistantText(lastAssistant.content);
+        const lastAssistant = [...entries].reverse().find((e) => e.kind === 'assistant');
+        if (lastAssistant && lastAssistant.kind === 'assistant') {
+          setAssistantText(lastAssistant.text);
+        }
       }
     } else {
       reset();
@@ -98,18 +85,50 @@ export function ChatPanel({
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [userBubbles, answeredQuestions, activeWidget, assistantText, isLoading, streamingText, pendingInterrupt]);
+  }, [chatEntries, activeWidget, assistantText, isLoading, streamingText]);
 
-  // Listen for final agent:response via Socket.IO (streaming mode)
+  // Keep a ref of conversationId so Socket.IO handlers always see the latest
+  // value without needing to re-register on every change (avoids race condition
+  // where the first agent:response arrives before the state update lands).
+  const conversationIdRef = useRef<string | null>(null);
+  conversationIdRef.current = conversationId;
+
+  // Store processResponse in a ref so the Socket.IO handler (registered once)
+  // always calls the LATEST version, not a stale closure from the first render.
+  // The assignment happens after processResponse is defined (see below).
+  const processResponseRef = useRef<(data: any) => void>(() => {});
+
+  // Listen for agent:widget events (from ask_question tool)
+  useEffect(() => {
+    const socket = useTripStore.getState().socket;
+    if (!socket) return;
+
+    const handleWidget = (data: any) => {
+      // Only filter when we have a conversationId to compare against.
+      // On the first turn, conversationId is null — allow the event through.
+      if (data.conversationId && conversationIdRef.current && data.conversationId !== conversationIdRef.current) return;
+      if (data.widget) {
+        setActiveWidget(data.widget);
+      }
+    };
+
+    socket.on('agent:widget', handleWidget);
+    return () => { socket.off('agent:widget', handleWidget); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Listen for final agent:response via Socket.IO
   useEffect(() => {
     const socket = useTripStore.getState().socket;
     if (!socket) return;
 
     const handleAgentResponse = (data: any) => {
-      if (data.conversationId && data.conversationId !== conversationId) return;
-      processResponse(data);
+      // Only filter when we have a conversationId to compare against.
+      // On the first turn, conversationId is null — allow the event through
+      // so processResponse can set it and populate searchResults/widgets.
+      if (data.conversationId && conversationIdRef.current && data.conversationId !== conversationIdRef.current) return;
+      processResponseRef.current(data);
       setStreamingText('');
-      setPendingInterrupt(null);
       setLoading(false);
       setAgentStatus(null);
     };
@@ -117,7 +136,7 @@ export function ChatPanel({
     socket.on('agent:response', handleAgentResponse);
     return () => { socket.off('agent:response', handleAgentResponse); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId]);
+  }, []);
 
   const processResponse = (data: any) => {
     if (data.conversationId && !conversationId) {
@@ -130,25 +149,43 @@ export function ChatPanel({
 
     const widgets = data.widgets || [];
     const qWidget = widgets.find((w: any) => w.type === 'question_card');
-    const rWidget = widgets.find((w: any) => w.type === 'route_proposal');
     const sWidget = widgets.find((w: any) => w.type === 'itinerary_summary');
+    const srWidget = widgets.find((w: any) => w.type === 'search_results');
 
-    setActiveWidget(qWidget || null);
-
-    if (rWidget) {
-      setRouteProposal(rWidget.data);
-    } else if (data.tripState?.itinerary) {
-      setRouteProposal(null);
+    // Update activeWidget based on whether this turn called ask_question.
+    // The backend includes the question_card widget in the response payload
+    // so we know whether to keep or clear the widget. This handles stale
+    // agent:widget events from previous turns that might re-set activeWidget.
+    if (qWidget) {
+      setActiveWidget(qWidget);
+    } else {
+      setActiveWidget(null);
     }
 
     if (sWidget) {
       setItinerarySummary(sWidget.data);
-      setRouteProposal(null);
     }
 
+    // For search results, store them per-message instead of as a singleton.
+    if (srWidget) {
+      setSearchResults(srWidget.data);
+    } else {
+      setSearchResults(null);
+    }
+
+    // Always set assistantText — the rendering hides it when activeWidget
+    // is set (via the !activeWidget check), so no duplication with the widget.
     setAssistantText(data.message || '');
 
-    // Persist assistant message to chatStore for chatHistory saving
+    if (data.message) {
+      // Store ALL widgets with the assistant entry (including question_card)
+      // so the rendering can skip question-turn entries in the history.
+      const entryWidgets = widgets.filter((w: any) =>
+        w.type === 'search_results' || w.type === 'itinerary_summary' || w.type === 'question_card'
+      );
+      setChatEntries((prev) => [...prev, { kind: 'assistant', text: data.message, widgets: entryWidgets }]);
+    }
+
     if (data.message) {
       useChatStore.getState().addMessage({
         role: 'assistant',
@@ -166,17 +203,22 @@ export function ChatPanel({
     }
   };
 
+  // Update the ref every render so the Socket.IO handler always calls
+  // the latest processResponse (with current state/props, not stale ones).
+  processResponseRef.current = processResponse;
+
   const handleSend = async (text: string) => {
     if (!text.trim() || isLoading) return;
 
-    setUserBubbles((prev) => [...prev, text.trim()]);
+    setChatEntries((prev) => [...prev, { kind: 'user', text: text.trim() }]);
     setInput('');
     setHasStarted(true);
     setLoading(true);
     setAgentStatus('Thinking...');
     setStreamingText('');
+    setSearchResults(null);
+    setActiveWidget(null);
 
-    // Persist user message to chatStore for chatHistory saving
     useChatStore.getState().addMessage({
       role: 'user',
       content: text.trim(),
@@ -190,15 +232,11 @@ export function ChatPanel({
         currentItinerary: tripState?.itinerary || null,
       });
 
-      // Streaming mode: API returns immediately with { status: 'streaming' }
-      // The response will come via Socket.IO events (agent:token, agent:response, etc.)
       if (res.data?.status === 'streaming') {
         if (res.data.conversationId && !conversationId) {
           setConversationId(res.data.conversationId);
         }
-        // Don't setLoading(false) here — it will be set false by agent:response event
       } else {
-        // Fallback: non-streaming response
         processResponse(res.data);
         setLoading(false);
         setAgentStatus(null);
@@ -214,18 +252,17 @@ export function ChatPanel({
   const handleAnswer = async (answer: any) => {
     if (!activeWidget || isLoading) return;
 
-    const slot = activeWidget.data.slot;
     const question = activeWidget.data.question;
-    const answerLabel = getAnswerLabel(slot, answer);
+    const answerLabel = typeof answer === 'string' ? answer : String(answer);
 
-    setAnsweredQuestions((prev) => [...prev, { slot, question, answer: String(answer), answerLabel }]);
+    setChatEntries((prev) => [...prev, { kind: 'answered', question, answerLabel }]);
     setActiveWidget(null);
+    setAssistantText('');
 
     setLoading(true);
     setAgentStatus('Thinking...');
     setStreamingText('');
 
-    // Persist user answer to chatStore for chatHistory saving
     useChatStore.getState().addMessage({
       role: 'user',
       content: answerLabel,
@@ -255,34 +292,6 @@ export function ChatPanel({
     }
   };
 
-  const handleResume = async (decision: string) => {
-    if (!conversationId || isLoading) return;
-
-    setPendingInterrupt(null);
-    setLoading(true);
-    setAgentStatus('Processing...');
-    setStreamingText('');
-
-    // Persist user decision to chatStore
-    useChatStore.getState().addMessage({
-      role: 'user',
-      content: decision,
-      timestamp: new Date().toISOString(),
-    });
-
-    try {
-      await chatApi.resumeAgent({
-        message: decision,
-        conversationId,
-      });
-      // Response will come via Socket.IO events
-    } catch (err: any) {
-      setAssistantText("I'm sorry, I couldn't process your request. Please try again.");
-      setLoading(false);
-      setAgentStatus(null);
-    }
-  };
-
   return (
     <div className="flex flex-col h-full bg-[var(--surface)]">
       {/* Slim header */}
@@ -301,7 +310,7 @@ export function ChatPanel({
         </div>
       </div>
 
-      {/* Progressive question flow */}
+      {/* Chat area */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
         <div className="max-w-[480px] mx-auto">
           {!hasStarted ? (
@@ -329,24 +338,56 @@ export function ChatPanel({
             </div>
           ) : (
             <>
-              {/* User message bubbles */}
-              {userBubbles.map((msg, i) => (
-                <div key={i} className="flex justify-end mb-2">
-                  <div className="bg-[var(--lavender)] rounded-xl px-3 py-2 max-w-[80%]">
-                    <p className="text-xs text-[var(--ink)] leading-relaxed">{msg}</p>
+              {/* Chat history — all entries rendered in order */}
+              {chatEntries.map((entry, i) => {
+                if (entry.kind === 'user') {
+                  return (
+                    <div key={i} className="flex justify-end mb-2">
+                      <div className="bg-[var(--lavender)] rounded-xl px-3 py-2 max-w-[80%]">
+                        <p className="text-xs text-[var(--ink)] leading-relaxed">{entry.text}</p>
+                      </div>
+                    </div>
+                  );
+                }
+                if (entry.kind === 'answered') {
+                  return (
+                    <CompletedQuestion key={i} question={entry.question} answer={entry.answerLabel} />
+                  );
+                }
+                // assistant entry — only render text here if it's NOT the latest one
+                const isLastAssistant =
+                  i === chatEntries.length - 1 && entry.kind === 'assistant';
+                if (isLastAssistant) return null; // rendered below with widgets
+                // Skip question-turn entries — CompletedQuestion represents them
+                const hasQuestionCard = entry.widgets?.some((w: any) => w.type === 'question_card');
+                if (hasQuestionCard) return null;
+                // Render inline widgets (search results) for this message
+                const entrySrWidget = entry.widgets?.find((w: any) => w.type === 'search_results');
+                return (
+                  <div key={i} className="mt-2 mb-3">
+                    {entrySrWidget ? (
+                      <SearchResults
+                        data={entrySrWidget.data}
+                        text={entry.text}
+                        onSelectPlace={onSelectPlace}
+                      />
+                    ) : (
+                      <FormattedText
+                        text={entry.text}
+                        className="text-sm text-[var(--ink)] leading-relaxed space-y-1.5"
+                      />
+                    )}
                   </div>
-                </div>
-              ))}
-
-              {/* Completed questions (collapsed) */}
-              {answeredQuestions.map((qa, i) => (
-                <CompletedQuestion key={i} question={qa.question} answer={qa.answerLabel} />
-              ))}
+                );
+              })}
 
               {/* Streaming text (live token-by-token) */}
-              {streamingText && !pendingInterrupt && (
+              {streamingText && (
                 <div className="mt-2 mb-3">
-                  <p className="text-sm text-[var(--ink)] leading-relaxed">{streamingText}</p>
+                  <FormattedText
+                    text={streamingText}
+                    className="text-sm text-[var(--ink)] leading-relaxed space-y-1.5"
+                  />
                 </div>
               )}
 
@@ -362,48 +403,28 @@ export function ChatPanel({
                 </div>
               )}
 
-              {/* Active question card (expanded) */}
+              {/* Active question card (from ask_question tool) */}
               {activeWidget && activeWidget.type === 'question_card' && !isLoading && (
                 <QuestionCard data={activeWidget.data} onAnswer={handleAnswer} />
               )}
 
-              {/* Interrupt card (route confirmation from agent) */}
-              {pendingInterrupt && pendingInterrupt.type === 'route_confirmation' && (
-                <div className="mt-2 mb-3 p-3 rounded-xl bg-[var(--bg)] border border-[var(--border)]">
-                  <p className="text-sm text-[var(--ink)] mb-2">{pendingInterrupt.message}</p>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleResume('confirm')}
-                      className="px-3 py-1.5 rounded-lg bg-[var(--ink)] text-white text-xs font-medium hover:bg-[#292524] transition-colors"
-                    >
-                      Confirm
-                    </button>
-                    <button
-                      onClick={() => handleResume('reject')}
-                      className="px-3 py-1.5 rounded-lg bg-[var(--surface)] text-[var(--ink)] text-xs font-medium border border-[var(--border)] hover:bg-[var(--sage)] transition-colors"
-                    >
-                      Modify
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Route proposal (from widget) */}
-              {routeProposal && !activeWidget && !isLoading && !pendingInterrupt && (
-                <div className="mt-2">
-                  <RouteProposalCard data={routeProposal} onConfirm={() => handleSend('Confirm route and build itinerary')} />
-                </div>
-              )}
-
-              {/* Itinerary summary (photo cards + hotel) — shown after itinerary is built */}
-              {itinerarySummary && !activeWidget && !isLoading && !pendingInterrupt && (
+              {/* Itinerary summary — shown after itinerary is built */}
+              {itinerarySummary && !activeWidget && !isLoading && (
                 <ItinerarySummary data={itinerarySummary} onSelectPlace={onSelectPlace} />
               )}
 
-              {/* Assistant text (when no widget, no streaming, no interrupt) */}
-              {assistantText && !activeWidget && !isLoading && !routeProposal && !streamingText && !pendingInterrupt && (
+              {/* Search results — shown after a search/recommendation turn */}
+              {searchResults && !itinerarySummary && !activeWidget && !isLoading && !streamingText && (
+                <SearchResults data={searchResults} text={assistantText} onSelectPlace={onSelectPlace} />
+              )}
+
+              {/* Latest assistant text (when no widget, no streaming) */}
+              {assistantText && !searchResults && !activeWidget && !isLoading && !streamingText && (
                 <div className="mt-2 mb-3">
-                  <p className="text-sm text-[var(--ink)] leading-relaxed">{assistantText}</p>
+                  <FormattedText
+                    text={assistantText}
+                    className="text-sm text-[var(--ink)] leading-relaxed space-y-1.5"
+                  />
                 </div>
               )}
 
@@ -438,22 +459,19 @@ export function ChatPanel({
               style={{ minHeight: '24px', maxHeight: '120px' }}
               disabled={isLoading}
             />
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button className="p-1.5 rounded-lg text-[var(--muted)] hover:bg-[var(--sage)] transition-colors" title="Voice input">
+            <div className="flex items-center gap-1 shrink-0">
+              <button className="p-1.5 rounded-md text-[var(--muted)] hover:bg-[var(--sage)] transition-colors" title="Voice">
                 <Mic className="w-4 h-4" />
               </button>
               <button
                 onClick={() => handleSend(input)}
-                disabled={isLoading || !input.trim()}
-                className="flex items-center justify-center w-8 h-8 rounded-full bg-[var(--ink)] text-white disabled:opacity-30 hover:bg-[#292524] transition-colors"
+                disabled={!input.trim() || isLoading}
+                className="flex items-center justify-center w-7 h-7 rounded-lg bg-[var(--ink)] text-white disabled:opacity-30 hover:bg-[#292524] transition-colors"
               >
                 <ArrowUp className="w-4 h-4" />
               </button>
             </div>
           </div>
-          <p className="text-[10px] text-[var(--muted)] text-center mt-1.5">
-            TripWhat can make mistakes. Verify important information.
-          </p>
         </div>
       </div>
     </div>

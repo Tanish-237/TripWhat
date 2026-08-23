@@ -301,15 +301,9 @@ export const useTripStore = create<TripStore>((set, get) => ({
       }
     });
 
-    socket.on('agent:interrupt', (data: { conversationId: string; payload: any }) => {
-      useChatStore.getState().setPendingInterrupt(data.payload);
-      useChatStore.getState().setLoading(false);
-    });
-
     socket.on('agent:response', (data: any) => {
       const chatStore = useChatStore.getState();
       chatStore.setStreamingText('');
-      chatStore.setPendingInterrupt(null);
       chatStore.setLoading(false);
       chatStore.setAgentStatus(null);
 
@@ -367,13 +361,11 @@ export const useTripStore = create<TripStore>((set, get) => ({
               get().setTripState(data.tripState);
             }
             break;
-          case 'interrupt':
-            chatStore.setPendingInterrupt(data.payload);
-            chatStore.setLoading(false);
+          case 'widget':
+            // Widget events from ask_question tool — handled by ChatPanel
             break;
           case 'response':
             chatStore.setStreamingText('');
-            chatStore.setPendingInterrupt(null);
             chatStore.setLoading(false);
             chatStore.setAgentStatus(null);
             if (data.tripState) {
