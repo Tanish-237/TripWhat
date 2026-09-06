@@ -7,5 +7,6 @@ from app.models.destination_baseline import DestinationBaseline
 from app.models.flight_cache import FlightCache
 from app.models.places_cache import PlacesCache, SearchCache
 from app.models.saved_item import SavedItem
+from app.models.image_cache import ImageCache
 
-__all__ = ["User", "Conversation", "Trip", "DestinationBaseline", "FlightCache", "PlacesCache", "SearchCache", "SavedItem"]
+__all__ = ["User", "Conversation", "Trip", "DestinationBaseline", "FlightCache", "PlacesCache", "SearchCache", "SavedItem", "ImageCache"]

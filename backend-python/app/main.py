@@ -105,6 +105,7 @@ from app.routes.calendar import router as calendar_router
 from app.routes.gmail import router as gmail_router
 from app.routes.saved import router as saved_router
 from app.routes.itinerary_edit import router as itinerary_edit_router
+from app.routes.image_proxy import router as image_proxy_router
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
@@ -117,6 +118,7 @@ app.include_router(calendar_router, prefix="/api/google", tags=["calendar"])
 app.include_router(gmail_router, prefix="/api/google", tags=["gmail"])
 app.include_router(saved_router, tags=["saved"])
 app.include_router(itinerary_edit_router, tags=["itinerary-edit"])
+app.include_router(image_proxy_router, tags=["image-proxy"])
 
 
 @app.get("/health")

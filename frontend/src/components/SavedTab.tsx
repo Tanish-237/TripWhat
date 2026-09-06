@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Hotel, Plane, MapPin, Utensils, Trash2, ExternalLink, Star } from 'lucide-react';
 import { useSavedStore } from '../stores/savedStore';
+import { imgUrl } from '../lib/image';
 
 const TYPE_ICONS: Record<string, any> = {
   hotel: Hotel,
@@ -70,7 +71,7 @@ export function SavedTab() {
                 >
                   {item.data?.imageUrl && (
                     <img
-                      src={item.data.imageUrl}
+                      src={imgUrl(item.data.imageUrl)}
                       alt={item.name}
                       className="w-12 h-12 rounded-md object-cover shrink-0"
                       loading="lazy"

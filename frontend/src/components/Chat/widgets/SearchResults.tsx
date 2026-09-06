@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { PlaceRef } from './HighlightedText';
+import { imgUrl } from '../../../lib/image';
 
 export interface SearchResultPlace {
   name: string;
@@ -44,7 +45,7 @@ export function SearchResults({ data, text, onSelectPlace }: SearchResultsProps)
                 onClick={() => p.placeId && onSelectPlace?.(p.placeId)}
               >
                 <img
-                  src={p.imageUrl}
+                  src={imgUrl(p.imageUrl)}
                   alt={p.name}
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"

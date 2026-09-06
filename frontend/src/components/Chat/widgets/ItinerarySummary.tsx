@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Star, Bookmark, ExternalLink, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
 import { useSavedStore } from '../../../stores/savedStore';
 import { HighlightedText } from './HighlightedText';
+import { imgUrl } from '../../../lib/image';
 
 interface AttractionCard {
   name: string;
@@ -63,7 +64,7 @@ function HotelCard({ hotel, onSelectPlace }: { hotel: HotelData; onSelectPlace?:
           {photos.map((src, i) => (
             <img
               key={src}
-              src={src}
+              src={imgUrl(src)}
               alt={hotel.name}
               className="absolute inset-0 w-full h-full object-cover"
               loading="lazy"
@@ -229,7 +230,7 @@ export function ItinerarySummary({ data, onSelectPlace }: ItinerarySummaryProps)
                 onClick={() => a.placeId && onSelectPlace?.(a.placeId)}
               >
                 <img
-                  src={a.imageUrl}
+                  src={imgUrl(a.imageUrl)}
                   alt={a.name}
                   className="w-full h-full object-cover"
                   loading="lazy"
