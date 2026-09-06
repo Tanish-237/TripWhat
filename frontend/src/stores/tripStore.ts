@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { io, type Socket } from 'socket.io-client';
 import { useChatStore } from './chatStore';
-import { chatApi } from '../lib/api';
+import { chatApi, itineraryEditApi } from '../lib/api';
+import { prefetchImages, extractImageUrls } from '../lib/image';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5001';
 
@@ -63,6 +64,7 @@ interface TripStore {
   socketConnected: boolean;
   pendingDiff: { tripState: TripState; changeSummary: any[] } | null;
   lastEventId: string | null;
+  progressiveDays: { day: number; city: string; timeSlots: any[]; totalDays?: number }[] | null;
 
   fetchTrips: () => Promise<void>;
   fetchTrip: (id: string) => Promise<void>;
@@ -77,6 +79,7 @@ interface TripStore {
   acceptDiff: () => void;
   rejectDiff: () => void;
   replayMissedEvents: (conversationId: string) => Promise<void>;
+  editItinerary: (conversationId: string, action: keyof typeof itineraryEditApi, data: any) => Promise<void>;
 }
 
 const getToken = () => localStorage.getItem('tripwhat_token');
@@ -92,6 +95,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
   socketConnected: false,
   pendingDiff: null,
   lastEventId: null,
+  progressiveDays: null,
 
   fetchTrips: async () => {
     set({ loading: true, error: null });
@@ -218,7 +222,12 @@ export const useTripStore = create<TripStore>((set, get) => ({
     }
   },
 
-  setTripState: (state: TripState) => set({ tripState: state }),
+  setTripState: (state: TripState) => {
+    set({ tripState: state });
+    // Background-prefetch all itinerary images through the proxy
+    const urls = extractImageUrls(state);
+    if (urls.length > 0) prefetchImages(urls);
+  },
 
   connectSocket: (conversationId?: string) => {
     const existing = get().socket;
@@ -286,6 +295,50 @@ export const useTripStore = create<TripStore>((set, get) => ({
       useChatStore.getState().setAgentStatus(data.status);
     });
 
+    socket.on('agent:tool_start', (data: {
+      conversationId: string; toolName: string; label: string;
+      callId: string; input?: any; eventId?: string;
+    }) => {
+      if (data.eventId) set({ lastEventId: data.eventId });
+      useChatStore.getState().addToolActivity({
+        callId: data.callId,
+        toolName: data.toolName,
+        label: data.label,
+        status: 'running',
+      });
+    });
+
+    socket.on('agent:tool_end', (data: {
+      conversationId: string; toolName: string; label: string;
+      callId: string; summary?: string; error?: string | null; eventId?: string;
+    }) => {
+      if (data.eventId) set({ lastEventId: data.eventId });
+      useChatStore.getState().updateToolActivity(data.callId, {
+        status: data.error ? 'error' : 'finished',
+        summary: data.summary,
+        error: data.error,
+      });
+    });
+
+    socket.on('agent:itinerary_day', (data: {
+      conversationId: string; day: number; city: string;
+      timeSlots: any[]; totalDays: number; eventId?: string;
+    }) => {
+      if (data.eventId) set({ lastEventId: data.eventId });
+      set((state) => {
+        const current = state.progressiveDays || [];
+        const filtered = current.filter(d => d.day !== data.day);
+        return {
+          progressiveDays: [...filtered, {
+            day: data.day,
+            city: data.city,
+            timeSlots: data.timeSlots,
+            totalDays: data.totalDays,
+          }],
+        };
+      });
+    });
+
     socket.on('agent:tripState', (data: { conversationId: string; tripState: any; changeSummary?: any[] }) => {
       if (data.tripState) {
         if (data.changeSummary && data.changeSummary.length > 0) {
@@ -303,9 +356,6 @@ export const useTripStore = create<TripStore>((set, get) => ({
 
     socket.on('agent:response', (data: any) => {
       const chatStore = useChatStore.getState();
-      chatStore.setStreamingText('');
-      chatStore.setLoading(false);
-      chatStore.setAgentStatus(null);
 
       if (data.conversationId && !chatStore.conversationId) {
         chatStore.setConversationId(data.conversationId);
@@ -314,6 +364,27 @@ export const useTripStore = create<TripStore>((set, get) => ({
       if (data.tripState) {
         get().setTripState(data.tripState);
       }
+
+      // Clear progressive days — full itinerary has arrived
+      set({ progressiveDays: null });
+
+      // Store the response so ChatPanel can process it via useEffect
+      // if its socket handler missed the event (e.g. socket wasn't joined
+      // to the room yet when the event was emitted).
+      chatStore.setLastResponse(data);
+
+      // Clear streaming state. ChatPanel's agent:response handler also
+      // does this (deferred via setTimeout), but we do it here as a
+      // fallback in case ChatPanel's handler isn't registered yet (e.g.
+      // on NewTripPage where the socket is created after ChatPanel mounts).
+      // The setTimeout in ChatPanel ensures its processResponse() runs
+      // before its own clear, but this fallback ensures isLoading is
+      // always cleared even if ChatPanel's handler misses the event.
+      setTimeout(() => {
+        useChatStore.getState().setStreamingText('');
+        useChatStore.getState().setLoading(false);
+        useChatStore.getState().setAgentStatus(null);
+      }, 0);
     });
 
     set({ socket });
@@ -364,6 +435,35 @@ export const useTripStore = create<TripStore>((set, get) => ({
           case 'widget':
             // Widget events from ask_question tool — handled by ChatPanel
             break;
+          case 'tool_start':
+            chatStore.addToolActivity({
+              callId: data.callId,
+              toolName: data.toolName,
+              label: data.label,
+              status: 'running',
+            });
+            break;
+          case 'tool_end':
+            chatStore.updateToolActivity(data.callId, {
+              status: data.error ? 'error' : 'finished',
+              summary: data.summary,
+              error: data.error,
+            });
+            break;
+          case 'itinerary_day':
+            set((state) => {
+              const current = state.progressiveDays || [];
+              const filtered = current.filter(d => d.day !== data.day);
+              return {
+                progressiveDays: [...filtered, {
+                  day: data.day,
+                  city: data.city,
+                  timeSlots: data.timeSlots,
+                  totalDays: data.totalDays,
+                }],
+              };
+            });
+            break;
           case 'response':
             chatStore.setStreamingText('');
             chatStore.setLoading(false);
@@ -371,6 +471,11 @@ export const useTripStore = create<TripStore>((set, get) => ({
             if (data.tripState) {
               get().setTripState(data.tripState);
             }
+            // Clear progressive days — full itinerary has arrived
+            set({ progressiveDays: null });
+            // Store the response so ChatPanel can process it via useEffect
+            // (processResponse updates chatEntries, assistantText, widgets, etc.)
+            chatStore.setLastResponse(data);
             break;
         }
       }
@@ -400,4 +505,16 @@ export const useTripStore = create<TripStore>((set, get) => ({
   },
 
   rejectDiff: () => set({ pendingDiff: null }),
+
+  editItinerary: async (conversationId: string, action: keyof typeof itineraryEditApi, data: any) => {
+    try {
+      const res = await itineraryEditApi[action](conversationId, data);
+      if (res.data?.tripState) {
+        set({ tripState: res.data.tripState });
+      }
+    } catch (err) {
+      console.error('[tripStore] editItinerary failed:', err);
+      throw err;
+    }
+  },
 }));

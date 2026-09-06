@@ -1,12 +1,14 @@
 import { useRef, useState, useEffect } from 'react';
 import { ArrowUp, Sparkles, Mic, MoreHorizontal, Share2, Activity } from 'lucide-react';
-import { useChatStore } from '../../stores/chatStore';
+import { useChatStore, type ToolActivity } from '../../stores/chatStore';
 import { useTripStore } from '../../stores/tripStore';
 import { chatApi } from '../../lib/api';
 import { QuestionCard, CompletedQuestion } from './widgets/QuestionCard';
 import { ItinerarySummary } from './widgets/ItinerarySummary';
 import { SearchResults } from './widgets/SearchResults';
 import { FormattedText } from './widgets/HighlightedText';
+import { ToolActivityBar } from './widgets/ToolActivityBar';
+import { FlightCard } from '../FlightCard';
 
 interface ChatPanelProps {
   title?: string;
@@ -14,13 +16,14 @@ interface ChatPanelProps {
   onItineraryBuilt?: (tripState: any) => void;
   onTripStateUpdate?: (tripState: any) => void;
   onSelectPlace?: (placeId: string) => void;
+  onSelectFlight?: (flight: any) => void;
   initialMessage?: string;
   emptyStatePrompts?: string[];
 }
 
 type ChatEntry =
   | { kind: 'user'; text: string }
-  | { kind: 'assistant'; text: string; widgets?: any[] }
+  | { kind: 'assistant'; text: string; widgets?: any[]; toolActivities?: ToolActivity[] }
   | { kind: 'answered'; question: string; answerLabel: string };
 
 export function ChatPanel({
@@ -29,6 +32,7 @@ export function ChatPanel({
   onItineraryBuilt,
   onTripStateUpdate,
   onSelectPlace,
+  onSelectFlight,
   initialMessage,
   emptyStatePrompts = [
     'Plan a 5-day Japan trip visiting Tokyo and Kyoto',
@@ -37,8 +41,10 @@ export function ChatPanel({
   ],
 }: ChatPanelProps) {
   const {
-    conversationId, isLoading, agentStatus, streamingText,
-    setConversationId, setLoading, setAgentStatus, setStreamingText, reset,
+    conversationId, isLoading, agentStatus, streamingText, toolActivities,
+    setConversationId, setLoading, setAgentStatus, setStreamingText,
+    clearToolActivities, getToolActivities,
+    reset,
   } = useChatStore();
 
   const [input, setInput] = useState('');
@@ -46,6 +52,7 @@ export function ChatPanel({
   const [activeWidget, setActiveWidget] = useState<any>(null);
   const [assistantText, setAssistantText] = useState<string>('');
   const [itinerarySummary, setItinerarySummary] = useState<any>(null);
+  const [flightCards, setFlightCards] = useState<any[]>([]);
   const [searchResults, setSearchResults] = useState<any>(null);
   const [hasStarted, setHasStarted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -97,10 +104,16 @@ export function ChatPanel({
   // always calls the LATEST version, not a stale closure from the first render.
   // The assignment happens after processResponse is defined (see below).
   const processResponseRef = useRef<(data: any) => void>(() => {});
+  // Track the ts of the last response we've already processed via the socket
+  // handler, so the lastResponse useEffect doesn't double-process it.
+  const lastProcessedTsRef = useRef<number>(0);
 
   // Listen for agent:widget events (from ask_question tool)
+  // Reactive to socket availability — on NewTripPage, the socket is created
+  // after ChatPanel mounts, so [] deps would miss the registration.
+  const socket = useTripStore((s) => s.socket);
+
   useEffect(() => {
-    const socket = useTripStore.getState().socket;
     if (!socket) return;
 
     const handleWidget = (data: any) => {
@@ -114,12 +127,10 @@ export function ChatPanel({
 
     socket.on('agent:widget', handleWidget);
     return () => { socket.off('agent:widget', handleWidget); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [socket]);
 
   // Listen for final agent:response via Socket.IO
   useEffect(() => {
-    const socket = useTripStore.getState().socket;
     if (!socket) return;
 
     const handleAgentResponse = (data: any) => {
@@ -127,16 +138,32 @@ export function ChatPanel({
       // On the first turn, conversationId is null — allow the event through
       // so processResponse can set it and populate searchResults/widgets.
       if (data.conversationId && conversationIdRef.current && data.conversationId !== conversationIdRef.current) return;
-      processResponseRef.current(data);
-      setStreamingText('');
-      setLoading(false);
-      setAgentStatus(null);
+      // processResponse sets React state (setAssistantText, setChatEntries, etc.)
+      // which React 18 batches and applies asynchronously. The Zustand clears
+      // below (setStreamingText/setLoading) are synchronous and trigger an
+      // immediate re-render. If we call them synchronously here, the re-render
+      // fires BEFORE React applies the batched state — so streamingText is ''
+      // but assistantText is still the old value, causing the chat to vanish.
+      // Deferring to a macrotask ensures React commits its state first.
+      try {
+        processResponseRef.current(data);
+      } catch (e) {
+        console.error('[ChatPanel] processResponse error:', e);
+      }
+      // Mark this response as processed so the lastResponse useEffect
+      // doesn't double-process it.
+      const lr = useChatStore.getState().lastResponse;
+      if (lr) lastProcessedTsRef.current = lr.ts;
+      setTimeout(() => {
+        setStreamingText('');
+        setLoading(false);
+        setAgentStatus(null);
+      }, 0);
     };
 
     socket.on('agent:response', handleAgentResponse);
     return () => { socket.off('agent:response', handleAgentResponse); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [socket]);
 
   const processResponse = (data: any) => {
     if (data.conversationId && !conversationId) {
@@ -156,7 +183,9 @@ export function ChatPanel({
     // The backend includes the question_card widget in the response payload
     // so we know whether to keep or clear the widget. This handles stale
     // agent:widget events from previous turns that might re-set activeWidget.
-    if (qWidget) {
+    // If an itinerary_summary or search_results widget is present, the question
+    // phase is over — always clear activeWidget.
+    if (qWidget && !sWidget && !srWidget) {
       setActiveWidget(qWidget);
     } else {
       setActiveWidget(null);
@@ -165,6 +194,10 @@ export function ChatPanel({
     if (sWidget) {
       setItinerarySummary(sWidget.data);
     }
+
+    // Extract flight card widgets for inline rendering
+    const fWidgets = widgets.filter((w: any) => w.type === 'flight_card');
+    setFlightCards(fWidgets.map((w: any) => w.data));
 
     // For search results, store them per-message instead of as a singleton.
     if (srWidget) {
@@ -183,7 +216,14 @@ export function ChatPanel({
       const entryWidgets = widgets.filter((w: any) =>
         w.type === 'search_results' || w.type === 'itinerary_summary' || w.type === 'question_card'
       );
-      setChatEntries((prev) => [...prev, { kind: 'assistant', text: data.message, widgets: entryWidgets }]);
+      // Snapshot the tool activities so they persist in chat history
+      const activitiesSnapshot = [...getToolActivities()];
+      setChatEntries((prev) => [...prev, {
+        kind: 'assistant',
+        text: data.message,
+        widgets: entryWidgets,
+        toolActivities: activitiesSnapshot,
+      }]);
     }
 
     if (data.message) {
@@ -195,8 +235,12 @@ export function ChatPanel({
         suggestions: data.suggestions,
         changeSummary: data.changeSummary,
         classification: data.classification,
+        toolActivities: [...getToolActivities()],
       });
     }
+
+    // Clear tool activities for the next turn
+    clearToolActivities();
 
     if (data.tripState?.itinerary && onItineraryBuilt) {
       onItineraryBuilt(data.tripState);
@@ -206,6 +250,31 @@ export function ChatPanel({
   // Update the ref every render so the Socket.IO handler always calls
   // the latest processResponse (with current state/props, not stale ones).
   processResponseRef.current = processResponse;
+
+  // Watch lastResponse from chatStore — if the socket handler missed the
+  // agent:response event (e.g. socket wasn't joined to the room yet when
+  // the event was emitted), tripStore's handler or replayMissedEvents will
+  // still set lastResponse. This useEffect ensures processResponse runs
+  // even in that case, so chatEntries/assistantText/widgets update.
+  const lastResponse = useChatStore((s) => s.lastResponse);
+  useEffect(() => {
+    if (!lastResponse) return;
+    // Avoid double-processing: the socket handler calls processResponse
+    // directly and sets lastProcessedTsRef. We only process here if the
+    // socket handler didn't already handle this response.
+    if (lastResponse.ts === lastProcessedTsRef.current) return;
+    lastProcessedTsRef.current = lastResponse.ts;
+    try {
+      processResponseRef.current(lastResponse.data);
+    } catch (e) {
+      console.error('[ChatPanel] lastResponse processResponse error:', e);
+    }
+    setTimeout(() => {
+      setStreamingText('');
+      setLoading(false);
+      setAgentStatus(null);
+    }, 0);
+  }, [lastResponse]);
 
   const handleSend = async (text: string) => {
     if (!text.trim() || isLoading) return;
@@ -218,6 +287,9 @@ export function ChatPanel({
     setStreamingText('');
     setSearchResults(null);
     setActiveWidget(null);
+    setFlightCards([]);
+    clearToolActivities();
+    useTripStore.setState({ progressiveDays: null });
 
     useChatStore.getState().addMessage({
       role: 'user',
@@ -238,14 +310,18 @@ export function ChatPanel({
         }
       } else {
         processResponse(res.data);
-        setLoading(false);
-        setAgentStatus(null);
+        setTimeout(() => {
+          setLoading(false);
+          setAgentStatus(null);
+        }, 0);
       }
     } catch (err: any) {
       setAssistantText("I'm sorry, I couldn't process your request. Please try again.");
       setActiveWidget(null);
-      setLoading(false);
-      setAgentStatus(null);
+      setTimeout(() => {
+        setLoading(false);
+        setAgentStatus(null);
+      }, 0);
     }
   };
 
@@ -262,6 +338,8 @@ export function ChatPanel({
     setLoading(true);
     setAgentStatus('Thinking...');
     setStreamingText('');
+    clearToolActivities();
+    useTripStore.setState({ progressiveDays: null });
 
     useChatStore.getState().addMessage({
       role: 'user',
@@ -282,13 +360,17 @@ export function ChatPanel({
         }
       } else {
         processResponse(res.data);
-        setLoading(false);
-        setAgentStatus(null);
+        setTimeout(() => {
+          setLoading(false);
+          setAgentStatus(null);
+        }, 0);
       }
     } catch (err: any) {
       setAssistantText("I'm sorry, I couldn't process your request. Please try again.");
-      setLoading(false);
-      setAgentStatus(null);
+      setTimeout(() => {
+        setLoading(false);
+        setAgentStatus(null);
+      }, 0);
     }
   };
 
@@ -377,6 +459,10 @@ export function ChatPanel({
                         className="text-sm text-[var(--ink)] leading-relaxed space-y-1.5"
                       />
                     )}
+                    {/* Persisted tool activity bar for this message */}
+                    {entry.toolActivities && entry.toolActivities.length > 0 && (
+                      <ToolActivityBar activities={entry.toolActivities} isLoading={false} />
+                    )}
                   </div>
                 );
               })}
@@ -393,14 +479,23 @@ export function ChatPanel({
 
               {/* Loading indicator (when no streaming text yet) */}
               {isLoading && !streamingText && (
-                <div className="flex items-center gap-2 text-xs text-[var(--muted)] mb-3 px-1 py-2">
-                  <div className="flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--muted)] animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--muted)] animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--muted)] animate-bounce" style={{ animationDelay: '300ms' }} />
+                toolActivities.length > 0 ? (
+                  <ToolActivityBar activities={toolActivities} isLoading={true} />
+                ) : (
+                  <div className="flex items-center gap-2 text-xs text-[var(--muted)] mb-3 px-1 py-2">
+                    <div className="flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--muted)] animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--muted)] animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--muted)] animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </div>
+                    <span>{agentStatus || 'Thinking...'}</span>
                   </div>
-                  <span>{agentStatus || 'Thinking...'}</span>
-                </div>
+                )
+              )}
+
+              {/* Live tool activity bar (shown alongside streaming text) */}
+              {isLoading && streamingText && toolActivities.length > 0 && (
+                <ToolActivityBar activities={toolActivities} isLoading={true} />
               )}
 
               {/* Active question card (from ask_question tool) */}
@@ -410,12 +505,37 @@ export function ChatPanel({
 
               {/* Itinerary summary — shown after itinerary is built */}
               {itinerarySummary && !activeWidget && !isLoading && (
-                <ItinerarySummary data={itinerarySummary} onSelectPlace={onSelectPlace} />
+                <>
+                  <ItinerarySummary data={itinerarySummary} onSelectPlace={onSelectPlace} />
+                  {flightCards.length > 0 && onSelectFlight && (
+                    <div className="space-y-2 mb-3">
+                      {flightCards.map((flight, i) => (
+                        <FlightCard key={i} flight={flight} onOpen={onSelectFlight} />
+                      ))}
+                    </div>
+                  )}
+                  {(() => {
+                    const lastEntry = chatEntries[chatEntries.length - 1];
+                    if (lastEntry?.kind === 'assistant' && lastEntry.toolActivities && lastEntry.toolActivities.length > 0) {
+                      return <ToolActivityBar activities={lastEntry.toolActivities} isLoading={false} />;
+                    }
+                    return null;
+                  })()}
+                </>
               )}
 
               {/* Search results — shown after a search/recommendation turn */}
               {searchResults && !itinerarySummary && !activeWidget && !isLoading && !streamingText && (
-                <SearchResults data={searchResults} text={assistantText} onSelectPlace={onSelectPlace} />
+                <>
+                  <SearchResults data={searchResults} text={assistantText} onSelectPlace={onSelectPlace} />
+                  {(() => {
+                    const lastEntry = chatEntries[chatEntries.length - 1];
+                    if (lastEntry?.kind === 'assistant' && lastEntry.toolActivities && lastEntry.toolActivities.length > 0) {
+                      return <ToolActivityBar activities={lastEntry.toolActivities} isLoading={false} />;
+                    }
+                    return null;
+                  })()}
+                </>
               )}
 
               {/* Latest assistant text (when no widget, no streaming) */}
@@ -425,6 +545,14 @@ export function ChatPanel({
                     text={assistantText}
                     className="text-sm text-[var(--ink)] leading-relaxed space-y-1.5"
                   />
+                  {/* Show collapsed tool activity bar from the last entry */}
+                  {(() => {
+                    const lastEntry = chatEntries[chatEntries.length - 1];
+                    if (lastEntry?.kind === 'assistant' && lastEntry.toolActivities && lastEntry.toolActivities.length > 0) {
+                      return <ToolActivityBar activities={lastEntry.toolActivities} isLoading={false} />;
+                    }
+                    return null;
+                  })()}
                 </div>
               )}
 

@@ -8,11 +8,21 @@ export interface ChatMessage {
   suggestions?: string[];
   changeSummary?: any[];
   classification?: string;
+  toolActivities?: ToolActivity[];
 }
 
 export interface Widget {
   type: string;
   data: any;
+}
+
+export interface ToolActivity {
+  callId: string;
+  toolName: string;
+  label: string;
+  status: 'running' | 'finished' | 'error';
+  summary?: string;
+  error?: string | null;
 }
 
 interface ChatStore {
@@ -22,6 +32,11 @@ interface ChatStore {
   agentStatus: string | null;
   error: string | null;
   streamingText: string;
+  toolActivities: ToolActivity[];
+  /** Stores the last agent:response payload so components that miss the
+   *  socket event (e.g. ChatPanel when socket wasn't joined yet) can
+   *  react to it via a useEffect watching this field. */
+  lastResponse: { data: any; ts: number } | null;
 
   setConversationId: (id: string | null) => void;
   addMessage: (msg: ChatMessage) => void;
@@ -33,16 +48,23 @@ interface ChatStore {
   clearError: () => void;
   appendStreamingText: (text: string) => void;
   setStreamingText: (text: string) => void;
+  addToolActivity: (activity: ToolActivity) => void;
+  updateToolActivity: (callId: string, update: Partial<ToolActivity>) => void;
+  clearToolActivities: () => void;
+  getToolActivities: () => ToolActivity[];
+  setLastResponse: (data: any) => void;
   reset: () => void;
 }
 
-export const useChatStore = create<ChatStore>((set) => ({
+export const useChatStore = create<ChatStore>((set, get) => ({
   messages: [],
   conversationId: null,
   isLoading: false,
   agentStatus: null,
   error: null,
   streamingText: '',
+  toolActivities: [],
+  lastResponse: null,
 
   setConversationId: (id) => set({ conversationId: id }),
 
@@ -64,5 +86,33 @@ export const useChatStore = create<ChatStore>((set) => ({
 
   setStreamingText: (text) => set({ streamingText: text }),
 
-  reset: () => set({ messages: [], conversationId: null, isLoading: false, agentStatus: null, error: null, streamingText: '' }),
+  addToolActivity: (activity) =>
+    set((s) => {
+      // Replace if callId already exists, otherwise append
+      const existing = s.toolActivities.findIndex((a) => a.callId === activity.callId);
+      if (existing >= 0) {
+        const updated = [...s.toolActivities];
+        updated[existing] = { ...updated[existing], ...activity };
+        return { toolActivities: updated };
+      }
+      return { toolActivities: [...s.toolActivities, activity] };
+    }),
+
+  updateToolActivity: (callId, update) =>
+    set((s) => ({
+      toolActivities: s.toolActivities.map((a) =>
+        a.callId === callId ? { ...a, ...update } : a
+      ),
+    })),
+
+  clearToolActivities: () => set({ toolActivities: [] }),
+
+  getToolActivities: () => get().toolActivities,
+
+  setLastResponse: (data: any) => set({ lastResponse: { data, ts: Date.now() } }),
+
+  reset: () => set({
+    messages: [], conversationId: null, isLoading: false, agentStatus: null,
+    error: null, streamingText: '', toolActivities: [], lastResponse: null,
+  }),
 }));
