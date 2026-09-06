@@ -26,6 +26,7 @@ class TripState(TypedDict, total=False):
     itinerary: Optional[dict]
     routeProposal: Optional[dict]
     startLocation: Optional[str]
+    travelMode: Optional[str]  # walking | driving | transit (intra-city default: walking)
     version: int
 
 

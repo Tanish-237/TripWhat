@@ -21,6 +21,7 @@ from app.schemas.itinerary import (
     create_itinerary,
 )
 from app.services.places_search import places_search
+from app.services.distance_matrix import distance_matrix
 from app.services.query_generator import generate_queries, generate_hotel_queries, generate_restaurant_queries, generate_personalized_queries
 from app.utils.logger import logger
 
@@ -143,6 +144,20 @@ TYPE_DURATIONS = {
     "night_club": 2.0, "bar": 1.5, "tourist_attraction": 2.0,
     "point_of_interest": 1.5, "natural_feature": 1.5, "church": 1.0,
     "castle": 2.0, "monument": 0.5, "square": 0.5, "palace": 2.0,
+    # Expanded granular types
+    "art_museum": 2.0, "history_museum": 3.0, "national_park": 4.0,
+    "theme_park": 6.0, "cathedral": 1.5, "mosque": 1.0, "synagogue": 1.0,
+    "library": 1.5, "university": 1.5, "stadium": 2.5, "bridge": 0.5,
+    "fountain": 0.25, "sculpture": 0.25, "art_studio": 1.0,
+    "book_store": 0.5, "clothing_store": 0.75, "electronics_store": 0.5,
+    "bakery": 0.5, "meal_takeaway": 0.5, "meal_delivery": 0.5,
+    "movie_theater": 2.5, "performing_arts_theater": 2.5, "concert_hall": 3.0,
+    "spa": 2.0, "gym": 1.5, "bowling_alley": 1.5, "casino": 3.0,
+    "campground": 8.0, "rv_park": 8.0, "ski_resort": 5.0,
+    "marina": 1.5, "pier": 1.0, "port": 1.0, "harbor": 1.0,
+    "waterfall": 1.5, "mountain": 4.0, "canyon": 3.0, "cave": 2.0,
+    "forest": 2.5, "lake": 2.0, "river": 2.0, "island": 4.0,
+    "botanical_garden": 2.0, "memorial_park": 1.0, "national_monument": 1.5,
 }
 
 
@@ -169,6 +184,64 @@ class ItineraryBuilder:
             await status_cb({"phase": "build_complete"})
         return result
 
+    async def _search_all_places_for_city(
+        self,
+        city: str,
+        trip_style: str,
+        help_with: list[str] | None,
+        total_days: int,
+        user_memories: list[dict] | None = None,
+        traveler_type: str | None = None,
+        user_interests: list[str] | None = None,
+    ) -> list[dict]:
+        """Search for all real places in a city (across all days).
+
+        Generates queries for the full trip and searches once, returning
+        a deduplicated pool of places. This pool is then clustered by
+        geographic proximity so each day gets nearby places.
+        """
+        # Generate a broad set of queries covering the whole trip
+        if user_memories or traveler_type or user_interests:
+            queries = generate_personalized_queries(
+                city, trip_style, help_with, 1, total_days,
+                user_memories=user_memories,
+                traveler_type=traveler_type,
+                user_interests=user_interests,
+            )
+        else:
+            queries = generate_queries(city, trip_style, help_with, 1, total_days)
+
+        # Add extra queries for variety across days
+        extra_queries = [
+            f"hidden gems in {city}",
+            f"local favorites in {city}",
+            f"off the beaten path in {city}",
+            f"best views in {city}",
+            f"historic sites in {city}",
+        ]
+        queries = list(dict.fromkeys(queries + extra_queries))  # dedup preserving order
+
+        logger.info(f"[ITINERARY_BUILDER] Searching {len(queries)} queries for {city}: {queries}")
+        places = await places_search.search_multiple(queries, city, limit_per_query=10)
+
+        # Deduplicate by placeId
+        seen_ids = set()
+        seen_names = set()
+        unique = []
+        for p in places:
+            pid = p.get("placeId", "")
+            name = p.get("name", "").lower()
+            if pid and pid not in seen_ids:
+                seen_ids.add(pid)
+                seen_names.add(name)
+                unique.append(p)
+            elif name and name not in seen_names:
+                seen_names.add(name)
+                unique.append(p)
+
+        logger.info(f"[ITINERARY_BUILDER] Found {len(unique)} unique places for {city}")
+        return unique
+
     async def _search_and_curate_activities(
         self,
         city: str,
@@ -181,31 +254,42 @@ class ItineraryBuilder:
         user_memories: list[dict] | None = None,
         traveler_type: str | None = None,
         user_interests: list[str] | None = None,
+        day_places: list[dict] | None = None,
     ) -> list[dict]:
         """Search for real places and use LLM to curate activities for the day.
+
+        If day_places is provided (a pre-clustered subset), uses those directly.
+        Otherwise, searches and uses all results (legacy behavior).
 
         1. Generate procedural queries (zero LLM tokens)
         2. Search via places_search (cache-first, with photo resolution)
         3. LLM picks 2-5 activities from real results based on time budget
         """
-        # Step 1: Generate queries — use personalized version if personalization data available
-        if user_memories or traveler_type or user_interests:
-            queries = generate_personalized_queries(
-                city, trip_style, help_with, day_num, total_days,
-                user_memories=user_memories,
-                traveler_type=traveler_type,
-                user_interests=user_interests,
-            )
+        # If a pre-clustered subset is provided, use it directly
+        if day_places is not None:
+            places = day_places
+            if not places:
+                logger.warning(f"[ITINERARY_BUILDER] Empty cluster for {city} day {day_num}, using LLM fallback")
+                return self._llm_fallback_activities(city, day_num, total_days, trip_style)
         else:
-            queries = generate_queries(city, trip_style, help_with, day_num, total_days)
-        logger.info(f"[ITINERARY_BUILDER] Generated {len(queries)} queries for {city} day {day_num}: {queries}")
+            # Legacy: search per day (no clustering)
+            if user_memories or traveler_type or user_interests:
+                queries = generate_personalized_queries(
+                    city, trip_style, help_with, day_num, total_days,
+                    user_memories=user_memories,
+                    traveler_type=traveler_type,
+                    user_interests=user_interests,
+                )
+            else:
+                queries = generate_queries(city, trip_style, help_with, day_num, total_days)
+            logger.info(f"[ITINERARY_BUILDER] Generated {len(queries)} queries for {city} day {day_num}: {queries}")
 
-        # Step 2: Search for real places (cache-first, with photos)
-        places = await places_search.search_multiple(queries, city, limit_per_query=10)
+            # Step 2: Search for real places (cache-first, with photos)
+            places = await places_search.search_multiple(queries, city, limit_per_query=10)
 
-        if not places:
-            logger.warning(f"[ITINERARY_BUILDER] No places found for {city}, using LLM fallback")
-            return self._llm_fallback_activities(city, day_num, total_days, trip_style)
+            if not places:
+                logger.warning(f"[ITINERARY_BUILDER] No places found for {city}, using LLM fallback")
+                return self._llm_fallback_activities(city, day_num, total_days, trip_style)
 
         # Step 3: LLM curation — pick best activities from real results
         return await self._curate_activities_llm(places, city, day_num, total_days, trip_style, all_city_names, used_names)
@@ -215,6 +299,123 @@ class ItineraryBuilder:
         types = place.get("types", [])
         durations = [TYPE_DURATIONS.get(t, 0) for t in types if t in TYPE_DURATIONS]
         return max(durations) if durations else 2.0
+
+    def _cluster_places_by_proximity(
+        self,
+        places: list[dict],
+        num_clusters: int,
+    ) -> list[list[dict]]:
+        """Group places into geographically coherent clusters using K-means.
+
+        Each cluster represents one day's worth of places, ensuring the
+        traveler doesn't jump between distant locations within a day.
+
+        Seeding: the highest-rated places anchor each cluster centroid,
+        so popular spots naturally become the focal point of each day.
+
+        Args:
+            places: List of place dicts with "coordinates" → {"lat", "lng"}
+            num_clusters: Number of clusters (= number of days for this city)
+
+        Returns:
+            List of clusters, each a list of place dicts.
+        """
+        if not places:
+            return []
+        if num_clusters <= 1 or len(places) <= num_clusters:
+            # Can't cluster meaningfully — return single cluster or split evenly
+            if num_clusters <= 1:
+                return [places]
+            # Split into roughly equal chunks
+            chunks = []
+            chunk_size = max(1, len(places) // num_clusters)
+            for i in range(0, len(places), chunk_size):
+                chunks.append(places[i:i + chunk_size])
+            while len(chunks) < num_clusters:
+                chunks.append([])
+            return chunks[:num_clusters]
+
+        # Extract coordinates
+        coords = []
+        valid_places = []
+        for p in places:
+            c = p.get("coordinates") or {}
+            lat = c.get("lat")
+            lng = c.get("lng")
+            if lat is not None and lng is not None and lat != 0 and lng != 0:
+                coords.append((lat, lng))
+                valid_places.append(p)
+
+        if len(valid_places) < num_clusters:
+            # Not enough geocoded places — fall back to even split
+            return self._cluster_places_by_proximity(places, 1) if num_clusters > 1 else [places]
+
+        # Seed centroids with highest-rated places (spread across the area)
+        rated = sorted(valid_places, key=lambda p: p.get("rating") or 0, reverse=True)
+        centroids = []
+        for i in range(num_clusters):
+            idx = int(i * len(rated) / num_clusters)
+            p = rated[idx]
+            c = p.get("coordinates") or {}
+            centroids.append((c.get("lat", 0), c.get("lng", 0)))
+
+        # K-means iterations (simple, no numpy dependency)
+        assignments = [0] * len(valid_places)
+        for _iteration in range(10):
+            changed = False
+            for i, (lat, lng) in enumerate(coords):
+                best_cluster = 0
+                best_dist = float("inf")
+                for j, (clat, clng) in enumerate(centroids):
+                    dist = (lat - clat) ** 2 + (lng - clng) ** 2
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_cluster = j
+                if assignments[i] != best_cluster:
+                    assignments[i] = best_cluster
+                    changed = True
+
+            # Recompute centroids
+            for j in range(num_clusters):
+                members = [coords[i] for i in range(len(coords)) if assignments[i] == j]
+                if members:
+                    centroids[j] = (
+                        sum(m[0] for m in members) / len(members),
+                        sum(m[1] for m in members) / len(members),
+                    )
+
+            if not changed:
+                break
+
+        # Build clusters
+        clusters: list[list[dict]] = [[] for _ in range(num_clusters)]
+        for i, p in enumerate(valid_places):
+            clusters[assignments[i]].append(p)
+
+        # Merge tiny clusters (< 2 places) into nearest cluster
+        merged = []
+        small = []
+        for j, cluster in enumerate(clusters):
+            if len(cluster) < 2:
+                small.extend(cluster)
+            else:
+                merged.append(cluster)
+
+        if small:
+            if merged:
+                merged[-1].extend(small)
+            else:
+                merged.append(small)
+
+        # Pad with empty lists if we have fewer clusters than days
+        while len(merged) < num_clusters:
+            merged.append([])
+
+        logger.info(
+            f"[ITINERARY_BUILDER] Clustered {len(valid_places)} places into "
+            f"{len(merged)} clusters: {[len(c) for c in merged]}"
+        )
+        return merged
 
     def _pace_to_budget(self, trip_style: str) -> dict:
         """Map trip style to time budget per period."""
@@ -289,7 +490,7 @@ Rules:
 5. The total estimated duration should fit within the time budget for each period
 6. Consider variety (don't pick 3 museums or 3 restaurants)
 7. Write a one-sentence description for each
-8. Set a realistic duration_hours based on the place type
+8. Set a realistic duration_hours based on the place type (e.g., a cafe is 45min, a major museum is 3h)
 9. Do NOT repeat places used on previous days{used_clause}
 
 Respond with ONLY a JSON array of 2-5 objects:
@@ -408,6 +609,195 @@ Respond with ONLY a JSON array of 2-5 objects:
             result.append(remaining.pop(nearest_idx))
         return result
 
+    async def _compute_inter_activity_travel(
+        self,
+        activities: list[dict],
+        travel_mode: str = "walking",
+    ) -> list[dict]:
+        """Compute travel times between consecutive activities.
+
+        For activities [A, B, C], computes A→B and B→C via Distance Matrix API.
+        Attaches travelInfo to each activity (except the last) and returns
+        the activities list with travel info populated.
+
+        The travel mode is chosen per-pair based on distance:
+          - < 2 km: walking (or user's preferred mode)
+          - 2–50 km: driving
+          - 50–300 km: driving (highway)
+          - > 300 km: flight
+
+        Falls back to haversine + assumed speed if Distance Matrix fails.
+
+        Args:
+            activities: List of activity dicts (already sorted by proximity)
+            travel_mode: User's preferred intra-city mode ("walking" or "driving")
+
+        Returns:
+            The same activities list with "travelInfo" added to each activity
+            (except the last one, which has no "next" activity).
+        """
+        if len(activities) <= 1:
+            return activities
+
+        # Determine the mode for each consecutive pair based on haversine distance
+        pair_modes: list[str] = []
+        for i in range(len(activities) - 1):
+            pair_modes.append(self._pick_travel_mode(activities[i], activities[i + 1], travel_mode))
+
+        # Batch the API calls by mode to minimize requests
+        # Group pair indices by mode
+        mode_groups: dict[str, list[int]] = {}
+        for i, mode in enumerate(pair_modes):
+            mode_groups.setdefault(mode, []).append(i)
+
+        # For each mode group, call the Distance Matrix API
+        # Build a results array aligned to pair indices
+        pair_results: list[dict | None] = [None] * len(pair_modes)
+
+        for mode, indices in mode_groups.items():
+            if mode == "flight":
+                # No Distance Matrix API for flights — use haversine + flight speed
+                for i in indices:
+                    pair_results[i] = self._flight_estimate(activities[i], activities[i + 1])
+                continue
+
+            pairs = []
+            for i in indices:
+                origin_coords = distance_matrix._get_coords(activities[i])
+                dest_coords = distance_matrix._get_coords(activities[i + 1])
+                if origin_coords and dest_coords:
+                    pairs.append({"origin": origin_coords, "destination": dest_coords})
+                else:
+                    pairs.append(None)
+
+            valid_pairs = [p for p in pairs if p is not None]
+            if valid_pairs:
+                valid_results = await distance_matrix.compute_travel_times(valid_pairs, mode=mode)
+                vi = 0
+                for j, i in enumerate(indices):
+                    if pairs[j] is not None and vi < len(valid_results):
+                        pair_results[i] = valid_results[vi]
+                        vi += 1
+
+        # Attach travel info to activities
+        for i, activity in enumerate(activities):
+            if i >= len(pair_results) or pair_results[i] is None:
+                # Fallback: haversine + assumed speed
+                mode = pair_modes[i] if i < len(pair_modes) else travel_mode
+                self._add_haversine_fallback(activity, activities, i, mode)
+                continue
+
+            travel = pair_results[i]
+            if travel and travel.get("durationSeconds", 0) > 0:
+                mode = pair_modes[i]
+                duration_text = distance_matrix.format_duration_text(travel["durationSeconds"])
+                distance_text = distance_matrix.format_distance_text(travel["distanceMeters"])
+                activity["travelInfo"] = {
+                    "mode": mode,
+                    "durationSeconds": travel["durationSeconds"],
+                    "durationText": duration_text,
+                    "distanceText": distance_text,
+                    "distanceMeters": travel["distanceMeters"],
+                }
+                activity["distanceToNext"] = f"{duration_text} {mode} · {distance_text}"
+            else:
+                mode = pair_modes[i]
+                self._add_haversine_fallback(activity, activities, i, mode)
+
+        return activities
+
+    def _pick_travel_mode(self, origin: dict, dest: dict, user_mode: str) -> str:
+        """Pick the best travel mode for a pair based on haversine distance.
+
+        - < 2 km: user's preferred mode (walking/driving)
+        - 2–50 km: driving
+        - 50–300 km: driving (highway speeds)
+        - > 300 km: flight
+        """
+        origin_coords = distance_matrix._get_coords(origin)
+        dest_coords = distance_matrix._get_coords(dest)
+        if not origin_coords or not dest_coords:
+            return user_mode
+
+        km = self._haversine_km(
+            origin_coords["lat"], origin_coords["lng"],
+            dest_coords["lat"], dest_coords["lng"],
+        )
+        if km > 300:
+            return "flight"
+        if km > 2:
+            return "driving"
+        return user_mode
+
+    def _flight_estimate(self, origin: dict, dest: dict) -> dict:
+        """Estimate flight time + distance for long-distance pairs."""
+        origin_coords = distance_matrix._get_coords(origin)
+        dest_coords = distance_matrix._get_coords(dest)
+        if not origin_coords or not dest_coords:
+            return {"distanceMeters": 0, "durationSeconds": 0, "mode": "flight"}
+
+        km = self._haversine_km(
+            origin_coords["lat"], origin_coords["lng"],
+            dest_coords["lat"], dest_coords["lng"],
+        )
+        # Flight time: 2h base (check-in, boarding, taxi) + ~800 km/h cruise
+        flight_hours = 2.0 + (km / 800.0)
+        seconds = int(flight_hours * 3600)
+        meters = int(km * 1000)
+        return {"distanceMeters": meters, "durationSeconds": seconds, "mode": "flight"}
+
+    def _add_haversine_fallback(
+        self,
+        activity: dict,
+        all_activities: list[dict],
+        index: int,
+        mode: str,
+    ) -> None:
+        """Add a rough travel time estimate using haversine distance.
+
+        Assumes walking speed of 5 km/h, driving speed of 30 km/h (city)
+        or 80 km/h (highway for >50 km), or flight speed of 800 km/h + 2h overhead.
+        """
+        if index >= len(all_activities) - 1:
+            return  # last activity, no next
+
+        def get_coords(a: dict) -> tuple[float, float] | None:
+            c = a.get("coordinates") or {}
+            lat = c.get("lat")
+            lng = c.get("lng")
+            if lat is not None and lng is not None and lat != 0 and lng != 0:
+                return lat, lng
+            return None
+
+        origin = get_coords(activity)
+        dest = get_coords(all_activities[index + 1])
+        if not origin or not dest:
+            return
+
+        km = self._haversine_km(origin[0], origin[1], dest[0], dest[1])
+        if mode == "flight":
+            speed_kmh = 800.0
+            seconds = int((km / speed_kmh) * 3600) + 2 * 3600  # +2h overhead
+        elif mode == "driving":
+            speed_kmh = 80.0 if km > 50 else 30.0
+            seconds = int((km / speed_kmh) * 3600)
+        else:
+            speed_kmh = 5.0
+            seconds = int((km / speed_kmh) * 3600)
+        meters = int(km * 1000)
+
+        if seconds > 0:
+            duration_text = distance_matrix.format_duration_text(seconds)
+            distance_text = distance_matrix.format_distance_text(meters)
+            activity["travelInfo"] = {
+                "mode": mode,
+                "durationSeconds": seconds,
+                "durationText": duration_text,
+                "distanceText": distance_text,
+                "distanceMeters": meters,
+            }
+            activity["distanceToNext"] = f"{duration_text} {mode} · {distance_text}"
+
     def _pick_top_3(self, places: list[dict], used_names: list[str] | None = None) -> list[dict]:
         """Fallback: pick top 3 places by rating, excluding already-used names."""
         used_lower = {n.lower() for n in (used_names or [])}
@@ -442,20 +832,28 @@ Respond with ONLY a JSON array of 2-5 objects:
             {"period": "evening", "name": f"Evening in {city}", "type": "relaxation", "description": f"Wind down and enjoy the evening atmosphere of {city}.", "duration": "1-2 hours"},
         ]
 
-    def _activity_to_time_slot(self, act_data: dict, prev_end: str = "09:00") -> TimeSlot:
+    def _activity_to_time_slot(self, act_data: dict, prev_end: str = "09:00", travel_seconds: int = 0) -> TimeSlot:
         """Convert an activity dict to a TimeSlot with a populated Activity.
 
         Calculates startTime/endTime from duration_hours if available,
-        chaining from the previous activity's end time.
+        chaining from the previous activity's end time. If travel_seconds
+        is provided, adds a travel gap before this activity starts.
         """
         period = act_data.get("period", "morning")
         coords = act_data.get("coordinates", {})
         photo_url = act_data.get("photo_url") or act_data.get("imageUrl")
+        travel_info = act_data.get("travelInfo")
+
+        # Add travel gap from previous activity
+        start_time = act_data.get("startTime") or prev_end
+        if travel_seconds and travel_seconds > 0:
+            start_time = self._add_seconds(start_time, travel_seconds)
 
         # Calculate time range from duration_hours
         duration_hours = act_data.get("duration_hours")
-        start_time = act_data.get("startTime") or prev_end
         if duration_hours:
+            # Clamp to reasonable range (0.25h - 6h)
+            duration_hours = max(0.25, min(6.0, float(duration_hours)))
             end_time = self._add_hours(start_time, duration_hours)
         else:
             end_time = act_data.get("endTime") or self._default_end_time(period)
@@ -479,6 +877,8 @@ Respond with ONLY a JSON array of 2-5 objects:
             ),
             websiteUrl=act_data.get("website"),
             phoneNumber=act_data.get("phone"),
+            travelInfo=travel_info,
+            distanceToNext=act_data.get("distanceToNext"),
         )
         return TimeSlot(
             period=period,
@@ -489,6 +889,17 @@ Respond with ONLY a JSON array of 2-5 objects:
             time=f"{start_time}-{end_time}",
             activities=[activity],
         )
+
+    @staticmethod
+    def _add_seconds(time_str: str, seconds: int) -> str:
+        """Add seconds to a HH:MM time string, returning HH:MM."""
+        try:
+            h, m = map(int, time_str.split(":"))
+            total = h * 60 + m + seconds // 60
+            total = total % (24 * 60)
+            return f"{total // 60:02d}:{total % 60:02d}"
+        except Exception:
+            return time_str
 
     @staticmethod
     def _add_hours(time_str: str, hours: float) -> str:
@@ -518,6 +929,7 @@ Respond with ONLY a JSON array of 2-5 objects:
         user_memories = ctx.get("userMemories")
         traveler_type = ctx.get("travelerType")
         user_interests = ctx.get("userInterests")
+        travel_mode = ctx.get("travelMode", "walking")
 
         itinerary = create_itinerary(destination, duration, start_date)
 
@@ -526,25 +938,46 @@ Respond with ONLY a JSON array of 2-5 objects:
         if ctx.get("travelType"):
             itinerary.tripMetadata.travelType = ctx["travelType"]
 
+        # Search all places for the city once, then cluster by proximity
+        all_places = await self._search_all_places_for_city(
+            destination, trip_style, help_with, duration,
+            user_memories=user_memories, traveler_type=traveler_type, user_interests=user_interests,
+        )
+        clusters = self._cluster_places_by_proximity(all_places, duration) if all_places else []
+
         used_names: list[str] = []
         for i, day in enumerate(itinerary.days):
             day.subtitle = self._generate_day_description(destination, i + 1, duration, trip_style)
+            day_cluster = clusters[i] if i < len(clusters) else None
             activities = await self._search_and_curate_activities(
                 destination, i + 1, duration, trip_style, help_with, [destination], used_names,
                 user_memories=user_memories, traveler_type=traveler_type, user_interests=user_interests,
+                day_places=day_cluster,
             )
             for a in activities:
                 name = a.get("name", "")
                 if name:
                     used_names.append(name)
-            # Chain time slots: each activity starts after the previous ends
+            # Compute travel times between consecutive activities
+            activities = await self._compute_inter_activity_travel(activities, travel_mode)
+            # Chain time slots: each activity starts after the previous ends + travel time
             time_slots = []
             prev_end = "09:00"
             for a in activities:
-                slot = self._activity_to_time_slot(a, prev_end)
+                travel_info = a.get("travelInfo") or {}
+                travel_sec = travel_info.get("durationSeconds", 0)
+                slot = self._activity_to_time_slot(a, prev_end, travel_seconds=travel_sec)
                 prev_end = slot.endTime
                 time_slots.append(slot)
             day.timeSlots = time_slots
+            if status_cb:
+                await status_cb({
+                    "phase": "day_complete",
+                    "day": day.dayNumber,
+                    "city": destination,
+                    "timeSlots": [ts.model_dump() for ts in time_slots],
+                    "totalDays": duration,
+                })
 
         # Fetch hotel and restaurant recommendations for the city
         if status_cb:
@@ -573,16 +1006,24 @@ Respond with ONLY a JSON array of 2-5 objects:
         user_memories = ctx.get("userMemories")
         traveler_type = ctx.get("travelerType")
         user_interests = ctx.get("userInterests")
+        travel_mode = ctx.get("travelMode", "walking")
 
         itinerary = create_itinerary(cities[0]["name"], total_days, start_date)
 
         day_idx = 0
         used_names: list[str] = []
         current_city = None
+        city_clusters: list[list[dict]] = []
         for city in cities:
             if city["name"] != current_city:
                 used_names = []
                 current_city = city["name"]
+                # Search all places for this city once, then cluster
+                all_places = await self._search_all_places_for_city(
+                    city["name"], trip_style, help_with, total_days,
+                    user_memories=user_memories, traveler_type=traveler_type, user_interests=user_interests,
+                )
+                city_clusters = self._cluster_places_by_proximity(all_places, city["days"]) if all_places else []
             city_days = city["days"]
             for d in range(city_days):
                 if day_idx < len(itinerary.days):
@@ -590,22 +1031,36 @@ Respond with ONLY a JSON array of 2-5 objects:
                     day.location = city["name"]
                     day.title = f"Day {day_idx + 1} - {city['name']}"
                     day.subtitle = self._generate_day_description(city["name"], day_idx + 1, total_days, trip_style)
+                    day_cluster = city_clusters[d] if d < len(city_clusters) else None
                     activities = await self._search_and_curate_activities(
                         city["name"], day_idx + 1, total_days, trip_style, help_with, all_city_names, used_names,
                         user_memories=user_memories, traveler_type=traveler_type, user_interests=user_interests,
+                        day_places=day_cluster,
                     )
                     for a in activities:
                         name = a.get("name", "")
                         if name:
                             used_names.append(name)
-                    # Chain time slots: each activity starts after the previous ends
+                    # Compute travel times between consecutive activities
+                    activities = await self._compute_inter_activity_travel(activities, travel_mode)
+                    # Chain time slots: each activity starts after the previous ends + travel time
                     time_slots = []
                     prev_end = "09:00"
                     for a in activities:
-                        slot = self._activity_to_time_slot(a, prev_end)
+                        travel_info = a.get("travelInfo") or {}
+                        travel_sec = travel_info.get("durationSeconds", 0)
+                        slot = self._activity_to_time_slot(a, prev_end, travel_seconds=travel_sec)
                         prev_end = slot.endTime
                         time_slots.append(slot)
                     day.timeSlots = time_slots
+                    if status_cb:
+                        await status_cb({
+                            "phase": "day_complete",
+                            "day": day.dayNumber,
+                            "city": city["name"],
+                            "timeSlots": [ts.model_dump() for ts in time_slots],
+                            "totalDays": total_days,
+                        })
                 day_idx += 1
 
         if ctx.get("preferences"):

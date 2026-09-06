@@ -65,6 +65,10 @@ async def build_itinerary(
     if dates and dates.get("start"):
         ctx["startDate"] = dates["start"]
 
+    travel_mode = trip_state.get("travelMode")
+    if travel_mode:
+        ctx["travelMode"] = travel_mode
+
     # Emit progress events via stream writer
     try:
         writer = get_stream_writer()

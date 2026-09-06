@@ -236,6 +236,7 @@ async def plan_trip(
     trip_style: str | None = None,
     help_with: str | list[str] | None = None,
     origin: str | None = None,
+    travel_mode: str | None = None,
     preferences: str = "",
     state: Annotated[dict, InjectedState] = None,
     tool_call_id: Annotated[str, InjectedToolCallId] = None,
@@ -255,6 +256,8 @@ async def plan_trip(
         help_with: "everything", "itinerary", "flights", "hotels", "things_to_do", "restaurants",
                    or a list of these, or None
         origin: Where the user is flying from (only if flights are in scope)
+        travel_mode: How the user plans to get around within cities —
+                     "walking", "driving", or "transit" (default: walking)
         preferences: Optional user preferences for route (e.g., "more nights in Tokyo")
 
     Normalizes parameters:
@@ -352,6 +355,16 @@ async def plan_trip(
     # --- Origin ---
     if origin:
         trip_state["startLocation"] = origin
+
+    # --- Travel mode (intra-city) ---
+    if travel_mode:
+        mode = travel_mode.lower().strip()
+        if mode in ("walking", "walk", "foot"):
+            trip_state["travelMode"] = "walking"
+        elif mode in ("driving", "drive", "car"):
+            trip_state["travelMode"] = "driving"
+        elif mode in ("transit", "public", "bus", "train"):
+            trip_state["travelMode"] = "transit"
 
     # --- Route generation ---
     cities = trip_state.get("cities", [])
