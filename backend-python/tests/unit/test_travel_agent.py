@@ -75,10 +75,21 @@ class _MockStreamMessages:
             yield msg
 
 
+class _MockStreamToolCalls:
+    """Mock for the stream.tool_calls projection — empty by default."""
+    def __aiter__(self):
+        return self._iter()
+
+    async def _iter(self):
+        return
+        yield  # make it an async generator
+
+
 class _MockStream:
     """Mock for the AsyncGraphRunStream returned by astream_events(version='v3')."""
     def __init__(self, tokens, final_state=None):
         self.messages = _MockStreamMessages(tokens)
+        self.tool_calls = _MockStreamToolCalls()
         self._final_state = final_state or {}
 
     async def interrupted(self):

@@ -27,7 +27,7 @@ from app.agents.tools.itinerary_tools import build_itinerary, edit_itinerary
 from app.agents.tools.calendar_tools import create_calendar_event
 from app.agents.tools.memory_tools import remember_user_preference
 from app.agents.tools.mcp_tools import (
-    mcp_search_places, mcp_resolve_names, mcp_compute_routes, mcp_lookup_weather,
+    mcp_search_places, mcp_resolve_names, mcp_compute_routes, mcp_lookup_weather, mcp_find_nearby,
     init_search_results, get_search_results,
 )
 from app.services.itinerary_builder import itinerary_builder
@@ -60,6 +60,7 @@ class TravelAgent:
             mcp_resolve_names,
             mcp_compute_routes,
             mcp_lookup_weather,
+            mcp_find_nearby,
         ]
 
     def set_persistence(self, checkpointer, store) -> None:
@@ -146,6 +147,94 @@ class TravelAgent:
             self._model = ChatOpenAI(model=self.model_name, temperature=0)
         return self._model
 
+    # ------------------------------------------------------------------
+    # Tool activity helpers — produce human-readable labels and result
+    # summaries for the frontend's tool activity bar.
+    # ------------------------------------------------------------------
+
+    _TOOL_LABELS: dict[str, str] = {
+        "plan_trip": "Planning your trip",
+        "ask_question": "Preparing a question",
+        "web_search": "Searching the web",
+        "build_itinerary": "Building itinerary",
+        "edit_itinerary": "Editing itinerary",
+        "create_calendar_event": "Adding calendar event",
+        "remember_user_preference": "Saving your preference",
+        "mcp_search_places": "Searching places",
+        "mcp_resolve_names": "Resolving place names",
+        "mcp_compute_routes": "Computing routes",
+        "mcp_lookup_weather": "Checking weather",
+        "mcp_find_nearby": "Finding nearby places",
+    }
+
+    @classmethod
+    def _tool_label(cls, tool_name: str, tool_input: dict | None) -> str:
+        """Generate a dynamic, human-readable label for a tool call."""
+        base = cls._TOOL_LABELS.get(tool_name, tool_name.replace("_", " ").title())
+        if not tool_input:
+            return base
+
+        # Enrich with input context for the most user-facing tools
+        if tool_name == "mcp_search_places":
+            query = tool_input.get("text_query") or tool_input.get("query") or ""
+            city = tool_input.get("city") or tool_input.get("location") or ""
+            parts = [p for p in [query, city] if p]
+            return f"Searching {': '.join(parts)}" if parts else base
+        elif tool_name == "mcp_find_nearby":
+            place = tool_input.get("place_name") or tool_input.get("place_id") or ""
+            kind = tool_input.get("place_type") or tool_input.get("type") or "places"
+            return f"Finding {kind} near {place}" if place else base
+        elif tool_name == "mcp_compute_routes":
+            origin = tool_input.get("origin") or ""
+            dest = tool_input.get("destination") or ""
+            if origin and dest:
+                return f"Computing route: {origin} → {dest}"
+            return base
+        elif tool_name == "mcp_lookup_weather":
+            city = tool_input.get("city") or tool_input.get("location") or ""
+            return f"Checking weather in {city}" if city else base
+        elif tool_name == "web_search":
+            query = tool_input.get("query") or ""
+            return f"Searching the web: {query}" if query else base
+        elif tool_name == "plan_trip":
+            dest = tool_input.get("destination") or ""
+            return f"Planning trip to {dest}" if dest else base
+        elif tool_name == "build_itinerary":
+            city = tool_input.get("city") or ""
+            return f"Building itinerary for {city}" if city else base
+        return base
+
+    @staticmethod
+    def _tool_result_summary(tool_name: str, tool_input: dict | None, output: any) -> str:
+        """Generate a short summary of a tool's result for the collapsed bar."""
+        if output is None:
+            return ""
+
+        # Tool outputs can be strings (most tools) or dicts (some MCP tools)
+        if isinstance(output, str):
+            text = output.strip()
+        elif isinstance(output, dict):
+            # MCP search tools may return a dict with 'places' or 'results'
+            if "places" in output:
+                count = len(output["places"]) if isinstance(output["places"], list) else 0
+                return f"{count} places found"
+            if "results" in output:
+                count = len(output["results"]) if isinstance(output["results"], list) else 0
+                return f"{count} results found"
+            if "routes" in output:
+                count = len(output["routes"]) if isinstance(output["routes"], list) else 0
+                return f"{count} routes found"
+            text = str(output)
+        else:
+            text = str(output)
+
+        # Try to extract a count from string output
+        if "found" in text.lower():
+            # e.g. "Found 10 hotels" → use as-is
+            return text[:80]
+        # Truncate long outputs
+        return text[:80] + ("…" if len(text) > 80 else "")
+
     async def chat_stream(self, message: str, conversation_id: str, context: dict | None = None):
         """Stream agent responses token-by-token, yielding structured events.
 
@@ -185,22 +274,106 @@ class TravelAgent:
             },
         }
 
+        # Clear any stale _pendingWidget from the checkpoint state.
+        # The ask_question tool sets _pendingWidget in trip_state, which gets
+        # saved by the checkpointer. On the next turn, the checkpoint still has
+        # it — we need to explicitly null it out so the merge reducer overwrites
+        # the stale value. Otherwise the old question card reappears.
+        clean_trip_state = dict(final_trip_state)
+        clean_trip_state["_pendingWidget"] = None
+
         try:
             stream = await self.agent.astream_events(
-                {"messages": messages},
+                {"messages": messages, "trip_state": clean_trip_state},
                 config=config, version="v3"
             )
 
-            async for message_event in stream.messages:
-                if message_event.node != "model":
-                    # Still consume the projection to drive the stream forward
-                    async for _ in message_event.text:
-                        pass
+            # Consume messages and tool_calls concurrently.
+            # We use a queue so the generator can yield events from both
+            # projections in the order they arrive.
+            import asyncio as _aio
+            event_queue: _aio.Queue = _aio.Queue()
+
+            async def _consume_messages():
+                """Consume LLM token deltas from stream.messages."""
+                try:
+                    async for message_event in stream.messages:
+                        if message_event.node != "model":
+                            async for _ in message_event.text:
+                                pass
+                            continue
+                        async for delta in message_event.text:
+                            if delta:
+                                await event_queue.put({"type": "token", "text": delta})
+                except Exception as e:
+                    await event_queue.put({"type": "_error", "error": e})
+
+            async def _consume_tool_calls():
+                """Consume tool execution lifecycle from stream.tool_calls."""
+                try:
+                    async for call in stream.tool_calls:
+                        label = self._tool_label(call.tool_name, call.input if isinstance(call.input, dict) else None)
+                        await event_queue.put({
+                            "type": "tool_start",
+                            "tool_name": call.tool_name,
+                            "label": label,
+                            "call_id": getattr(call, "call_id", None) or getattr(call, "id", None) or "",
+                            "input": call.input if isinstance(call.input, dict) else None,
+                        })
+                        # Consume output deltas (we don't stream these to the
+                        # frontend, but we must drain them to drive the
+                        # projection forward)
+                        async for _ in call.output_deltas:
+                            pass
+                        # Get final output and error
+                        output = None
+                        error = None
+                        try:
+                            output = call.output
+                        except Exception as e:
+                            error = str(e)
+                        if not error and hasattr(call, "error") and call.error:
+                            error = str(call.error)
+                        summary = self._tool_result_summary(call.tool_name, call.input if isinstance(call.input, dict) else None, output)
+                        await event_queue.put({
+                            "type": "tool_end",
+                            "tool_name": call.tool_name,
+                            "label": label,
+                            "call_id": getattr(call, "call_id", None) or getattr(call, "id", None) or "",
+                            "summary": summary,
+                            "error": error,
+                        })
+                except Exception as e:
+                    await event_queue.put({"type": "_error", "error": e})
+
+            # Run both consumers concurrently; we collect into a done flag
+            consumers = _aio.gather(_consume_messages(), _consume_tool_calls())
+
+            # Yield events from the queue as they arrive
+            while True:
+                try:
+                    event = await _aio.wait_for(event_queue.get(), timeout=0.1)
+                except _aio.TimeoutError:
+                    # Check if both consumers are done
+                    if consumers.done():
+                        # Drain any remaining events
+                        while not event_queue.empty():
+                            event = event_queue.get_nowait()
+                            if event.get("type") == "_error":
+                                raise event["error"]
+                            if event["type"] == "token":
+                                response_text += event["text"]
+                            yield event
+                        break
                     continue
-                async for delta in message_event.text:
-                    if delta:
-                        yield {"type": "token", "text": delta}
-                        response_text += delta
+                if event.get("type") == "_error":
+                    raise event["error"]
+                if event["type"] == "token":
+                    response_text += event["text"]
+                yield event
+
+            # Await the gather to surface any exceptions
+            await consumers
 
             # Read the final state from the stream
             final_output = await stream.output()
@@ -243,6 +416,7 @@ class TravelAgent:
 
             import asyncio as _aio
             status_queue: _aio.Queue = _aio.Queue()
+            _build_call_counter = [0]
 
             async def _build_status_cb(update: dict):
                 phase = update.get("phase", "")
@@ -256,10 +430,60 @@ class TravelAgent:
                     msg = f"Searching hotels & restaurants in {cities_str}..."
                 elif phase == "flights":
                     msg = "Searching flights..."
+                elif phase == "day_complete":
+                    day_num = update.get("day", 0)
+                    city = update.get("city", "")
+                    total = update.get("totalDays", 0)
+                    msg = f"Day {day_num} of {total} ready in {city}"
+                    await status_queue.put({"type": "status", "status": msg})
+                    # Also emit as tool_start/tool_end so the activity bar shows it
+                    _build_call_counter[0] += 1
+                    call_id = f"build_day_{day_num}"
+                    await status_queue.put({
+                        "type": "tool_start",
+                        "tool_name": "itinerary_build_day",
+                        "label": f"Building Day {day_num} in {city}",
+                        "call_id": call_id,
+                        "input": {"day": day_num, "city": city},
+                    })
+                    await status_queue.put({
+                        "type": "tool_end",
+                        "tool_name": "itinerary_build_day",
+                        "label": f"Day {day_num} ready",
+                        "call_id": call_id,
+                        "summary": f"Day {day_num} of {total}",
+                        "error": None,
+                    })
+                    # Emit the day data as a new event type for progressive rendering
+                    await status_queue.put({
+                        "type": "itinerary_day",
+                        "day": update.get("day"),
+                        "city": update.get("city"),
+                        "timeSlots": update.get("timeSlots"),
+                        "totalDays": update.get("totalDays"),
+                    })
                 elif phase == "build_complete":
                     msg = "Finalizing your itinerary..."
                 if msg:
                     await status_queue.put({"type": "status", "status": msg})
+                    # Also emit as tool_start/tool_end so the activity bar shows it
+                    _build_call_counter[0] += 1
+                    call_id = f"build_{_build_call_counter[0]}"
+                    await status_queue.put({
+                        "type": "tool_start",
+                        "tool_name": f"itinerary_build_{phase}",
+                        "label": msg.rstrip("."),
+                        "call_id": call_id,
+                        "input": update,
+                    })
+                    await status_queue.put({
+                        "type": "tool_end",
+                        "tool_name": f"itinerary_build_{phase}",
+                        "label": msg.rstrip("."),
+                        "call_id": call_id,
+                        "summary": "",
+                        "error": None,
+                    })
 
             build_task = _aio.create_task(
                 self._auto_build_itinerary(
@@ -390,6 +614,15 @@ class TravelAgent:
                 },
             })
 
+            # Emit flight cards as separate widgets for inline chat rendering
+            flights = itinerary.get("flightOptions", [])
+            if flights:
+                for flight in flights[:2]:  # top 2 flights
+                    widgets.append({
+                        "type": "flight_card",
+                        "data": flight,
+                    })
+
         # Show search results widget when places were found via mcp_search_places
         # but no itinerary was built (i.e., search/recommendation turns).
         if search_results and not (trip_state or {}).get("itinerary"):
@@ -464,6 +697,10 @@ class TravelAgent:
         dates = trip_state.get("dates")
         if dates and dates.get("start"):
             ctx["startDate"] = dates["start"]
+
+        travel_mode = trip_state.get("travelMode")
+        if travel_mode:
+            ctx["travelMode"] = travel_mode
 
         try:
             result = await itinerary_builder.build(ctx, status_cb=status_cb)

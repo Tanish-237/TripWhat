@@ -1,4 +1,4 @@
-"""MCP-powered agent tools — search_places, resolve_names, compute_routes, lookup_weather.
+"""MCP-powered agent tools — search_places, resolve_names, compute_routes, lookup_weather, find_nearby.
 
 These tools wrap the Google Maps Grounding Lite MCP client as LangGraph @tool functions
 so the agent can call them autonomously during chat.
@@ -10,6 +10,8 @@ from langchain_core.tools import tool
 
 from app.services.mcp_client import maps_mcp
 from app.services.places_search import places_search
+from app.services.google_places import google_places
+from app.utils.logger import logger
 
 # Contextvar holding a mutable list. chat_stream sets a fresh list before
 # streaming; mcp_search_places appends structured results to it. After the
@@ -146,3 +148,63 @@ async def mcp_lookup_weather(location: str, date: str = "") -> str:
         return f"Could not look up weather for {location}."
 
     return f"Weather for {location}:\n{json.dumps(result, indent=2)[:500]}"
+
+
+@tool
+async def mcp_find_nearby(
+    location: str,
+    place_type: str = "tourist_attraction",
+    radius_meters: int = 5000,
+) -> str:
+    """Find places near a specific location.
+    Use this when the user asks for things near a place, e.g., "what's near the Eiffel Tower?"
+    or "find restaurants near my hotel" or "attractions within walking distance of Times Square".
+
+    Args:
+        location: A place name or address (e.g., "Eiffel Tower", "Times Square, New York")
+        place_type: Type of place to find — "tourist_attraction", "restaurant", "lodging",
+                    "museum", "cafe", "bar", "park", "shopping_mall", etc.
+        radius_meters: Search radius in meters (default: 5000, max 50000). 1000m ≈ walking distance.
+    """
+    # Step 1: Resolve the location name to coordinates
+    resolved = await maps_mcp.resolve_names([location])
+    coords = None
+    if resolved:
+        coords = resolved[0].get("coordinates")
+
+    if not coords:
+        # Fallback: try a text search to get coordinates
+        results = await places_search.search(location, location, limit=1)
+        if results:
+            coords = results[0].get("coordinates")
+
+    if not coords or not coords.get("lat") or not coords.get("lng"):
+        return f"Could not resolve location '{location}' to coordinates."
+
+    lat = coords["lat"]
+    lng = coords["lng"]
+
+    # Step 2: Search for nearby places using Google Places Nearby Search
+    nearby = await google_places.find_nearby(lat, lng, radius=radius_meters, place_type=place_type)
+
+    if not nearby:
+        return f"No {place_type} places found within {radius_meters}m of {location}."
+
+    # Stash structured results for the search_results widget
+    container = _search_results_var.get()
+    if container is not None:
+        container.extend(nearby)
+
+    summaries = []
+    for r in nearby[:10]:
+        name = r.get("name", "Unknown")
+        rating = r.get("rating", "N/A")
+        address = r.get("address", "")
+        rtype = ", ".join(r.get("types", [])[:3]) if r.get("types") else place_type
+        summaries.append(
+            f"**{name}** (rating: {rating}, type: {rtype})\n"
+            f"  Address: {address}\n"
+            f"  Place ID: {r.get('placeId', 'N/A')}"
+        )
+
+    return f"Found {len(nearby)} {place_type} places near {location} (within {radius_meters}m):\n\n" + "\n\n".join(summaries)

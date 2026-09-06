@@ -150,6 +150,43 @@ async def _process_agent_stream(
                     "eventId": eid,
                 }, room=conv_id)
 
+            elif event["type"] == "tool_start":
+                payload = {
+                    "conversationId": conv_id,
+                    "toolName": event.get("tool_name", ""),
+                    "label": event.get("label", ""),
+                    "callId": event.get("call_id", ""),
+                    "input": event.get("input"),
+                }
+                eid = await stream_buffer.push_event(conv_id, "tool_start", payload)
+                payload["eventId"] = eid
+                await sio.emit("agent:tool_start", payload, room=conv_id)
+
+            elif event["type"] == "tool_end":
+                payload = {
+                    "conversationId": conv_id,
+                    "toolName": event.get("tool_name", ""),
+                    "label": event.get("label", ""),
+                    "callId": event.get("call_id", ""),
+                    "summary": event.get("summary", ""),
+                    "error": event.get("error"),
+                }
+                eid = await stream_buffer.push_event(conv_id, "tool_end", payload)
+                payload["eventId"] = eid
+                await sio.emit("agent:tool_end", payload, room=conv_id)
+
+            elif event["type"] == "itinerary_day":
+                payload = {
+                    "conversationId": conv_id,
+                    "day": event.get("day"),
+                    "city": event.get("city"),
+                    "timeSlots": event.get("timeSlots"),
+                    "totalDays": event.get("totalDays"),
+                }
+                eid = await stream_buffer.push_event(conv_id, "itinerary_day", payload)
+                payload["eventId"] = eid
+                await sio.emit("agent:itinerary_day", payload, room=conv_id)
+
             elif event["type"] == "widget":
                 eid = await stream_buffer.push_event(conv_id, "widget", {"widget": event["widget"]})
                 await sio.emit("agent:widget", {
