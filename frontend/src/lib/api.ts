@@ -78,6 +78,21 @@ export const placesApi = {
     api.get('/api/places/details', { params: { placeId } }),
 };
 
+export const itineraryEditApi = {
+  add: (conversationId: string, data: { place_name: string; city: string; day: number; time_slot?: string }) =>
+    api.post(`/api/chat/${conversationId}/itinerary/add`, data),
+  remove: (conversationId: string, data: { day: number; activity_id: string }) =>
+    api.post(`/api/chat/${conversationId}/itinerary/remove`, data),
+  editTime: (conversationId: string, data: { day: number; slot_id: string; start_time: string; end_time: string }) =>
+    api.post(`/api/chat/${conversationId}/itinerary/edit-time`, data),
+  caption: (conversationId: string, data: { day: number; activity_id: string; caption: string }) =>
+    api.post(`/api/chat/${conversationId}/itinerary/caption`, data),
+  move: (conversationId: string, data: { from_day: number; activity_id: string; to_day: number; to_slot?: string }) =>
+    api.post(`/api/chat/${conversationId}/itinerary/move`, data),
+  reorder: (conversationId: string, data: { day: number; activity_id: string; new_position: number }) =>
+    api.post(`/api/chat/${conversationId}/itinerary/reorder`, data),
+};
+
 export const calendarApi = {
   oauthUrl: () => api.get('/api/google/oauth/url'),
   upcoming: () => api.get('/api/google/calendar/upcoming'),
