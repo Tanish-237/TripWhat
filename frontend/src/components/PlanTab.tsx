@@ -1,6 +1,12 @@
-import { MapPin, Plus, Calendar, Plane, Hotel, Utensils, Star, ExternalLink, Bookmark } from 'lucide-react';
+import { useState } from 'react';
+import { MapPin, Plus, Calendar, Plane, Hotel, Utensils, Star, ExternalLink, Bookmark, Footprints, Car, Bus, List, Layers, Loader2 } from 'lucide-react';
 import { FlightCard, formatTime, formatDuration, type FlightOption, type FlightLeg } from './FlightCard';
 import { useSavedStore } from '../stores/savedStore';
+import { useUIStore } from '../stores/uiStore';
+import { useTripStore } from '../stores/tripStore';
+import { AddItemInline } from './PlanTab/AddItemInline';
+import { ActivityMenu } from './PlanTab/ActivityMenu';
+import { imgUrl } from '../lib/image';
 
 interface PlanTabProps {
   itinerary: any;
@@ -10,6 +16,7 @@ interface PlanTabProps {
   onSelectPlace: (placeId: string) => void;
   onSelectFlight: (flight: FlightOption) => void;
   datesAssumed?: boolean;
+  conversationId?: string;
 }
 
 function formatDayHeader(dateStr: string): string {
@@ -22,6 +29,23 @@ function formatDayHeader(dateStr: string): string {
   }
 }
 
+function TravelConnector({ travelInfo }: { travelInfo?: any }) {
+  if (!travelInfo || !travelInfo.durationText) return null;
+  const { mode, durationText, distanceText } = travelInfo;
+  const Icon = mode === 'driving' ? Car : mode === 'transit' ? Bus : mode === 'flight' ? Plane : Footprints;
+  const modeLabel = mode === 'walking' ? 'walk' : mode === 'driving' ? 'drive' : mode === 'flight' ? 'flight' : 'transit';
+  return (
+    <div className="flex items-center justify-center gap-1.5 py-1.5">
+      <div className="w-px h-3 bg-[var(--border)]" />
+      <Icon className="w-3 h-3 text-[var(--muted)] shrink-0" />
+      <span className="text-[10px] text-[var(--muted)]">
+        {durationText} {modeLabel}{distanceText ? ` · ${distanceText}` : ''}
+      </span>
+      <div className="w-px h-3 bg-[var(--border)]" />
+    </div>
+  );
+}
+
 export function PlanTab({
   itinerary,
   cityFilter,
@@ -30,7 +54,120 @@ export function PlanTab({
   onSelectPlace,
   onSelectFlight,
   datesAssumed,
+  conversationId,
 }: PlanTabProps) {
+  const { planViewMode, setPlanViewMode, selectedDay, setSelectedDay } = useUIStore();
+  const progressiveDays = useTripStore((s) => s.progressiveDays);
+  const editItinerary = useTripStore((s) => s.editItinerary);
+  const [addingDay, setAddingDay] = useState<number | null>(null);
+
+  const canEdit = !!conversationId;
+
+  const handleAdd = async (day: number, city: string, placeName: string) => {
+    if (!conversationId) return;
+    await editItinerary(conversationId, 'add', {
+      place_name: placeName,
+      city,
+      day,
+    });
+    setAddingDay(null);
+  };
+
+  const handleRemove = async (day: number, activityId: string) => {
+    if (!conversationId) return;
+    await editItinerary(conversationId, 'remove', { day, activity_id: activityId });
+  };
+
+  const handleEditTime = async (day: number, slotId: string, startTime: string, endTime: string) => {
+    if (!conversationId) return;
+    await editItinerary(conversationId, 'editTime', {
+      day, slot_id: slotId, start_time: startTime, end_time: endTime,
+    });
+  };
+
+  const handleCaption = async (day: number, activityId: string, caption: string) => {
+    if (!conversationId) return;
+    await editItinerary(conversationId, 'caption', { day, activity_id: activityId, caption });
+  };
+
+  const handleMove = async (fromDay: number, activityId: string, toDay: number) => {
+    if (!conversationId) return;
+    await editItinerary(conversationId, 'move', {
+      from_day: fromDay, activity_id: activityId, to_day: toDay,
+    });
+  };
+
+  // Progressive view — days are being built, full itinerary not yet ready
+  if (progressiveDays && progressiveDays.length > 0 && (!itinerary || !itinerary.days?.length)) {
+    const totalDays = progressiveDays[0]?.totalDays || progressiveDays.length;
+    const sorted = [...progressiveDays].sort((a, b) => a.day - b.day);
+    return (
+      <div className="p-4">
+        <div className="space-y-3">
+          {sorted.map((pd) => (
+            <div key={pd.day} className="rounded-lg bg-[var(--surface)] border border-[var(--border)] overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--border)]">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-[var(--ink)]">Day {pd.day}</span>
+                  <span className="text-xs text-[var(--muted)] flex items-center gap-0.5">
+                    <MapPin className="w-3 h-3" />
+                    {pd.city}
+                  </span>
+                </div>
+              </div>
+              <div className="divide-y divide-[var(--border)]">
+                {pd.timeSlots?.map((slot: any, i: number) => {
+                  const activityName = slot.activity?.name || slot.activities?.map((a: any) => a.name).join(', ') || '';
+                  const imageUrl = slot.activity?.imageUrl || slot.activity?.photos?.[0];
+                  const placeId = slot.activity?.placeId || '';
+                  return (
+                    <div
+                      key={i}
+                      className={`flex items-center gap-3 px-4 py-3 hover:bg-[var(--bg)] transition-colors ${placeId ? 'cursor-pointer' : ''}`}
+                      onClick={() => placeId && onSelectPlace(placeId)}
+                    >
+                      {imageUrl && (
+                        <img src={imgUrl(imageUrl)} alt={activityName} className="w-12 h-12 rounded-md object-cover shrink-0" loading="lazy" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-[10px] text-[var(--muted)] uppercase tracking-wide shrink-0">
+                            {slot.startTime && slot.endTime ? `${slot.startTime}–${slot.endTime}` : (slot.period || '')}
+                          </span>
+                          {slot.activity?.type && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--sage)] text-[var(--muted)] shrink-0">
+                              {slot.activity.type}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-[var(--ink)] truncate">{activityName || 'Free time'}</p>
+                        {slot.activity?.description && (
+                          <p className="text-[10px] text-[var(--muted)] truncate mt-0.5">{slot.activity.description}</p>
+                        )}
+                      </div>
+                      {slot.activity?.rating != null && (
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                          <span className="text-[10px] font-medium text-[var(--ink)]">{slot.activity.rating}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {sorted.length < totalDays && (
+            <div className="rounded-lg border border-dashed border-[var(--border)] p-4 text-center">
+              <Loader2 className="w-4 h-4 animate-spin mx-auto text-[var(--muted)]" />
+              <p className="text-xs text-[var(--muted)] mt-1">Building Day {sorted.length + 1}...</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (!itinerary || !itinerary.days) {
     return (
       <div className="flex flex-col items-center justify-center h-full py-12 text-center">
@@ -44,8 +181,231 @@ export function PlanTab({
     ? itinerary.days.filter((d: any) => d.location === cityFilter)
     : itinerary.days;
 
+  // Day-by-day view
+  if (planViewMode === 'day-by-day') {
+    const day = itinerary.days.find((d: any) => d.dayNumber === selectedDay) || itinerary.days[0];
+    const dayIdx = itinerary.days.indexOf(day);
+    const isFirstDay = dayIdx === 0;
+    const isLastDay = dayIdx === itinerary.days.length - 1;
+    const bestFlight = itinerary.flightOptions?.[0];
+    const bestHotel = itinerary.hotelRecommendations?.[0];
+
+    return (
+      <div className="p-4">
+        {/* View toggle */}
+        <div className="flex items-center gap-1 mb-3 p-0.5 rounded-md bg-[var(--bg)] w-fit">
+          <button
+            onClick={() => setPlanViewMode('overview')}
+            className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium text-[var(--muted)] hover:text-[var(--ink)] transition-colors"
+          >
+            <Layers className="w-3 h-3" />
+            Overview
+          </button>
+          <button
+            onClick={() => setPlanViewMode('day-by-day')}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+              planViewMode === 'day-by-day' ? 'bg-[var(--surface)] text-[var(--ink)] shadow-sm' : 'text-[var(--muted)] hover:text-[var(--ink)]'
+            }`}
+          >
+            <List className="w-3 h-3" />
+            Day-by-day
+          </button>
+        </div>
+
+        {/* Day selector chips */}
+        <div className="flex flex-wrap gap-1.5 mb-4">
+          {itinerary.days.map((d: any) => (
+            <button
+              key={d.dayNumber}
+              onClick={() => setSelectedDay(d.dayNumber)}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                selectedDay === d.dayNumber ? 'bg-[var(--lavender)] text-[var(--ink)]' : 'text-[var(--muted)] hover:bg-[var(--sage)]'
+              }`}
+            >
+              Day {d.dayNumber}
+            </button>
+          ))}
+        </div>
+
+        {/* Day header */}
+        <div className="rounded-lg bg-[var(--surface)] border border-[var(--border)] overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--border)]">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-[var(--ink)]">Day {day.dayNumber}</span>
+              {day.location && (
+                <span className="text-xs text-[var(--muted)] flex items-center gap-0.5">
+                  <MapPin className="w-3 h-3" />
+                  {day.location}
+                </span>
+              )}
+              {itinerary.hotelRecommendations?.some((h: any) =>
+                h.address?.includes(day.location) || h.name?.includes(day.location)
+              ) && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const hotel = itinerary.hotelRecommendations?.find((h: any) =>
+                      h.address?.includes(day.location) || h.name?.includes(day.location)
+                    );
+                    if (hotel?.placeId) onSelectPlace(hotel.placeId);
+                  }}
+                  className="flex items-center gap-0.5 text-xs text-[var(--muted)] hover:text-[var(--ink)] transition-colors"
+                  title={`Hotel in ${day.location}`}
+                >
+                  <Hotel className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+            {day.date && (
+              <span className="text-xs text-[var(--muted)] flex items-center gap-0.5">
+                <Calendar className="w-3 h-3" />
+                {formatDayHeader(day.date)}
+              </span>
+            )}
+          </div>
+
+          {day.subtitle && (
+            <p className="px-4 py-2 text-xs text-[var(--muted)] leading-relaxed border-b border-[var(--border)]">
+              {day.subtitle}
+            </p>
+          )}
+
+          {/* Activities with travel connectors */}
+          <div className="divide-y divide-[var(--border)]">
+            {isFirstDay && bestFlight && bestFlight.outboundLegs?.length > 0 && (
+              <AnchoredFlightRow
+                label="Flight"
+                legs={bestFlight.outboundLegs}
+                flight={bestFlight}
+                onClick={() => onSelectFlight(bestFlight)}
+              />
+            )}
+            {isFirstDay && bestHotel && (
+              <AnchoredHotelRow hotel={bestHotel} onClick={() => bestHotel.placeId && onSelectPlace(bestHotel.placeId)} />
+            )}
+
+            {day.timeSlots?.map((slot: any, i: number) => {
+              const activityName = slot.activity?.name || slot.activities?.map((a: any) => a.name).join(', ') || '';
+              const imageUrl = slot.activity?.imageUrl || slot.activity?.photos?.[0];
+              const placeId = slot.activity?.placeId || '';
+              const travelInfo = slot.activity?.travelInfo;
+              return (
+                <div key={i}>
+                  <div
+                    className={`flex items-center gap-3 px-4 py-3 hover:bg-[var(--bg)] transition-colors ${placeId ? 'cursor-pointer' : ''}`}
+                    onClick={() => placeId && onSelectPlace(placeId)}
+                  >
+                    {imageUrl && (
+                      <img
+                        src={imgUrl(imageUrl)}
+                        alt={activityName}
+                        className="w-12 h-12 rounded-md object-cover shrink-0"
+                        loading="lazy"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-[10px] text-[var(--muted)] uppercase tracking-wide shrink-0">
+                          {slot.startTime && slot.endTime ? `${slot.startTime}–${slot.endTime}` : (slot.period || '')}
+                        </span>
+                        {slot.activity?.type && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--sage)] text-[var(--muted)] shrink-0">
+                            {slot.activity.type}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-[var(--ink)] truncate">{activityName || 'Free time'}</p>
+                      {slot.activity?.description && (
+                        <p className="text-[10px] text-[var(--muted)] truncate mt-0.5">{slot.activity.description}</p>
+                      )}
+                    </div>
+                    {slot.activity?.duration && (
+                      <span className="text-[10px] text-[var(--muted)] shrink-0">
+                        {slot.activity.duration}
+                      </span>
+                    )}
+                    {slot.activity?.rating != null && (
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                        <span className="text-[10px] font-medium text-[var(--ink)]">{slot.activity.rating}</span>
+                      </div>
+                    )}
+                    {canEdit && slot.activity?.id && (
+                      <ActivityMenu
+                        activity={slot.activity}
+                        day={day.dayNumber}
+                        totalDays={itinerary.days.length}
+                        slot={slot}
+                        onRemove={(aid) => handleRemove(day.dayNumber, aid)}
+                        onEditTime={(sid, st, et) => handleEditTime(day.dayNumber, sid, st, et)}
+                        onAddCaption={(aid, cap) => handleCaption(day.dayNumber, aid, cap)}
+                        onMove={(aid, td) => handleMove(day.dayNumber, aid, td)}
+                      />
+                    )}
+                  </div>
+                  {/* Travel connector to next activity */}
+                  {i < (day.timeSlots?.length || 0) - 1 && (
+                    <TravelConnector travelInfo={travelInfo} />
+                  )}
+                </div>
+              );
+            })}
+            {canEdit && (
+              addingDay === day.dayNumber ? (
+                <AddItemInline
+                  day={day.dayNumber}
+                  city={day.location || ''}
+                  onAdd={(placeName) => handleAdd(day.dayNumber, day.location || '', placeName)}
+                  onCancel={() => setAddingDay(null)}
+                />
+              ) : (
+                <button
+                  onClick={() => setAddingDay(day.dayNumber)}
+                  className="flex items-center gap-2 px-4 py-2 text-xs text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--bg)] transition-colors w-full"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add item
+                </button>
+              )
+            )}
+
+            {isLastDay && bestFlight && bestFlight.returnLegs?.length > 0 && (
+              <AnchoredFlightRow
+                label="Return flight"
+                legs={bestFlight.returnLegs}
+                flight={bestFlight}
+                onClick={() => onSelectFlight(bestFlight)}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Overview view (default)
   return (
     <div className="p-4">
+      {/* View toggle */}
+      <div className="flex items-center gap-1 mb-3 p-0.5 rounded-md bg-[var(--bg)] w-fit">
+        <button
+          onClick={() => setPlanViewMode('overview')}
+          className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+            planViewMode === 'overview' ? 'bg-[var(--surface)] text-[var(--ink)] shadow-sm' : 'text-[var(--muted)] hover:text-[var(--ink)]'
+          }`}
+        >
+          <Layers className="w-3 h-3" />
+          Overview
+        </button>
+        <button
+          onClick={() => setPlanViewMode('day-by-day')}
+          className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium text-[var(--muted)] hover:text-[var(--ink)] transition-colors"
+        >
+          <List className="w-3 h-3" />
+          Day-by-day
+        </button>
+      </div>
+
       {/* City filter chips */}
       {cities.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-4">
@@ -97,6 +457,23 @@ export function PlanTab({
                     {day.location}
                   </span>
                 )}
+                {itinerary.hotelRecommendations?.some((h: any) =>
+                  h.address?.includes(day.location) || h.name?.includes(day.location)
+                ) && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const hotel = itinerary.hotelRecommendations?.find((h: any) =>
+                        h.address?.includes(day.location) || h.name?.includes(day.location)
+                      );
+                      if (hotel?.placeId) onSelectPlace(hotel.placeId);
+                    }}
+                    className="flex items-center gap-0.5 text-xs text-[var(--muted)] hover:text-[var(--ink)] transition-colors"
+                    title={`Hotel in ${day.location}`}
+                  >
+                    <Hotel className="w-3 h-3" />
+                  </button>
+                )}
               </div>
               {day.date && (
                 <span className="text-xs text-[var(--muted)] flex items-center gap-0.5">
@@ -142,7 +519,7 @@ export function PlanTab({
                   >
                     {imageUrl && (
                       <img
-                        src={imageUrl}
+                        src={imgUrl(imageUrl)}
                         alt={activityName}
                         className="w-10 h-10 rounded-md object-cover shrink-0"
                         loading="lazy"
@@ -164,14 +541,40 @@ export function PlanTab({
                         {slot.activity.type}
                       </span>
                     )}
+                    {canEdit && slot.activity?.id && (
+                      <ActivityMenu
+                        activity={slot.activity}
+                        day={day.dayNumber}
+                        totalDays={itinerary.days.length}
+                        slot={slot}
+                        onRemove={(aid) => handleRemove(day.dayNumber, aid)}
+                        onEditTime={(sid, st, et) => handleEditTime(day.dayNumber, sid, st, et)}
+                        onAddCaption={(aid, cap) => handleCaption(day.dayNumber, aid, cap)}
+                        onMove={(aid, td) => handleMove(day.dayNumber, aid, td)}
+                      />
+                    )}
                   </div>
                 );
               })}
               {/* Add item row */}
-              <button className="flex items-center gap-2 px-4 py-2 text-xs text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--bg)] transition-colors w-full">
-                <Plus className="w-3.5 h-3.5" />
-                Add item
-              </button>
+              {canEdit ? (
+                addingDay === day.dayNumber ? (
+                  <AddItemInline
+                    day={day.dayNumber}
+                    city={day.location || ''}
+                    onAdd={(placeName) => handleAdd(day.dayNumber, day.location || '', placeName)}
+                    onCancel={() => setAddingDay(null)}
+                  />
+                ) : (
+                  <button
+                    onClick={() => setAddingDay(day.dayNumber)}
+                    className="flex items-center gap-2 px-4 py-2 text-xs text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--bg)] transition-colors w-full"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add item
+                  </button>
+                )
+              ) : null}
 
               {/* Anchored return flight row (last day) */}
               {isLastDay && bestFlight && bestFlight.returnLegs?.length > 0 && (
@@ -248,7 +651,7 @@ export function RecommendationCard({ item, onSelectPlace }: any) {
     >
       {item.imageUrl && (
         <img
-          src={item.imageUrl}
+          src={imgUrl(item.imageUrl)}
           alt={item.name}
           className="w-14 h-14 rounded-md object-cover shrink-0"
           loading="lazy"

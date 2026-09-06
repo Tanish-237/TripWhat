@@ -1,11 +1,13 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { imgUrl } from '../../lib/image';
 
 interface TripMapProps {
   itinerary: any;
   selectedCity?: string | null;
   destination?: string | null;
+  centerOnCoords?: { lat: number; lng: number } | null;
 }
 
 const MARKER_COLORS = [
@@ -38,11 +40,12 @@ function lookupCityCoord(name: string): [number, number] | null {
   return null;
 }
 
-export function TripMap({ itinerary, selectedCity, destination }: TripMapProps) {
+export function TripMap({ itinerary, selectedCity, destination, centerOnCoords }: TripMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const lastDestRef = useRef<string | null>(null);
+  const [dayFilter, setDayFilter] = useState<number | null>(null); // null = all days
 
   useEffect(() => {
     const token = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -52,7 +55,7 @@ export function TripMap({ itinerary, selectedCity, destination }: TripMapProps) 
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: 'mapbox://styles/mapbox/light-v11',
+      style: 'mapbox://styles/mapbox/streets-v12',
       zoom: 4,
       center: [0, 20],
       attributionControl: false,
@@ -101,8 +104,52 @@ export function TripMap({ itinerary, selectedCity, destination }: TripMapProps) 
       const bounds = new mapboxgl.LngLatBounds();
       let hasMarkers = false;
 
+      // Helper to create a marker element with a custom style
+      const makeMarkerEl = (bg: string, content: string, size = 24) => {
+        const el = document.createElement('div');
+        el.style.cssText = `
+          width: ${size}px; height: ${size}px; border-radius: 50%;
+          background: ${bg}; border: 2px solid #fff;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+          cursor: pointer; display: flex; align-items: center;
+          justify-content: center; font-size: 10px; color: #fff;
+          font-weight: 600;
+        `;
+        el.textContent = content;
+        return el;
+      };
+
+      const makePopup = (name: string, subtitle: string, imageUrl?: string) => {
+        const popup = new mapboxgl.Popup({ offset: 16, closeButton: false, closeOnClick: false });
+        const imgHtml = imageUrl
+          ? `<img src="${imgUrl(imageUrl)}" style="width:100%;height:60px;object-fit:cover;border-radius:4px;margin-bottom:4px;" />`
+          : '';
+        popup.setHTML(`
+          <div style="font-family: Inter, sans-serif; padding: 4px 2px; max-width: 200px;">
+            ${imgHtml}
+            <div style="font-size: 12px; font-weight: 600; color: #1C1917; margin-bottom: 2px;">${name}</div>
+            <div style="font-size: 11px; color: #78716C;">${subtitle}</div>
+          </div>
+        `);
+        return popup;
+      };
+
+      const addMarkerWithPopup = (el: HTMLElement, lng: number, lat: number, popup: mapboxgl.Popup) => {
+        const marker = new mapboxgl.Marker(el)
+          .setLngLat([lng, lat])
+          .setPopup(popup)
+          .addTo(map);
+        el.addEventListener('mouseenter', () => popup.addTo(map));
+        el.addEventListener('mouseleave', () => popup.remove());
+        markersRef.current.push(marker);
+        bounds.extend([lng, lat]);
+        hasMarkers = true;
+      };
+
+      // --- Activity markers (numbered, colored by day) ---
       days.forEach((day: any) => {
         if (selectedCity && day.location !== selectedCity) return;
+        if (dayFilter !== null && day.dayNumber !== dayFilter) return;
 
         const colorIdx = ((day.dayNumber || 1) - 1) % MARKER_COLORS.length;
         const color = MARKER_COLORS[colorIdx];
@@ -112,43 +159,35 @@ export function TripMap({ itinerary, selectedCity, destination }: TripMapProps) 
           const activities = slot.activities || (slot.activity ? [slot.activity] : []);
           activities.forEach((act: any) => {
             if (act.coordinates && act.coordinates.lat != null && act.coordinates.lng != null) {
-              const el = document.createElement('div');
-              el.style.cssText = `
-                width: 24px; height: 24px; border-radius: 50%;
-                background: ${color}; border: 2px solid #fff;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-                cursor: pointer; display: flex; align-items: center;
-                justify-content: center; font-size: 10px; color: #fff;
-                font-weight: 600;
-              `;
-              el.textContent = String(day.dayNumber || '');
-
-              const popup = new mapboxgl.Popup({ offset: 16, closeButton: false, closeOnClick: false });
-              const imgHtml = act.imageUrl
-                ? `<img src="${act.imageUrl}" style="width:100%;height:60px;object-fit:cover;border-radius:4px;margin-bottom:4px;" />`
-                : '';
-              popup.setHTML(`
-                <div style="font-family: Inter, sans-serif; padding: 4px 2px; max-width: 200px;">
-                  ${imgHtml}
-                  <div style="font-size: 12px; font-weight: 600; color: #1C1917; margin-bottom: 2px;">${act.name}</div>
-                  <div style="font-size: 11px; color: #78716C;">Day ${day.dayNumber} · ${day.location || ''}</div>
-                </div>
-              `);
-
-              const marker = new mapboxgl.Marker(el)
-                .setLngLat([act.coordinates.lng, act.coordinates.lat])
-                .setPopup(popup)
-                .addTo(map);
-
-              el.addEventListener('mouseenter', () => popup.addTo(map));
-              el.addEventListener('mouseleave', () => popup.remove());
-
-              markersRef.current.push(marker);
-              bounds.extend([act.coordinates.lng, act.coordinates.lat]);
-              hasMarkers = true;
+              const el = makeMarkerEl(color, String(day.dayNumber || ''));
+              const popup = makePopup(act.name, `Day ${day.dayNumber} · ${day.location || ''}`, act.imageUrl);
+              addMarkerWithPopup(el, act.coordinates.lng, act.coordinates.lat, popup);
             }
           });
         });
+      });
+
+      // --- Hotel markers (purple, "H" label) ---
+      // Show hotels when no day filter is active, or when the hotel's city
+      // matches the selected city filter
+      const hotels = itinerary.hotelRecommendations || [];
+      hotels.forEach((hotel: any) => {
+        if (!hotel.coordinates || hotel.coordinates.lat == null || hotel.coordinates.lng == null) return;
+        if (selectedCity && hotel.address && !hotel.address.includes(selectedCity) && !hotel.name?.includes(selectedCity)) return;
+        const el = makeMarkerEl('#7C3AED', 'H', 22);
+        const popup = makePopup(hotel.name, `Hotel · ${hotel.address || ''}`, hotel.imageUrl);
+        addMarkerWithPopup(el, hotel.coordinates.lng, hotel.coordinates.lat, popup);
+      });
+
+      // --- Restaurant markers (amber, fork/knife emoji) ---
+      const restaurants = itinerary.restaurantRecommendations || [];
+      restaurants.forEach((rest: any) => {
+        if (!rest.coordinates || rest.coordinates.lat == null || rest.coordinates.lng == null) return;
+        if (selectedCity && rest.address && !rest.address.includes(selectedCity) && !rest.name?.includes(selectedCity)) return;
+        const el = makeMarkerEl('#D97706', '🍽', 22);
+        el.style.fontSize = '11px';
+        const popup = makePopup(rest.name, `Restaurant · ${rest.cuisine || rest.address || ''}`, rest.imageUrl);
+        addMarkerWithPopup(el, rest.coordinates.lng, rest.coordinates.lat, popup);
       });
 
       if (hasMarkers) {
@@ -161,7 +200,7 @@ export function TripMap({ itinerary, selectedCity, destination }: TripMapProps) 
     } else {
       map.once('load', addMarkers);
     }
-  }, [itinerary, selectedCity]);
+  }, [itinerary, selectedCity, dayFilter]);
 
   // Fly-to animation when destination changes
   useEffect(() => {
@@ -191,5 +230,91 @@ export function TripMap({ itinerary, selectedCity, destination }: TripMapProps) 
     }
   }, [destination]);
 
-  return <div ref={containerRef} className="w-full h-full" />;
+  // Fly-to animation when centerOnCoords changes (e.g., user clicks an activity)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !centerOnCoords) return;
+
+    const doFlyTo = () => {
+      map.flyTo({
+        center: [centerOnCoords.lng, centerOnCoords.lat],
+        zoom: 14,
+        speed: 1.2,
+        curve: 1.5,
+        easing: (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2,
+        essential: true,
+      });
+    };
+
+    if (map.loaded()) {
+      doFlyTo();
+    } else {
+      map.once('load', doFlyTo);
+    }
+  }, [centerOnCoords]);
+
+  const days = itinerary?.days || [];
+  const showFilter = days.length > 1;
+  const hasHotels = (itinerary?.hotelRecommendations?.length || 0) > 0;
+  const hasRestaurants = (itinerary?.restaurantRecommendations?.length || 0) > 0;
+  const showLegend = hasHotels || hasRestaurants;
+
+  return (
+    <div className="relative w-full h-full">
+      <div ref={containerRef} className="w-full h-full" />
+      {showFilter && (
+        <div className="absolute top-2 left-2 z-10 flex items-center gap-0.5 bg-white/90 backdrop-blur-sm rounded-md shadow-sm border border-black/5 px-1 py-0.5">
+          <button
+            onClick={() => setDayFilter(null)}
+            className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
+              dayFilter === null ? 'bg-[var(--ink)] text-white' : 'text-[var(--muted)] hover:text-[var(--ink)]'
+            }`}
+          >
+            All
+          </button>
+          {days.map((d: any) => {
+            const colorIdx = ((d.dayNumber || 1) - 1) % MARKER_COLORS.length;
+            const color = MARKER_COLORS[colorIdx];
+            const isActive = dayFilter === d.dayNumber;
+            return (
+              <button
+                key={d.dayNumber}
+                onClick={() => setDayFilter(isActive ? null : d.dayNumber)}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors flex items-center gap-1 ${
+                  isActive ? 'text-white' : 'text-[var(--muted)] hover:text-[var(--ink)]'
+                }`}
+                style={isActive ? { backgroundColor: color } : undefined}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{ backgroundColor: isActive ? '#fff' : color }}
+                />
+                {d.dayNumber}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {showLegend && (
+        <div className="absolute bottom-2 left-2 z-10 flex items-center gap-3 bg-white/90 backdrop-blur-sm rounded-md shadow-sm border border-black/5 px-2.5 py-1.5">
+          <div className="flex items-center gap-1">
+            <span className="w-3 h-3 rounded-full bg-[#EA580C] border border-white shadow-sm" />
+            <span className="text-[10px] text-[var(--ink)] font-medium">Activities</span>
+          </div>
+          {hasHotels && (
+            <div className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full bg-[#7C3AED] border border-white shadow-sm flex items-center justify-center text-[7px] text-white font-bold">H</span>
+              <span className="text-[10px] text-[var(--ink)] font-medium">Hotels</span>
+            </div>
+          )}
+          {hasRestaurants && (
+            <div className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full bg-[#D97706] border border-white shadow-sm flex items-center justify-center text-[8px]">🍽</span>
+              <span className="text-[10px] text-[var(--ink)] font-medium">Restaurants</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }

@@ -22,7 +22,39 @@ export default function TripWorkspacePage() {
   const [tripError, setTripError] = useState<string | null>(null);
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const [selectedFlight, setSelectedFlight] = useState<FlightOption | null>(null);
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null);
   const pendingSaveRef = useRef<any>(null);
+
+  // Find a place in the itinerary by placeId to get its coordinates
+  const findPlaceInItinerary = (itinerary: any, placeId: string): any | null => {
+    if (!itinerary?.days) return null;
+    for (const day of itinerary.days) {
+      for (const slot of day.timeSlots || []) {
+        const activities = slot.activities || (slot.activity ? [slot.activity] : []);
+        for (const act of activities) {
+          if (act.placeId === placeId) return act;
+        }
+      }
+    }
+    // Also check hotel/restaurant recommendations
+    for (const hotel of itinerary.hotelRecommendations || []) {
+      if (hotel.placeId === placeId) return hotel;
+    }
+    for (const rest of itinerary.restaurantRecommendations || []) {
+      if (rest.placeId === placeId) return rest;
+    }
+    return null;
+  };
+
+  // Handle place selection — opens detail panel AND centers map
+  const handleSelectPlace = (placeId: string) => {
+    setSelectedPlaceId(placeId);
+    const itinerary = tripState?.itinerary;
+    const found = findPlaceInItinerary(itinerary, placeId);
+    if (found?.coordinates && found.coordinates.lat && found.coordinates.lng) {
+      setMapCenter({ lat: found.coordinates.lat, lng: found.coordinates.lng });
+    }
+  };
 
   useEffect(() => {
     if (id) {
@@ -86,13 +118,14 @@ export default function TripWorkspacePage() {
           title={tripTitle}
           tripState={tripState || undefined}
           onTripStateUpdate={handleTripStateUpdate}
-          onSelectPlace={setSelectedPlaceId}
+          onSelectPlace={handleSelectPlace}
+          onSelectFlight={setSelectedFlight}
         />
         {selectedPlaceId && (
           <PlaceDetailPanel
             placeId={selectedPlaceId}
             onClose={() => setSelectedPlaceId(null)}
-            onSelectAlternate={(pid) => setSelectedPlaceId(pid)}
+            onSelectAlternate={(pid) => handleSelectPlace(pid)}
           />
         )}
         {selectedFlight && (
@@ -118,7 +151,7 @@ export default function TripWorkspacePage() {
             {/* Map - top 40% */}
             <div className="h-[40%] shrink-0 border-b border-[var(--border)] relative bg-[var(--sage)]">
               {itinerary ? (
-                <TripMap itinerary={itinerary} selectedCity={cityFilter} destination={cities[0]?.name} />
+                <TripMap itinerary={itinerary} selectedCity={cityFilter} destination={cities[0]?.name} centerOnCoords={mapCenter} />
               ) : (
                 <div className="h-full flex items-center justify-center">
                   <div className="text-center">
@@ -171,9 +204,10 @@ export default function TripWorkspacePage() {
                     cityFilter={cityFilter}
                     setCityFilter={setCityFilter}
                     cities={cities}
-                    onSelectPlace={setSelectedPlaceId}
+                    onSelectPlace={handleSelectPlace}
                     onSelectFlight={setSelectedFlight}
                     datesAssumed={tripState?.dates?.assumed}
+                    conversationId={conversationId || undefined}
                   />
                 )}
                 {activeTab === 'bookings' && <BookingsTab />}

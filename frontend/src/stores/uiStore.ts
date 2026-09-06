@@ -7,6 +7,8 @@ interface UIStore {
   activeTab: 'plan' | 'saved' | 'bookings';
   cityFilter: string | null;
   profileMenuOpen: boolean;
+  planViewMode: 'overview' | 'day-by-day';
+  selectedDay: number | null;
 
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
@@ -18,6 +20,8 @@ interface UIStore {
   setCityFilter: (city: string | null) => void;
   toggleProfileMenu: () => void;
   setProfileMenuOpen: (open: boolean) => void;
+  setPlanViewMode: (mode: 'overview' | 'day-by-day') => void;
+  setSelectedDay: (day: number | null) => void;
 }
 
 export const useUIStore = create<UIStore>((set) => ({
@@ -27,6 +31,8 @@ export const useUIStore = create<UIStore>((set) => ({
   activeTab: 'plan',
   cityFilter: null,
   profileMenuOpen: false,
+  planViewMode: 'overview',
+  selectedDay: null,
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
@@ -38,4 +44,6 @@ export const useUIStore = create<UIStore>((set) => ({
   setCityFilter: (city) => set({ cityFilter: city }),
   toggleProfileMenu: () => set((s) => ({ profileMenuOpen: !s.profileMenuOpen })),
   setProfileMenuOpen: (open) => set({ profileMenuOpen: open }),
+  setPlanViewMode: (mode) => set({ planViewMode: mode, selectedDay: mode === 'overview' ? null : 1 }),
+  setSelectedDay: (day) => set({ selectedDay: day }),
 }));
